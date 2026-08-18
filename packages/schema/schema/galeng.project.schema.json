@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeng.local/schema/galeng.project.schema.json",
+  "title": "Galeng project (galeng.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "schemaVersion", "resolution", "startScene", "locale"],
+  "properties": {
+    "id": { "$ref": "#/$defs/nonEmptyString" },
+    "title": { "$ref": "#/$defs/nonEmptyString" },
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "resolution": { "$ref": "#/$defs/resolution" },
+    "startScene": { "$ref": "#/$defs/nonEmptyString" },
+    "locale": { "$ref": "#/$defs/nonEmptyString" },
+    "skipTitle": { "type": "boolean" },
+    "titleBgm": { "$ref": "#/$defs/assetPath" },
+    "titleBg": { "$ref": "#/$defs/assetPath" },
+    "titleMovie": { "$ref": "#/$defs/assetPath" },
+    "font": { "$ref": "#/$defs/assetPath" },
+    "msgBox": { "$ref": "#/$defs/assetPath" },
+    "icon": { "$ref": "#/$defs/assetPath" },
+    "uiLanguages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["zh-Hans", "zh-Hant", "en"] }
+    },
+    "characters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/character" }
+    },
+    "cg": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/galleryItem" }
+    },
+    "musicGallery": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/galleryItem" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "assetPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9_/-]*[A-Za-z0-9])?$",
+      "description": "Logical path without extension, drive letter, or backslash."
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "const": 1920 },
+        "height": { "type": "integer", "const": 1080 }
+      }
+    },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "display": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "textRate": { "type": "integer", "minimum": 25, "maximum": 400 }
+      }
+    },
+    "galleryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "asset"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "asset": { "$ref": "#/$defs/assetPath" }
+      }
+    }
+  }
+}

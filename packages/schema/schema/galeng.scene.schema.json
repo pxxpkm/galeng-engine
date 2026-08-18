@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeng.local/schema/galeng.scene.schema.json",
+  "title": "Galeng scene",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "beats"],
+  "properties": {
+    "id": { "$ref": "#/$defs/nonEmptyString" },
+    "title": { "type": "string" },
+    "beats": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/beat" }
+    },
+    "exit": { "$ref": "#/$defs/exit" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "assetPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9_/-]*[A-Za-z0-9])?$"
+    },
+    "setValue": {
+      "anyOf": [
+        { "type": "integer" },
+        { "type": "boolean" },
+        { "type": "string", "pattern": "^[+-][0-9]+$" }
+      ]
+    },
+    "setMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/setValue" }
+    },
+    "conditionPred": {
+      "anyOf": [
+        { "type": "boolean" },
+        { "type": "integer" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "gte": { "type": "integer" },
+            "lte": { "type": "integer" },
+            "gt": { "type": "integer" },
+            "lt": { "type": "integer" },
+            "eq": true,
+            "ne": true
+          }
+        }
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/conditionPred" }
+    },
+    "beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bg": { "$ref": "#/$defs/bg" },
+        "chars": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/charOnStage" }
+        },
+        "say": { "$ref": "#/$defs/say" },
+        "bgm": { "$ref": "#/$defs/bgm" },
+        "se": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/se" }
+        },
+        "amb": {
+          "anyOf": [{ "$ref": "#/$defs/assetPath" }, { "type": "null" }]
+        },
+        "fx": { "$ref": "#/$defs/fx" },
+        "movie": { "$ref": "#/$defs/movie" },
+        "camera": {
+          "anyOf": [{ "$ref": "#/$defs/camera" }, { "type": "null" }]
+        },
+        "cg": {
+          "anyOf": [{ "$ref": "#/$defs/assetPath" }, { "type": "null" }]
+        },
+        "set": { "$ref": "#/$defs/setMap" },
+        "label": { "type": "string" }
+      }
+    },
+    "bg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset"],
+      "properties": {
+        "asset": { "$ref": "#/$defs/assetPath" },
+        "trans": { "enum": ["none", "fade", "crossfade"] },
+        "ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "charOnStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "face"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "face": { "$ref": "#/$defs/nonEmptyString" },
+        "slot": {
+          "enum": ["left", "center", "right"],
+          "default": "center"
+        },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "slideMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "say": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["speaker", "text"],
+      "properties": {
+        "speaker": { "$ref": "#/$defs/nonEmptyString" },
+        "text": { "$ref": "#/$defs/nonEmptyString" },
+        "voice": { "$ref": "#/$defs/assetPath" },
+        "autoAdvance": { "$ref": "#/$defs/autoAdvance" }
+      }
+    },
+    "autoAdvance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "voice" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ms"],
+          "properties": {
+            "type": { "const": "ms" },
+            "ms": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "bgm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset"],
+      "properties": {
+        "asset": {
+          "anyOf": [{ "$ref": "#/$defs/assetPath" }, { "type": "null" }]
+        },
+        "fadeMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "se": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset"],
+      "properties": {
+        "asset": { "$ref": "#/$defs/assetPath" }
+      }
+    },
+    "fx": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["fade", "shake", "flash"] },
+            "ms": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ms"],
+          "properties": {
+            "type": { "const": "wait" },
+            "ms": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "movie": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset"],
+      "properties": {
+        "asset": { "$ref": "#/$defs/assetPath" }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "zoom": { "type": "integer", "minimum": 50, "maximum": 400 }
+      }
+    },
+    "exit": {
+      "oneOf": [
+        { "$ref": "#/$defs/exitNext" },
+        { "$ref": "#/$defs/exitChoices" },
+        { "$ref": "#/$defs/exitBranch" }
+      ]
+    },
+    "exitNext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "goto"],
+      "properties": {
+        "type": { "const": "next" },
+        "goto": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "exitChoices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "options"],
+      "properties": {
+        "type": { "const": "choices" },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/choiceOption" }
+        }
+      }
+    },
+    "exitBranch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "if", "then", "else"],
+      "properties": {
+        "type": { "const": "branch" },
+        "if": { "$ref": "#/$defs/condition" },
+        "then": { "$ref": "#/$defs/nonEmptyString" },
+        "else": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "choiceOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "goto"],
+      "properties": {
+        "text": { "$ref": "#/$defs/nonEmptyString" },
+        "goto": { "$ref": "#/$defs/nonEmptyString" },
+        "set": { "$ref": "#/$defs/setMap" },
+        "if": { "$ref": "#/$defs/condition" }
+      }
+    }
+  }
+}

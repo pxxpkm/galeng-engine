@@ -1,0 +1,14 @@
+{
+  "id": "home_01",
+  "title": "結局",
+  "beats": [
+    {
+      "bg": { "asset": "bg/home", "trans": "fade", "ms": 400 },
+      "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+      "say": {
+        "speaker": "sora",
+        "text": "那就下次再出來吧。"
+      }
+    }
+  ]
+}

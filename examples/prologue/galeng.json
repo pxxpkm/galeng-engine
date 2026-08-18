@@ -1,0 +1,43 @@
+{
+  "id": "example-prologue",
+  "title": "Prologue",
+  "schemaVersion": 1,
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "startScene": "park_01",
+  "locale": "zh-Hant",
+  "skipTitle": false,
+  "titleBgm": "bgm/park",
+  "titleBg": "bg/park_afternoon",
+  "uiLanguages": [
+    "zh-Hant",
+    "zh-Hans",
+    "en"
+  ],
+  "characters": [
+    {
+      "id": "sora",
+      "display": {
+        "en": "Sora",
+        "zh-Hant": "そら"
+      }
+    },
+    {
+      "id": "char_2"
+    }
+  ],
+  "cg": [
+    {
+      "id": "op_still",
+      "asset": "cg/op_still"
+    }
+  ],
+  "musicGallery": [
+    {
+      "id": "park",
+      "asset": "bgm/park"
+    }
+  ]
+}

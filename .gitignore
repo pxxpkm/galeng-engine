@@ -1,0 +1,64 @@
+# Rust
+/target/
+target-test-*/
+**/*.rs.bk
+# Application workspace: commit the root Cargo.lock once crates exist.
+# Do not add a blanket Cargo.lock ignore.
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.turbo/
+*.tsbuildinfo
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.idea/
+.vscode/
+.vs/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+ehthumbs.db
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Built game artifacts (never commit packs or player binaries)
+*.pak
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.dll
+!third_party/SDL2/lib/**/*.dll
+!third_party/SDL2/lib/**/*.lib
+third_party/*.zip
+
+# Local play / export output
+export/
+save/
+config.json
+seen.json
+galeng.local.json
+/out/
+/build/
+
+# Logs
+*.log
+
+# Workshop notes stay in the private repo
+HANDOFF.md
+journal/
+docs/
+Reviews/

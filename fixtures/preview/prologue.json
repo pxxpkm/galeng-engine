@@ -1,0 +1,57 @@
+[
+  {
+    "scene": "park_01",
+    "beatIndex": 0,
+    "bg": "bg/park_afternoon",
+    "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+    "cg": null,
+    "bgm": "bgm/park",
+    "saySpeaker": null,
+    "sayText": null,
+    "voice": null
+  },
+  {
+    "scene": "park_01",
+    "beatIndex": 1,
+    "bg": "bg/park_afternoon",
+    "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+    "cg": null,
+    "bgm": "bgm/park",
+    "saySpeaker": "sora",
+    "sayText": "今天風真好。",
+    "voice": "voice/sora/001"
+  },
+  {
+    "scene": "park_01",
+    "beatIndex": 2,
+    "bg": "bg/park_afternoon",
+    "chars": [{ "id": "sora", "face": "blush", "slot": "center" }],
+    "cg": "cg/op_still",
+    "bgm": "bgm/park",
+    "saySpeaker": "sora",
+    "sayText": "要不要一起走走？",
+    "voice": "voice/sora/002"
+  },
+  {
+    "scene": "home_01",
+    "beatIndex": 0,
+    "bg": "bg/home",
+    "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+    "cg": null,
+    "bgm": null,
+    "saySpeaker": "sora",
+    "sayText": "那就下次再出來吧。",
+    "voice": null
+  },
+  {
+    "scene": "park_02",
+    "beatIndex": 0,
+    "bg": "bg/park_afternoon",
+    "chars": [{ "id": "sora", "face": "blush", "slot": "center" }],
+    "cg": null,
+    "bgm": null,
+    "saySpeaker": "sora",
+    "sayText": "那就走吧。風還會再吹一會兒。",
+    "voice": null
+  }
+]

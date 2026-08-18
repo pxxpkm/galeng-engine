@@ -1,0 +1,6 @@
+{
+  "id": "bad_set",
+  "beats": [
+    { "set": { "sora_affection": "+" } }
+  ]
+}

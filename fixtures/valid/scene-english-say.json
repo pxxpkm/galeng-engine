@@ -1,0 +1,15 @@
+{
+  "id": "park_en",
+  "title": "Park · afternoon",
+  "beats": [
+    {
+      "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+      "say": {
+        "speaker": "sora",
+        "text": "The wind feels nice today.",
+        "voice": "voice/sora/001"
+      }
+    }
+  ],
+  "exit": { "type": "next", "goto": "home_01" }
+}

@@ -1,0 +1,10 @@
+ Microsoft Windows® 10/8.1
+CPU	intel® Core 2 Duo 以上	intel® Core i5 以上
+メモリ	2GB 以上	4GB 以上
+HDD容量	8GB以上
+VRAM	512MB 以上	1GB 以上
+画面解像度	1920 x 1080 (24or32bit color)
+※上記未満の解像度では縮小表示でプレイする事が可能です
+グラフィック	DirectX 9.0 に完全対応したビデオカード （ピクセルシェーダー2.0に対応している事）
+サウンド	Direct Sound
+DirectX	DirectX 9.0 以上

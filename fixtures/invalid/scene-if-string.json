@@ -1,0 +1,10 @@
+{
+  "id": "bad_if_string",
+  "beats": [{}],
+  "exit": {
+    "type": "branch",
+    "if": { "flag": "yes" },
+    "then": "a",
+    "else": "b"
+  }
+}

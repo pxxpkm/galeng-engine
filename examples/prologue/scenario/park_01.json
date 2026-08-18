@@ -1,0 +1,43 @@
+{
+  "id": "park_01",
+  "title": "公園・午後",
+  "beats": [
+    {
+      "bg": { "asset": "bg/park_afternoon", "trans": "fade", "ms": 500 },
+      "chars": [{ "id": "sora", "face": "smile", "slot": "center" }],
+      "bgm": { "asset": "bgm/park", "fadeMs": 800 },
+      "se": [{ "asset": "se/breeze" }]
+    },
+    {
+      "chars": [{ "id": "sora", "face": "smile" }],
+      "say": {
+        "speaker": "sora",
+        "text": "今天風真好。",
+        "voice": "voice/sora/001"
+      }
+    },
+    {
+      "chars": [{ "id": "sora", "face": "blush" }],
+      "cg": "cg/op_still",
+      "say": {
+        "speaker": "sora",
+        "text": "要不要一起走走？",
+        "voice": "voice/sora/002"
+      }
+    }
+  ],
+  "exit": {
+    "type": "choices",
+    "options": [
+      {
+        "text": "一起走吧",
+        "goto": "park_02",
+        "set": { "sora_affection": "+1" }
+      },
+      {
+        "text": "該回去了",
+        "goto": "home_01"
+      }
+    ]
+  }
+}

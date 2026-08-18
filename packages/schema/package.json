@@ -1,0 +1,16 @@
+{
+  "name": "@galeng/schema",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

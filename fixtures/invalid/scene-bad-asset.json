@@ -1,0 +1,6 @@
+{
+  "id": "bad_asset",
+  "beats": [
+    { "bg": { "asset": "bg/park.png" } }
+  ]
+}

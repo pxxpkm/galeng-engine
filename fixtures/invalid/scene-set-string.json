@@ -1,0 +1,6 @@
+{
+  "id": "bad_set_string",
+  "beats": [
+    { "set": { "name": "sora" } }
+  ]
+}

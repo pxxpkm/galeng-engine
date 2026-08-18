@@ -1,0 +1,8 @@
+{
+  "id": "bad-res",
+  "title": "Bad resolution",
+  "schemaVersion": 1,
+  "resolution": { "width": 1280, "height": 720 },
+  "startScene": "start",
+  "locale": "en"
+}

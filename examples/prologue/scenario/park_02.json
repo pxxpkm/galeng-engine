@@ -1,0 +1,14 @@
+{
+  "id": "park_02",
+  "title": "小路",
+  "beats": [
+    {
+      "bg": { "asset": "bg/park_afternoon", "trans": "fade", "ms": 400 },
+      "chars": [{ "id": "sora", "face": "blush", "slot": "center" }],
+      "say": {
+        "speaker": "sora",
+        "text": "那就走吧。風還會再吹一會兒。"
+      }
+    }
+  ]
+}

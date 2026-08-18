@@ -1,0 +1,6 @@
+{
+  "id": "empty_say",
+  "beats": [
+    { "say": { "speaker": "sora", "text": "" } }
+  ]
+}
