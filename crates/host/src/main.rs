@@ -77,7 +77,8 @@ async fn run() -> Result<(), String> {
         .route("/api/play", post(play))
         .route("/api/export", post(export_script))
         .route("/api/pack", post(pack_game))
-        .route("/api/pick-dir", post(pick_dir));
+        .route("/api/pick-dir", post(pick_dir))
+        .route("/api/pick-file", post(pick_file));
     let app = if let Some(static_dir) = static_dir {
         let index = static_dir.join("index.html");
         if !index.is_file() {
@@ -317,6 +318,25 @@ async fn pick_dir() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     Ok(Json(serde_json::json!({
         "path": picked.map(|p| p.to_string_lossy().into_owned())
     })))
+}
+
+async fn pick_file(
+    State(app): State<Arc<App>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let picked = tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Galeng")
+            .add_filter("PNG", &["png"])
+            .add_filter("Images", &["png", "webp", "ico"])
+            .pick_file()
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let Some(path) = picked else {
+        return Ok(Json(serde_json::json!({ "logical": serde_json::Value::Null })));
+    };
+    let logical = app.project.logical_from_asset_file(&path).map_err(map_err)?;
+    Ok(Json(serde_json::json!({ "logical": logical })))
 }
 
 #[derive(Deserialize)]

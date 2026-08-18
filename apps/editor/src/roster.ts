@@ -8,6 +8,22 @@ export function rosterOf(project: Project | null | undefined): Character[] {
   return project?.characters ?? [];
 }
 
+export function displayNameOf(ch: Character, locale: string): string {
+  const named =
+    ch.display?.[locale] || ch.display?.["zh-Hant"] || ch.display?.["zh-Hans"] || ch.display?.en;
+  const trimmed = named?.trim();
+  return trimmed || ch.id;
+}
+
+export function firstFaceLogical(id: string, faces: string[]): string | null {
+  const trimmedId = id.trim();
+  const face = faces[0]?.trim();
+  if (!trimmedId || !face) {
+    return null;
+  }
+  return `char/${trimmedId}/${face}`;
+}
+
 export function affectionKey(id: string): string {
   return `${id.trim()}_affection`;
 }

@@ -62,6 +62,127 @@ pub struct GalleryItem {
     pub asset: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TitleButton {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hover: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub w: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub h: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TitleButtons {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_game: Option<TitleButton>,
+    #[serde(default, rename = "continue", skip_serializing_if = "Option::is_none")]
+    pub continue_game: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quit: Option<TitleButton>,
+}
+
+impl TitleButtons {
+    pub fn get(&self, index: usize) -> Option<&TitleButton> {
+        match index {
+            0 => self.new_game.as_ref(),
+            1 => self.continue_game.as_ref(),
+            2 => self.load.as_ref(),
+            3 => self.gallery.as_ref(),
+            4 => self.music.as_ref(),
+            5 => self.settings.as_ref(),
+            6 => self.quit.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn assets(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        for i in 0..7 {
+            let Some(btn) = self.get(i) else { continue };
+            if let Some(path) = btn.image.as_deref() {
+                out.push(path);
+            }
+            if let Some(path) = btn.hover.as_deref() {
+                out.push(path);
+            }
+        }
+        out
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PauseButtons {
+    #[serde(default, rename = "continue", skip_serializing_if = "Option::is_none")]
+    pub continue_game: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quick_save: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quick_load: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_load: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub save: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<TitleButton>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quit: Option<TitleButton>,
+}
+
+impl PauseButtons {
+    pub fn get(&self, index: usize) -> Option<&TitleButton> {
+        match index {
+            0 => self.continue_game.as_ref(),
+            1 => self.quick_save.as_ref(),
+            2 => self.quick_load.as_ref(),
+            3 => self.auto_load.as_ref(),
+            4 => self.save.as_ref(),
+            5 => self.load.as_ref(),
+            6 => self.settings.as_ref(),
+            7 => self.title.as_ref(),
+            8 => self.quit.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn assets(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        for i in 0..9 {
+            let Some(btn) = self.get(i) else { continue };
+            if let Some(path) = btn.image.as_deref() {
+                out.push(path);
+            }
+            if let Some(path) = btn.hover.as_deref() {
+                out.push(path);
+            }
+        }
+        out
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -85,6 +206,12 @@ pub struct Project {
     pub msg_box: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_game_title: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_buttons: Option<TitleButtons>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_buttons: Option<PauseButtons>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_languages: Option<Vec<UiLanguage>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

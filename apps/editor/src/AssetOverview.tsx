@@ -17,6 +17,7 @@ const FIELD_KEY: Record<CiteField, string> = {
   font: "editor.font",
   msgBox: "editor.msgBox",
   icon: "editor.icon",
+  titleButton: "editor.titleButtons",
   gallery: "editor.cgGallery",
   music: "editor.musicGallery",
 };

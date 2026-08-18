@@ -86,6 +86,48 @@ fn character_text_rate_ok() {
 }
 
 #[test]
+fn pause_buttons_optional() {
+    let text = r#"{
+      "id":"x","title":"x","schemaVersion":1,
+      "resolution":{"width":1920,"height":1080},
+      "startScene":"a","locale":"en",
+      "pauseButtons":{"continue":{"label":"","image":"ui/pause/cont","x":80}}
+    }"#;
+    let project = validate_project_str(text).expect("pauseButtons");
+    let btn = project
+        .pause_buttons
+        .as_ref()
+        .and_then(|set| set.continue_game.as_ref())
+        .expect("continue");
+    assert_eq!(btn.image.as_deref(), Some("ui/pause/cont"));
+    assert_eq!(btn.x, Some(80));
+}
+
+#[test]
+fn title_buttons_optional() {
+    let text = r#"{
+      "id":"x","title":"x","schemaVersion":1,
+      "resolution":{"width":1920,"height":1080},
+      "startScene":"a","locale":"en",
+      "hideGameTitle":true,
+      "titleButtons":{
+        "newGame":{"label":"","image":"ui/title/start","x":80,"y":720}
+      }
+    }"#;
+    let project = validate_project_str(text).expect("titleButtons");
+    assert!(project.hide_game_title);
+    let btn = project
+        .title_buttons
+        .as_ref()
+        .and_then(|set| set.new_game.as_ref())
+        .expect("newGame");
+    assert_eq!(btn.image.as_deref(), Some("ui/title/start"));
+    assert_eq!(btn.label.as_deref(), Some(""));
+    assert_eq!(btn.x, Some(80));
+    assert!(project.title_buttons.as_ref().unwrap().continue_game.is_none());
+}
+
+#[test]
 fn title_movie_optional() {
     let text = r#"{
       "id":"x","title":"x","schemaVersion":1,

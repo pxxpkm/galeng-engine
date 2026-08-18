@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMusicItem, setOptionalPath, setSkipTitle } from "./project";
+import { addMusicItem, setHideGameTitle, setOptionalPath, setPauseButton, setSkipTitle, setTitleButton } from "./project";
 import type { Project } from "./types";
 
 const base: Project = {
@@ -52,6 +52,45 @@ describe("setSkipTitle", () => {
     const next = setSkipTitle(base, true);
     expect(next.skipTitle).toBe(true);
     expect(next.titleBgm).toBe("bgm/park");
+  });
+});
+
+describe("setTitleButton", () => {
+  it("writes one button and leaves the rest unset", () => {
+    const next = setTitleButton(base, "newGame", {
+      image: "ui/title/start",
+      x: 80,
+      y: 720,
+    });
+    expect(next.titleButtons).toEqual({
+      newGame: { image: "ui/title/start", label: "", x: 80, y: 720 },
+    });
+    expect(next.titleBgm).toBe("bgm/park");
+  });
+
+  it("clears the last button and drops the object", () => {
+    const withBtn = setTitleButton(base, "quit", { label: "Bye" });
+    const next = setTitleButton(withBtn, "quit", { label: "" });
+    expect(next.titleButtons).toBeUndefined();
+  });
+});
+
+describe("setPauseButton", () => {
+  it("writes one pause button", () => {
+    const next = setPauseButton(base, "continue", { image: "ui/pause/cont", x: 80 });
+    expect(next.pauseButtons).toEqual({
+      continue: { image: "ui/pause/cont", label: "", x: 80 },
+    });
+    expect(next.titleBgm).toBe("bgm/park");
+  });
+});
+
+describe("setHideGameTitle", () => {
+  it("sets and clears without dropping title fields", () => {
+    const on = setHideGameTitle(base, true);
+    expect(on.hideGameTitle).toBe(true);
+    expect(on.titleBgm).toBe("bgm/park");
+    expect(setHideGameTitle(on, false).hideGameTitle).toBeUndefined();
   });
 });
 

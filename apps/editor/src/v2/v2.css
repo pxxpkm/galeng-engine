@@ -935,6 +935,68 @@
   margin-top: 8px;
   padding-top: 8px;
 }
+.v2 .v2-roster-split {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.v2 .v2-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .v2-roster-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+.v2 .v2-roster-item.is-selected {
+  outline: 1px solid #e6c07b;
+  border-color: #e6c07b;
+}
+.v2 .v2-roster-thumb {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-weight: 600;
+}
+.v2 .v2-roster-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.v2 .v2-roster-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.v2 .v2-roster-item-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-roster-item-text code {
+  font-size: 11px;
+  color: var(--muted);
+}
+.v2 .v2-roster-edit {
+  min-width: 0;
+}
 .v2 .roster-aff-btns button.active {
   outline: 1px solid var(--accent);
 }
@@ -970,6 +1032,9 @@
 .v2 .v2-gallery-row {
   position: relative;
   padding-right: 40px;
+}
+.v2 .v2-gallery-row.is-title-sel {
+  outline: 1px solid #e6c07b;
 }
 .v2 .v2-gallery-del {
   position: absolute;
@@ -1262,6 +1327,10 @@
   flex: 1;
   min-width: 0;
 }
+.v2 .v2-pack-row .asset-field {
+  flex: 1;
+  min-width: 0;
+}
 .v2 .v2-export-body {
   display: flex;
   flex-direction: column;
@@ -1404,6 +1473,68 @@
 }
 .v2 .v2-uiversion {
   margin-bottom: 8px;
+}
+.v2 .v2-title-layout {
+  margin: 8px 0 12px;
+}
+.v2 .v2-title-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #080810;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  user-select: none;
+  touch-action: none;
+}
+.v2 .v2-title-stage-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+.v2 .v2-title-stage-name {
+  position: absolute;
+  color: #ffe6a0;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.v2 .v2-title-stage-btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #3a3a46;
+  background: #141420;
+  color: #fff;
+  cursor: grab;
+  overflow: hidden;
+}
+.v2 .v2-title-stage-btn img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+.v2 .v2-title-stage-btn span {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.v2 .v2-title-stage-btn.is-selected {
+  outline: 2px solid #e6c07b;
+  outline-offset: 1px;
+  z-index: 2;
+}
+.v2 .v2-title-stage-btn:active {
+  cursor: grabbing;
 }
 
 /* --- toasts --- */

@@ -306,6 +306,9 @@ mod tests {
             font: None,
             msg_box: None,
             icon: None,
+            hide_game_title: false,
+            title_buttons: None,
+            pause_buttons: None,
             ui_languages: None,
             characters: Some(vec![galeng_schema::Character {
                 id: "sora".into(),

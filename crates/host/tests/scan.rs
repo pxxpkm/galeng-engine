@@ -274,6 +274,11 @@ fn export_game_writes_pak_and_optional_exe() {
     assert_eq!(with.exe.as_deref(), Some("export/game/player.exe"));
     assert!(tmp.join("export/game/player.exe").is_file());
     assert!(with.dll.is_none(), "dll only copies from the exe directory");
+    assert!(
+        !with.warnings.iter().any(|w| w.contains("not signed")),
+        "unsigned must not land in warnings: {:?}",
+        with.warnings
+    );
 
     let fake_dir = tmp.join("bin");
     fs::create_dir_all(&fake_dir).unwrap();
@@ -413,5 +418,40 @@ fn asset_root_override_scans_and_scaffolds() {
     assert!(assets.iter().any(|a| a.logical == "bg/sky"));
     dir.set_asset_root(None).unwrap();
     assert!(galeng_schema::is_default_asset_dir(&tmp));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn logical_from_asset_file_inside_ok_outside_err() {
+    let tmp = std::env::temp_dir().join(format!(
+        "galeng-part115-pick-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::create_dir_all(tmp.join("assets/ui/title")).unwrap();
+    fs::copy(
+        repo_root().join("examples/prologue/galeng.json"),
+        tmp.join("galeng.json"),
+    )
+    .unwrap();
+    let inside = tmp.join("assets/ui/title/start.png");
+    fs::write(&inside, b"png").unwrap();
+    let dir = ProjectDir::open(&tmp).unwrap();
+    assert_eq!(
+        dir.logical_from_asset_file(&inside).unwrap(),
+        "ui/title/start"
+    );
+    let outside = std::env::temp_dir().join(format!(
+        "galeng-part115-out-{}.png",
+        std::process::id()
+    ));
+    fs::write(&outside, b"png").unwrap();
+    let err = dir.logical_from_asset_file(&outside).unwrap_err();
+    assert!(
+        err.to_string().contains("outside"),
+        "{err}"
+    );
+    let _ = fs::remove_file(&outside);
     let _ = fs::remove_dir_all(&tmp);
 }

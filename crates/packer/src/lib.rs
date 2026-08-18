@@ -63,6 +63,16 @@ pub fn collect_refs(project: &Project, scenes: &[Scene]) -> BTreeSet<String> {
     if let Some(s) = &project.icon {
         out.insert(s.clone());
     }
+    if let Some(buttons) = &project.title_buttons {
+        for path in buttons.assets() {
+            out.insert(path.to_string());
+        }
+    }
+    if let Some(buttons) = &project.pause_buttons {
+        for path in buttons.assets() {
+            out.insert(path.to_string());
+        }
+    }
     if let Some(items) = &project.cg {
         for item in items {
             out.insert(item.asset.clone());

@@ -90,6 +90,13 @@ call :port_listening 3847
 if not errorlevel 1 (
   echo [galeng] host already on 3847. If you just changed code, run: editor.bat restart
 ) else (
+  echo [galeng] building player (PIT-050: schema is compiled in)
+  cargo build -p galeng-player
+  if errorlevel 1 (
+    echo [galeng] player build failed. Close galeng-player.exe and retry.
+    if /i "%~1"=="" pause
+    exit /b 1
+  )
   echo [galeng] starting host: %PROJECT%
   start "galeng-host" /D "%CD%" cmd /k cargo run -p galeng-host -- --project "%PROJECT%"
 )

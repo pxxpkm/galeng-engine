@@ -6,7 +6,8 @@ import { SearchPalette } from "../SearchPalette";
 import { VarList } from "../VarList";
 import type { Locale } from "../types";
 import { IconX } from "./icons";
-import { ProjectFields } from "./ProjectFields";
+import { ProjectFields, ScreenButtonsFields } from "./ProjectFields";
+import { RosterEditor } from "./RosterEditor";
 import { switchUiVersion } from "./uiVersion";
 import type { Editor } from "./useEditorState";
 
@@ -208,50 +209,92 @@ function PackDialog({ ed }: { ed: Editor }) {
 
 function SettingsDialog({ ed }: { ed: Editor }) {
   const { t } = ed;
+  const [page, setPage] = useState<"main" | "buttons" | "roster">("main");
   if (!ed.settingsOpen) return null;
+  const title =
+    page === "buttons" ? t("editor.screenButtons") : page === "roster" ? t("editor.roster") : t("menu.settings");
   return (
-    <Modal title={t("menu.settings")} onClose={ed.closeSettings} wide>
+    <Modal
+      title={title}
+      onClose={() => {
+        setPage("main");
+        ed.closeSettings();
+      }}
+      wide
+    >
       <div className="v2-modal-body">
-        <div className="v2-field">
-          <label>{t("editor.language")}</label>
-          <select
-            className="v2-select"
-            value={ed.locale}
-            onChange={(e) => ed.setLocale(e.target.value as Locale)}
-          >
-            <option value="zh-Hant">{t("locale.zhHant")}</option>
-            <option value="zh-Hans">{t("locale.zhHans")}</option>
-            <option value="en">{t("locale.en")}</option>
-          </select>
-        </div>
-        <div className="v2-field">
-          <label>{t("editor.uiVersion")}</label>
-          <div className="v2-uiversion">
-            <span className="v2-chip">{t("editor.uiBetaName")}</span>
-          </div>
-          <p className="v2-hint">{t("editor.uiVersionNote")}</p>
-          <button type="button" className="v2-btn" onClick={() => switchUiVersion("classic")}>
-            {t("editor.uiClassic")}
-          </button>
-        </div>
-        <ProjectFields ed={ed} />
-        <div className="v2-field">
-          <label>{t("editor.overview")}</label>
-          <p className="v2-hint">{t("editor.overviewTitle")}</p>
-          <button type="button" className="v2-btn" onClick={ed.openOverview}>
-            {t("editor.overview")}
-          </button>
-        </div>
-        <div className="v2-field">
-          <label>{t("editor.vars")}</label>
-          <p className="v2-hint">{t("editor.varsTitle")}</p>
-          <button type="button" className="v2-btn" onClick={ed.openVars}>
-            {t("editor.vars")}
-          </button>
-        </div>
+        {page === "main" ? (
+          <>
+            <div className="v2-field">
+              <label>{t("editor.language")}</label>
+              <select
+                className="v2-select"
+                value={ed.locale}
+                onChange={(e) => ed.setLocale(e.target.value as Locale)}
+              >
+                <option value="zh-Hant">{t("locale.zhHant")}</option>
+                <option value="zh-Hans">{t("locale.zhHans")}</option>
+                <option value="en">{t("locale.en")}</option>
+              </select>
+            </div>
+            <div className="v2-field">
+              <label>{t("editor.uiVersion")}</label>
+              <div className="v2-uiversion">
+                <span className="v2-chip">{t("editor.uiBetaName")}</span>
+              </div>
+              <p className="v2-hint">{t("editor.uiVersionNote")}</p>
+              <button type="button" className="v2-btn" onClick={() => switchUiVersion("classic")}>
+                {t("editor.uiClassic")}
+              </button>
+            </div>
+            <ProjectFields ed={ed} />
+            <div className="v2-field">
+              <label>{t("editor.roster")}</label>
+              <p className="v2-hint">{t("editor.rosterPageHint")}</p>
+              <button type="button" className="v2-btn" onClick={() => setPage("roster")}>
+                {t("editor.roster")}
+              </button>
+            </div>
+            <div className="v2-field">
+              <label>{t("editor.screenButtons")}</label>
+              <p className="v2-hint">{t("editor.screenButtonsHint")}</p>
+              <button type="button" className="v2-btn" onClick={() => setPage("buttons")}>
+                {t("editor.screenButtons")}
+              </button>
+            </div>
+            <div className="v2-field">
+              <label>{t("editor.overview")}</label>
+              <p className="v2-hint">{t("editor.overviewTitle")}</p>
+              <button type="button" className="v2-btn" onClick={ed.openOverview}>
+                {t("editor.overview")}
+              </button>
+            </div>
+            <div className="v2-field">
+              <label>{t("editor.vars")}</label>
+              <p className="v2-hint">{t("editor.varsTitle")}</p>
+              <button type="button" className="v2-btn" onClick={ed.openVars}>
+                {t("editor.vars")}
+              </button>
+            </div>
+          </>
+        ) : (
+          page === "roster" ? <RosterEditor ed={ed} /> : <ScreenButtonsFields ed={ed} />
+        )}
       </div>
       <div className="v2-modal-foot">
-        <button type="button" className="v2-btn v2-btn-primary" onClick={ed.closeSettings}>
+        {page !== "main" ? (
+          <button type="button" className="v2-btn" onClick={() => setPage("main")}>
+            {t("editor.backToSettings")}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="v2-btn v2-btn-primary"
+          onClick={() => {
+            setPage("main");
+            ed.closeSettings();
+          }}
+        >
           {t("common.ok")}
         </button>
       </div>

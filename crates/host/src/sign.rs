@@ -99,6 +99,12 @@ impl SignConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignOutcome {
+    Skipped,
+    Signed,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SignError {
     #[error("{0}")]
@@ -150,14 +156,12 @@ fn find_windows_kit_signtool() -> Option<PathBuf> {
     best
 }
 
-pub fn sign_exe(exe: &Path, cfg: &SignConfig) -> Result<(), SignError> {
-    let SignConfig::Off = cfg else {
-        return sign_exe_configured(exe, cfg);
-    };
-    Err(SignError::Msg(
-        "player.exe not signed (set GALENG_SIGN_PFX, GALENG_SIGN_THUMBPRINT, or GALENG_SIGN_SUBJECT)"
-            .into(),
-    ))
+pub fn sign_exe(exe: &Path, cfg: &SignConfig) -> Result<SignOutcome, SignError> {
+    if matches!(cfg, SignConfig::Off) {
+        return Ok(SignOutcome::Skipped);
+    }
+    sign_exe_configured(exe, cfg)?;
+    Ok(SignOutcome::Signed)
 }
 
 fn sign_exe_configured(exe: &Path, cfg: &SignConfig) -> Result<(), SignError> {
@@ -242,6 +246,19 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn off_skips_without_error() {
+        let tmp = std::env::temp_dir().join(format!(
+            "galeng-sign-skip-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&tmp, b"exe").unwrap();
+        let outcome = sign_exe(&tmp, &SignConfig::Off).unwrap();
+        assert_eq!(outcome, SignOutcome::Skipped);
+        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]

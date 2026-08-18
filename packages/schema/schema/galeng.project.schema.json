@@ -19,6 +19,9 @@
     "font": { "$ref": "#/$defs/assetPath" },
     "msgBox": { "$ref": "#/$defs/assetPath" },
     "icon": { "$ref": "#/$defs/assetPath" },
+    "hideGameTitle": { "type": "boolean" },
+    "titleButtons": { "$ref": "#/$defs/titleButtons" },
+    "pauseButtons": { "$ref": "#/$defs/pauseButtons" },
     "uiLanguages": {
       "type": "array",
       "minItems": 1,
@@ -74,6 +77,47 @@
       "properties": {
         "id": { "$ref": "#/$defs/nonEmptyString" },
         "asset": { "$ref": "#/$defs/assetPath" }
+      }
+    },
+    "titleButtons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "newGame": { "$ref": "#/$defs/titleButton" },
+        "continue": { "$ref": "#/$defs/titleButton" },
+        "load": { "$ref": "#/$defs/titleButton" },
+        "gallery": { "$ref": "#/$defs/titleButton" },
+        "music": { "$ref": "#/$defs/titleButton" },
+        "settings": { "$ref": "#/$defs/titleButton" },
+        "quit": { "$ref": "#/$defs/titleButton" }
+      }
+    },
+    "pauseButtons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "continue": { "$ref": "#/$defs/titleButton" },
+        "quickSave": { "$ref": "#/$defs/titleButton" },
+        "quickLoad": { "$ref": "#/$defs/titleButton" },
+        "autoLoad": { "$ref": "#/$defs/titleButton" },
+        "save": { "$ref": "#/$defs/titleButton" },
+        "load": { "$ref": "#/$defs/titleButton" },
+        "settings": { "$ref": "#/$defs/titleButton" },
+        "title": { "$ref": "#/$defs/titleButton" },
+        "quit": { "$ref": "#/$defs/titleButton" }
+      }
+    },
+    "titleButton": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "image": { "$ref": "#/$defs/assetPath" },
+        "hover": { "$ref": "#/$defs/assetPath" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
       }
     }
   }

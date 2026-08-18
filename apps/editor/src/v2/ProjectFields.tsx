@@ -1,11 +1,61 @@
-import { addMusicItem, setOptionalPath, setSkipTitle } from "../project";
+import { useState } from "react";
+import {
+  addMusicItem,
+  setHideGameTitle,
+  setOptionalPath,
+  setPauseButton,
+  setSkipTitle,
+  setTitleButton,
+} from "../project";
 import { AssetField } from "../AssetField";
 import { assetLists } from "../assets";
-import { RosterPanel } from "../RosterUi";
-import type { GalleryItem } from "../types";
+import type { GalleryItem, PauseButtonKey, TitleButton, TitleButtonKey } from "../types";
+import { PAUSE_BUTTON_KEYS, TITLE_BUTTON_KEYS } from "../types";
 import { Field, Section, Switch } from "./fields";
 import { IconPlus, IconTrash } from "./icons";
+import { PauseLayout, TitleLayout } from "./TitleLayout";
 import type { Editor } from "./useEditorState";
+
+const PAUSE_BTN_NAME: Record<PauseButtonKey, string> = {
+  continue: "editor.pauseBtnContinue",
+  quickSave: "editor.pauseBtnQuickSave",
+  quickLoad: "editor.pauseBtnQuickLoad",
+  autoLoad: "editor.pauseBtnAutoLoad",
+  save: "editor.pauseBtnSave",
+  load: "editor.pauseBtnLoad",
+  settings: "editor.pauseBtnSettings",
+  title: "editor.pauseBtnTitle",
+  quit: "editor.pauseBtnQuit",
+};
+
+const TITLE_BTN_NAME: Record<TitleButtonKey, string> = {
+  newGame: "editor.titleBtnNewGame",
+  continue: "editor.titleBtnContinue",
+  load: "editor.titleBtnLoad",
+  gallery: "editor.titleBtnGallery",
+  music: "editor.titleBtnMusic",
+  settings: "editor.titleBtnSettings",
+  quit: "editor.titleBtnQuit",
+};
+
+function parseCoord(raw: string): number | undefined {
+  const text = raw.trim();
+  if (!text) {
+    return undefined;
+  }
+  if (!/^-?\d+$/.test(text)) {
+    return undefined;
+  }
+  return Number(text);
+}
+
+function parseSize(raw: string): number | undefined {
+  const n = parseCoord(raw);
+  if (n === undefined || n < 1) {
+    return undefined;
+  }
+  return n;
+}
 
 function GalleryList({
   ed,
@@ -101,6 +151,11 @@ export function ProjectFields({ ed }: { ed: Editor }) {
           label={t("editor.skipTitle")}
           onChange={(on) => ed.patchProject(setSkipTitle(project, on))}
         />
+        <Switch
+          checked={project.hideGameTitle ?? false}
+          label={t("editor.hideGameTitle")}
+          onChange={(on) => ed.patchProject(setHideGameTitle(project, on))}
+        />
         <Field label={t("editor.titleBgm")}>
           <AssetField
             value={project.titleBgm ?? ""}
@@ -176,10 +231,6 @@ export function ProjectFields({ ed }: { ed: Editor }) {
         </Field>
       </Section>
 
-      <Section title={t("editor.roster")}>
-        <RosterPanel project={project} onChange={ed.patchProject} t={t} />
-      </Section>
-
       <Section title={t("editor.cgGallery")}>
         <GalleryList
           ed={ed}
@@ -218,6 +269,209 @@ export function ProjectFields({ ed }: { ed: Editor }) {
           onDel={(i) =>
             ed.patchProject({ ...project, musicGallery: music.filter((_, j) => j !== i) })
           }
+        />
+      </Section>
+    </>
+  );
+}
+
+function ChromeButtonList<K extends string>({
+  ed,
+  keys,
+  names,
+  getBtn,
+  onPatch,
+  selected,
+  onSelect,
+}: {
+  ed: Editor;
+  keys: readonly K[];
+  names: Record<K, string>;
+  getBtn: (key: K) => TitleButton;
+  onPatch: (key: K, patch: TitleButton) => void;
+  selected: K;
+  onSelect: (key: K) => void;
+}) {
+  const { t, project } = ed;
+  const lists = assetLists(ed.assets);
+  if (!project) {
+    return null;
+  }
+  const ui = lists.ui.length > 0 ? lists.ui : lists.images;
+  return (
+    <>
+      {keys.map((key) => {
+        const btn = getBtn(key);
+        return (
+          <div
+            key={key}
+            className={`v2-card v2-gallery-row${selected === key ? " is-title-sel" : ""}`}
+            onClick={() => onSelect(key)}
+          >
+            <Field label={t(names[key])}>
+              <input
+                type="text"
+                value={btn.label ?? ""}
+                placeholder={t(names[key])}
+                onChange={(e) => onPatch(key, { label: e.target.value })}
+              />
+            </Field>
+            <Field label={t("editor.titleBtnImage")}>
+              <div className="v2-pack-row">
+                <AssetField
+                  value={btn.image ?? ""}
+                  options={ui}
+                  t={t}
+                  placeholder="ui/btn"
+                  onChange={(value) => onPatch(key, { image: value || undefined })}
+                />
+                <button
+                  type="button"
+                  className="v2-btn"
+                  onClick={() => {
+                    void ed.browseAssetFile().then((logical) => {
+                      if (logical) {
+                        onPatch(key, { image: logical });
+                      }
+                    });
+                  }}
+                >
+                  {t("editor.assetBrowse")}
+                </button>
+              </div>
+            </Field>
+            <Field label={t("editor.titleBtnHover")}>
+              <div className="v2-pack-row">
+                <AssetField
+                  value={btn.hover ?? ""}
+                  options={ui}
+                  t={t}
+                  placeholder="ui/btn_h"
+                  onChange={(value) => onPatch(key, { hover: value || undefined })}
+                />
+                <button
+                  type="button"
+                  className="v2-btn"
+                  onClick={() => {
+                    void ed.browseAssetFile().then((logical) => {
+                      if (logical) {
+                        onPatch(key, { hover: logical });
+                      }
+                    });
+                  }}
+                >
+                  {t("editor.assetBrowse")}
+                </button>
+              </div>
+            </Field>
+            <div className="v2-field-row">
+              <Field label={t("editor.titleBtnX")}>
+                <input
+                  type="text"
+                  value={btn.x ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      onPatch(key, { x: undefined });
+                      return;
+                    }
+                    const n = parseCoord(raw);
+                    if (n !== undefined) {
+                      onPatch(key, { x: n });
+                    }
+                  }}
+                />
+              </Field>
+              <Field label={t("editor.titleBtnY")}>
+                <input
+                  type="text"
+                  value={btn.y ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      onPatch(key, { y: undefined });
+                      return;
+                    }
+                    const n = parseCoord(raw);
+                    if (n !== undefined) {
+                      onPatch(key, { y: n });
+                    }
+                  }}
+                />
+              </Field>
+              <Field label={t("editor.titleBtnW")}>
+                <input
+                  type="text"
+                  value={btn.w ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      onPatch(key, { w: undefined });
+                      return;
+                    }
+                    const n = parseSize(raw);
+                    if (n !== undefined) {
+                      onPatch(key, { w: n });
+                    }
+                  }}
+                />
+              </Field>
+              <Field label={t("editor.titleBtnH")}>
+                <input
+                  type="text"
+                  value={btn.h ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      onPatch(key, { h: undefined });
+                      return;
+                    }
+                    const n = parseSize(raw);
+                    if (n !== undefined) {
+                      onPatch(key, { h: n });
+                    }
+                  }}
+                />
+              </Field>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function ScreenButtonsFields({ ed }: { ed: Editor }) {
+  const { t, project } = ed;
+  const [titleSel, setTitleSel] = useState<TitleButtonKey>("newGame");
+  const [pauseSel, setPauseSel] = useState<PauseButtonKey>("continue");
+  if (!project) {
+    return null;
+  }
+  return (
+    <>
+      <Section title={t("editor.titleButtons")}>
+        <TitleLayout ed={ed} selected={titleSel} onSelect={setTitleSel} />
+        <ChromeButtonList
+          ed={ed}
+          keys={TITLE_BUTTON_KEYS}
+          names={TITLE_BTN_NAME}
+          getBtn={(key) => project.titleButtons?.[key] ?? {}}
+          onPatch={(key, patch) => ed.patchProject(setTitleButton(project, key, patch))}
+          selected={titleSel}
+          onSelect={setTitleSel}
+        />
+      </Section>
+      <Section title={t("editor.pauseButtons")}>
+        <PauseLayout ed={ed} selected={pauseSel} onSelect={setPauseSel} />
+        <ChromeButtonList
+          ed={ed}
+          keys={PAUSE_BUTTON_KEYS}
+          names={PAUSE_BTN_NAME}
+          getBtn={(key) => project.pauseButtons?.[key] ?? {}}
+          onPatch={(key, patch) => ed.patchProject(setPauseButton(project, key, patch))}
+          selected={pauseSel}
+          onSelect={setPauseSel}
         />
       </Section>
     </>

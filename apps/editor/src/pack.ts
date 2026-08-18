@@ -3,6 +3,7 @@ export type PackResult = {
   exe?: string;
   dll?: string;
   warnings?: string[];
+  signed?: boolean;
 };
 
 export function packWarningsOf(result: PackResult): string[] {
@@ -11,10 +12,14 @@ export function packWarningsOf(result: PackResult): string[] {
 
 export function formatPackNote(result: PackResult, t: (key: string) => string): string {
   const paths = result.exe ? `${result.pak} + ${result.exe}` : result.pak;
-  const head = `${t("editor.packWrote")}: ${paths}`;
-  const warnings = packWarningsOf(result);
-  if (warnings.length === 0) {
-    return head;
+  const lines = [`${t("editor.packWrote")}: ${paths}`];
+  if (result.signed) {
+    lines.push(t("editor.packSigned"));
   }
-  return `${head}\n${t("editor.packWarnings")} (${warnings.length}):\n${warnings.join("\n")}`;
+  const warnings = packWarningsOf(result);
+  if (warnings.length > 0) {
+    lines.push(`${t("editor.packWarnings")} (${warnings.length}):`);
+    lines.push(...warnings);
+  }
+  return lines.join("\n");
 }

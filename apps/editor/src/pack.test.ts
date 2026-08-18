@@ -4,6 +4,7 @@ import { formatPackNote, packWarningsOf, type PackResult } from "./pack";
 const t = (key: string) => {
   if (key === "editor.packWrote") return "Exported game";
   if (key === "editor.packWarnings") return "Warnings";
+  if (key === "editor.packSigned") return "player.exe signed";
   return key;
 };
 
@@ -11,6 +12,18 @@ describe("formatPackNote", () => {
   it("lists the pak path when there are no warnings", () => {
     const result: PackResult = { pak: "export/game/game.pak" };
     expect(formatPackNote(result, t)).toBe("Exported game: export/game/game.pak");
+    expect(packWarningsOf(result)).toEqual([]);
+  });
+
+  it("notes a successful signature without treating it as a warning", () => {
+    const result: PackResult = {
+      pak: "export/game/game.pak",
+      exe: "export/game/player.exe",
+      signed: true,
+    };
+    expect(formatPackNote(result, t)).toBe(
+      "Exported game: export/game/game.pak + export/game/player.exe\nplayer.exe signed",
+    );
     expect(packWarningsOf(result)).toEqual([]);
   });
 

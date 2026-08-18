@@ -1,3 +1,5 @@
+use galeng_schema::{TitleButton, TitleButtons};
+
 pub const TITLE_COUNT: usize = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,14 +50,71 @@ pub fn title_labels(locale: &str) -> [&'static str; TITLE_COUNT] {
     }
 }
 
-pub fn title_rect(index: usize) -> (i32, i32, i32, i32) {
+pub fn default_title_rect(index: usize) -> (i32, i32, i32, i32) {
     let y = 400 + (index as i32) * 68;
     (660, y, 600, 56)
 }
 
-pub fn hit_title(lx: i32, ly: i32) -> Option<usize> {
+pub fn title_spec(buttons: Option<&TitleButtons>, index: usize) -> Option<&TitleButton> {
+    buttons.and_then(|set| set.get(index))
+}
+
+pub fn title_caption(locale: &str, spec: Option<&TitleButton>, index: usize) -> String {
+    match spec.and_then(|btn| btn.label.as_ref()) {
+        Some(label) => label.clone(),
+        None => title_labels(locale)[index].to_string(),
+    }
+}
+
+pub fn chrome_rect(
+    default: (i32, i32, i32, i32),
+    spec: Option<&TitleButton>,
+    image_wh: Option<(u32, u32)>,
+) -> (i32, i32, i32, i32) {
+    let (dx, dy, dw, dh) = default;
+    let x = spec.and_then(|btn| btn.x).unwrap_or(dx);
+    let y = spec.and_then(|btn| btn.y).unwrap_or(dy);
+    let w = spec
+        .and_then(|btn| btn.w)
+        .or_else(|| image_wh.map(|(width, _)| width as i32))
+        .unwrap_or(dw);
+    let h = spec
+        .and_then(|btn| btn.h)
+        .or_else(|| image_wh.map(|(_, height)| height as i32))
+        .unwrap_or(dh);
+    (x, y, w, h)
+}
+
+pub fn title_rect(
+    index: usize,
+    spec: Option<&TitleButton>,
+    image_wh: Option<(u32, u32)>,
+) -> (i32, i32, i32, i32) {
+    chrome_rect(default_title_rect(index), spec, image_wh)
+}
+
+pub fn image_sizes(
+    buttons: Option<&TitleButtons>,
+    mut size_of: impl FnMut(&str) -> Option<(u32, u32)>,
+) -> [Option<(u32, u32)>; TITLE_COUNT] {
+    let mut out = [None; TITLE_COUNT];
     for i in 0..TITLE_COUNT {
-        let (x, y, w, h) = title_rect(i);
+        if let Some(path) = title_spec(buttons, i).and_then(|btn| btn.image.as_deref()) {
+            out[i] = size_of(path);
+        }
+    }
+    out
+}
+
+pub fn hit_title(
+    lx: i32,
+    ly: i32,
+    buttons: Option<&TitleButtons>,
+    sizes: &[Option<(u32, u32)>; TITLE_COUNT],
+) -> Option<usize> {
+    for i in 0..TITLE_COUNT {
+        let spec = title_spec(buttons, i);
+        let (x, y, w, h) = title_rect(i, spec, sizes[i]);
         if lx >= x && lx < x + w && ly >= y && ly < y + h {
             return Some(i);
         }
@@ -63,9 +122,19 @@ pub fn hit_title(lx: i32, ly: i32) -> Option<usize> {
     None
 }
 
+pub fn title_face<'a>(spec: Option<&'a TitleButton>, hot: bool) -> Option<&'a str> {
+    let image = spec.and_then(|btn| btn.image.as_deref())?;
+    if hot {
+        spec.and_then(|btn| btn.hover.as_deref()).or(Some(image))
+    } else {
+        Some(image)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use galeng_schema::TitleButtons;
 
     #[test]
     fn cold_start_shows_unless_skipped_or_jumped() {
@@ -85,9 +154,55 @@ mod tests {
 
     #[test]
     fn hit_new_game() {
-        let (x, y, w, h) = title_rect(0);
-        assert_eq!(hit_title(x + 1, y + 1), Some(0));
-        assert_eq!(hit_title(x + w / 2, y + h + 10), None);
+        let empty = [None; TITLE_COUNT];
+        let (x, y, w, h) = title_rect(0, None, None);
+        assert_eq!(hit_title(x + 1, y + 1, None, &empty), Some(0));
+        assert_eq!(hit_title(x + w / 2, y + h + 10, None, &empty), None);
+    }
+
+    #[test]
+    fn override_moves_hit() {
+        let spec = TitleButton {
+            x: Some(80),
+            y: Some(720),
+            w: Some(200),
+            h: Some(40),
+            ..TitleButton::default()
+        };
+        let buttons = TitleButtons {
+            new_game: Some(spec.clone()),
+            ..TitleButtons::default()
+        };
+        let sizes = [None; TITLE_COUNT];
+        assert_eq!(title_rect(0, Some(&spec), None), (80, 720, 200, 40));
+        assert_eq!(hit_title(90, 730, Some(&buttons), &sizes), Some(0));
+        let (dx, dy, _, _) = default_title_rect(0);
+        assert_eq!(hit_title(dx + 1, dy + 1, Some(&buttons), &sizes), None);
+        assert_eq!(title_rect(1, None, None), default_title_rect(1));
+    }
+
+    #[test]
+    fn image_size_fills_missing_wh() {
+        let spec = TitleButton {
+            image: Some("ui/title/start".into()),
+            label: Some(String::new()),
+            ..TitleButton::default()
+        };
+        assert_eq!(title_rect(0, Some(&spec), Some((320, 64))), (660, 400, 320, 64));
+        assert_eq!(title_caption("zh-Hant", Some(&spec), 0), "");
+        assert_eq!(title_face(Some(&spec), false), Some("ui/title/start"));
+        assert_eq!(title_face(Some(&spec), true), Some("ui/title/start"));
+    }
+
+    #[test]
+    fn hover_image_when_hot() {
+        let spec = TitleButton {
+            image: Some("ui/title/start".into()),
+            hover: Some("ui/title/start_h".into()),
+            ..TitleButton::default()
+        };
+        assert_eq!(title_face(Some(&spec), true), Some("ui/title/start_h"));
+        assert_eq!(title_caption("en", Some(&spec), 0), "New game");
     }
 
     #[test]

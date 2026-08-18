@@ -16,11 +16,13 @@ use crate::draw::{
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
-    digit_to_slot_index, hit_menu, hit_slot, index_to_slot, wrap_index, MenuAction, ACTIONS,
-    MENU_COUNT, SLOT_COUNT,
+    digit_to_slot_index, hit_menu, hit_slot, index_to_slot, menu_sizes, wrap_index, MenuAction,
+    ACTIONS, MENU_COUNT, SLOT_COUNT,
 };
 use crate::gallery;
-use crate::title::{game_window_title, hit_title, TitleAction, TITLE_ACTIONS, TITLE_COUNT};
+use crate::title::{
+    game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
+};
 use crate::fb::{mix_rgba, Framebuffer, HEIGHT, WIDTH};
 use crate::font::GameFont;
 use crate::save::{
@@ -252,6 +254,12 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         }
         let (ww, wh) = canvas.output_size()?;
         let mouse = events.mouse_state();
+        let title_sizes = image_sizes(runtime.project.title_buttons.as_ref(), |logical| {
+            assets.get(logical).map(|pic| (pic.width, pic.height))
+        });
+        let pause_sizes = menu_sizes(runtime.project.pause_buttons.as_ref(), |logical| {
+            assets.get(logical).map(|pic| (pic.width, pic.height))
+        });
         let mut hover_title = None;
         let mut hover_menu = None;
         let mut hover_choice = None;
@@ -259,9 +267,19 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         if let Some((lx, ly)) = window_to_logical(mouse.x(), mouse.y(), ww, wh) {
             if title_open && !settings_open && !gallery_open && !music_open && slot_pick.is_none()
             {
-                hover_title = hit_title(lx, ly);
+                hover_title = hit_title(
+                    lx,
+                    ly,
+                    runtime.project.title_buttons.as_ref(),
+                    &title_sizes,
+                );
             } else if menu_open && slot_pick.is_none() && !settings_open {
-                hover_menu = hit_menu(lx, ly);
+                hover_menu = hit_menu(
+                    lx,
+                    ly,
+                    runtime.project.pause_buttons.as_ref(),
+                    &pause_sizes,
+                );
             } else if !overlay && view.phase == Phase::Choices {
                 hover_choice = hit_choice(lx, ly, view.choices.len());
             }
@@ -552,7 +570,17 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 settings_sel,
             );
         } else if menu_open {
-            draw_menu(&mut fb, &font, &ui_locale, menu_sel, hover_menu, pressed_menu);
+            draw_menu(
+                &mut fb,
+                &font,
+                &ui_locale,
+                menu_sel,
+                hover_menu,
+                pressed_menu,
+                &mut assets,
+                runtime.project.pause_buttons.as_ref(),
+                &pause_sizes,
+            );
         } else if gallery_open || music_open {
             // list / full-view already drawn above; do not redraw the title over it
         } else if title_open {
@@ -566,6 +594,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 pressed_title,
                 &mut assets,
                 runtime.project.title_bg.as_deref(),
+                runtime.project.hide_game_title,
+                runtime.project.title_buttons.as_ref(),
+                &title_sizes,
             );
         }
         mixer.pause_movie(overlay);
@@ -1300,7 +1331,12 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         continue;
                     }
                     if menu_open {
-                        if let Some(i) = hit_menu(lx, ly) {
+                        if let Some(i) = hit_menu(
+                            lx,
+                            ly,
+                            runtime.project.pause_buttons.as_ref(),
+                            &pause_sizes,
+                        ) {
                             pressed_menu = Some(i);
                             menu_sel = i;
                             match ACTIONS[i] {
@@ -1402,7 +1438,12 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         continue;
                     }
                     if title_open {
-                        if let Some(i) = hit_title(lx, ly) {
+                        if let Some(i) = hit_title(
+                            lx,
+                            ly,
+                            runtime.project.title_buttons.as_ref(),
+                            &title_sizes,
+                        ) {
                             title_sel = i;
                             pressed_title = Some(i);
                             match TITLE_ACTIONS[i] {

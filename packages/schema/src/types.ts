@@ -46,6 +46,40 @@ export interface GalleryItem {
   asset: AssetPath;
 }
 
+export type TitleButtonKey =
+  | "newGame"
+  | "continue"
+  | "load"
+  | "gallery"
+  | "music"
+  | "settings"
+  | "quit";
+
+export interface TitleButton {
+  label?: string;
+  image?: AssetPath;
+  hover?: AssetPath;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
+export type TitleButtons = Partial<Record<TitleButtonKey, TitleButton>>;
+
+export type PauseButtonKey =
+  | "continue"
+  | "quickSave"
+  | "quickLoad"
+  | "autoLoad"
+  | "save"
+  | "load"
+  | "settings"
+  | "title"
+  | "quit";
+
+export type PauseButtons = Partial<Record<PauseButtonKey, TitleButton>>;
+
 export interface Project {
   id: string;
   title: string;
@@ -63,6 +97,10 @@ export interface Project {
   msgBox?: AssetPath;
   /** Exe / window icon. File is assets/<path>.ico or .png. */
   icon?: AssetPath;
+  /** Hide the project name drawn above the title buttons. */
+  hideGameTitle?: boolean;
+  titleButtons?: TitleButtons;
+  pauseButtons?: PauseButtons;
   uiLanguages?: UiLanguage[];
   characters?: Character[];
   cg?: GalleryItem[];

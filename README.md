@@ -99,6 +99,39 @@ Work in your own project folder, not `examples/prologue`. Start the editor with:
 editor.bat start D:\MyGame
 ```
 
+### Export game and code signing
+
+**Export game** writes `player.exe`, `SDL2.dll`, and `game.pak`. Double-click the exe to play. Default output is the project `export/game/` folder; the editor can pick another folder.
+
+Signing is optional. With no certificate the export still succeeds. The editor does not treat “unsigned” as a warning. After a successful Authenticode sign it notes that `player.exe` is signed.
+
+Set the variables **before** starting the host (`editor.bat` / `Galeng.bat`). Needs Windows SDK `signtool`, or `GALENG_SIGNTOOL` pointing at it. Icon resources are written first, then the exe is signed. Official `SDL2.dll` is left as Microsoft shipped it.
+
+```
+GALENG_SIGN_PFX=D:\certs\code.pfx
+GALENG_SIGN_PASSWORD=...
+```
+
+Or pick a certificate already in the Windows store:
+
+```
+GALENG_SIGN_THUMBPRINT=...
+```
+
+```
+GALENG_SIGN_SUBJECT=Your Company
+```
+
+Optional:
+
+```
+GALENG_SIGN_TIMESTAMP=http://timestamp.digicert.com
+GALENG_SIGNTOOL=C:\Path\to\signtool.exe
+GALENG_SIGN_REQUIRED=1
+```
+
+`GALENG_SIGN_REQUIRED=1` is the only way an unsigned or failed sign fails the export. Do not commit a PFX or password.
+
 ### Play the prologue
 
 ```powershell
@@ -178,6 +211,39 @@ editor.bat restart
 ```
 editor.bat start D:\我的遊戲
 ```
+
+### 匯出遊戲與代碼簽章
+
+**匯出遊戲**寫出 `player.exe`、`SDL2.dll`、`game.pak`。雙擊 exe 即可玩。預設寫到專案 `export/game/`，編輯器也可另選資料夾。
+
+簽章是可選的。沒憑證仍出包。編輯器不會把「未簽章」當成警告。簽成功才會註明 `player.exe` 已簽章。
+
+環境變數要在**開 host 之前**設（`editor.bat`／`Galeng.bat`）。需要 Windows SDK 的 `signtool`，或用 `GALENG_SIGNTOOL` 指定路徑。順序：先寫 ICO，再簽 exe。不簽官方 `SDL2.dll`。
+
+```
+GALENG_SIGN_PFX=D:\certs\code.pfx
+GALENG_SIGN_PASSWORD=...
+```
+
+或用 Windows 憑證存放區裡已有的憑證：
+
+```
+GALENG_SIGN_THUMBPRINT=...
+```
+
+```
+GALENG_SIGN_SUBJECT=Your Company
+```
+
+可選：
+
+```
+GALENG_SIGN_TIMESTAMP=http://timestamp.digicert.com
+GALENG_SIGNTOOL=C:\Path\to\signtool.exe
+GALENG_SIGN_REQUIRED=1
+```
+
+只有設了 `GALENG_SIGN_REQUIRED=1`，未簽或簽失敗才會讓出包失敗。不要把 PFX 或密碼提交進 git。
 
 ### 玩範例
 

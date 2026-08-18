@@ -348,6 +348,20 @@ export function useEditorState() {
     }
   }, [applyAssetRoot, fail]);
 
+  const browseAssetFile = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await postJson<{ logical: string | null }>("/api/pick-file", {});
+      if (res.logical) {
+        setAssets(await getJson<AssetMeta[]>("/api/assets"));
+        return res.logical;
+      }
+      return null;
+    } catch (err) {
+      fail(err);
+      return null;
+    }
+  }, [fail]);
+
   const browsePackOut = useCallback(async () => {
     try {
       const res = await postJson<{ path: string | null }>("/api/pick-dir", {});
@@ -1029,6 +1043,7 @@ export function useEditorState() {
     assets,
     assetRoot,
     browseAssetRoot,
+    browseAssetFile,
     resetAssetRoot,
     sceneId,
     scene,

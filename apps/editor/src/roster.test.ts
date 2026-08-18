@@ -3,6 +3,8 @@ import {
   addCharacter,
   affectionDeltaOf,
   affectionKey,
+  displayNameOf,
+  firstFaceLogical,
   patchCharacter,
   removeCharacter,
   setAffectionDelta,
@@ -29,6 +31,18 @@ describe("speakerOptions", () => {
   it("lists ids and keeps a stray current value", () => {
     expect(speakerOptions(base.characters ?? [], "sora")).toEqual(["sora"]);
     expect(speakerOptions(base.characters ?? [], "narrator")).toEqual(["narrator", "sora"]);
+  });
+});
+
+describe("displayNameOf / firstFaceLogical", () => {
+  it("falls back through display locales then id", () => {
+    expect(displayNameOf({ id: "sora", display: { "zh-Hant": "そら" } }, "en")).toBe("そら");
+    expect(displayNameOf({ id: "sora" }, "zh-Hant")).toBe("sora");
+  });
+
+  it("builds the first face path", () => {
+    expect(firstFaceLogical("sora", ["smile", "sad"])).toBe("char/sora/smile");
+    expect(firstFaceLogical("sora", [])).toBeNull();
   });
 });
 

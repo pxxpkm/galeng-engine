@@ -153,6 +153,55 @@ describe("valid examples and fixtures", () => {
     }
   });
 
+  it("accepts optional titleButtons and hideGameTitle", () => {
+    const result = validateProject({
+      id: "x",
+      title: "x",
+      schemaVersion: 1,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "a",
+      locale: "en",
+      hideGameTitle: true,
+      titleButtons: {
+        newGame: { label: "", image: "ui/title/start", x: 80, y: 720 },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.hideGameTitle).toBe(true);
+      expect(result.value.titleButtons?.newGame?.image).toBe("ui/title/start");
+    }
+  });
+
+  it("accepts optional pauseButtons", () => {
+    const result = validateProject({
+      id: "x",
+      title: "x",
+      schemaVersion: 1,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "a",
+      locale: "en",
+      pauseButtons: { continue: { label: "", image: "ui/pause/cont" } },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pauseButtons?.continue?.image).toBe("ui/pause/cont");
+    }
+  });
+
+  it("rejects unknown titleButtons keys", () => {
+    const result = validateProject({
+      id: "x",
+      title: "x",
+      schemaVersion: 1,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "a",
+      locale: "en",
+      titleButtons: { extra: { label: "x" } },
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("accepts optional project font", () => {
     const result = validateProject({
       id: "x",

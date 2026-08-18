@@ -75,9 +75,52 @@ pub fn slot_title(locale: &str, saving: bool) -> &'static str {
     }
 }
 
-pub fn menu_rect(index: usize) -> (i32, i32, i32, i32) {
+pub fn default_menu_rect(index: usize) -> (i32, i32, i32, i32) {
     let y = 200 + (index as i32) * 60;
     (660, y, 600, 52)
+}
+
+pub fn menu_rect(index: usize) -> (i32, i32, i32, i32) {
+    default_menu_rect(index)
+}
+
+pub fn menu_spec(
+    buttons: Option<&galeng_schema::PauseButtons>,
+    index: usize,
+) -> Option<&galeng_schema::TitleButton> {
+    buttons.and_then(|set| set.get(index))
+}
+
+pub fn menu_caption(
+    locale: &str,
+    spec: Option<&galeng_schema::TitleButton>,
+    index: usize,
+) -> String {
+    match spec.and_then(|btn| btn.label.as_ref()) {
+        Some(label) => label.clone(),
+        None => labels(locale)[index].to_string(),
+    }
+}
+
+pub fn menu_box(
+    index: usize,
+    spec: Option<&galeng_schema::TitleButton>,
+    image_wh: Option<(u32, u32)>,
+) -> (i32, i32, i32, i32) {
+    crate::title::chrome_rect(default_menu_rect(index), spec, image_wh)
+}
+
+pub fn menu_sizes(
+    buttons: Option<&galeng_schema::PauseButtons>,
+    mut size_of: impl FnMut(&str) -> Option<(u32, u32)>,
+) -> [Option<(u32, u32)>; MENU_COUNT] {
+    let mut out = [None; MENU_COUNT];
+    for i in 0..MENU_COUNT {
+        if let Some(path) = menu_spec(buttons, i).and_then(|btn| btn.image.as_deref()) {
+            out[i] = size_of(path);
+        }
+    }
+    out
 }
 
 pub fn slot_rect(index: usize) -> (i32, i32, i32, i32) {
@@ -85,8 +128,20 @@ pub fn slot_rect(index: usize) -> (i32, i32, i32, i32) {
     (560, y, 800, 52)
 }
 
-pub fn hit_menu(lx: i32, ly: i32) -> Option<usize> {
-    hit_list(lx, ly, MENU_COUNT, menu_rect)
+pub fn hit_menu(
+    lx: i32,
+    ly: i32,
+    buttons: Option<&galeng_schema::PauseButtons>,
+    sizes: &[Option<(u32, u32)>; MENU_COUNT],
+) -> Option<usize> {
+    for i in 0..MENU_COUNT {
+        let spec = menu_spec(buttons, i);
+        let (x, y, w, h) = menu_box(i, spec, sizes[i]);
+        if lx >= x && lx < x + w && ly >= y && ly < y + h {
+            return Some(i);
+        }
+    }
+    None
 }
 
 pub fn hit_slot(lx: i32, ly: i32) -> Option<usize> {
@@ -149,8 +204,9 @@ mod tests {
     #[test]
     fn hit_first_item() {
         let (x, y, w, _h) = menu_rect(0);
-        assert_eq!(hit_menu(x + 1, y + 1), Some(0));
-        assert_eq!(hit_menu(x + w / 2, y - 10), None);
+        let empty = [None; MENU_COUNT];
+        assert_eq!(hit_menu(x + 1, y + 1, None, &empty), Some(0));
+        assert_eq!(hit_menu(x + w / 2, y - 10, None, &empty), None);
     }
 
     #[test]

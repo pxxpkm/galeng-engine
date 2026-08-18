@@ -54,6 +54,8 @@ pub struct GameExport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dll: Option<String>,
     pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub signed: bool,
 }
 
 impl ProjectDir {
@@ -271,6 +273,7 @@ impl ProjectDir {
             exe: None,
             dll: None,
             warnings: report.warnings,
+            signed: false,
         };
         if let Some(src) = player {
             if src.is_file() {
@@ -320,11 +323,11 @@ impl ProjectDir {
                 self.root.join(exe)
             };
             let cfg = sign::SignConfig::from_env();
-            if let Err(err) = sign::sign_exe(&exe_path, &cfg) {
-                if cfg.required() {
-                    return Err(HostError::Msg(err.to_string()));
-                }
-                out.warnings.push(err.to_string());
+            match sign::sign_exe(&exe_path, &cfg) {
+                Ok(sign::SignOutcome::Signed) => out.signed = true,
+                Ok(sign::SignOutcome::Skipped) => {}
+                Err(err) if cfg.required() => return Err(HostError::Msg(err.to_string())),
+                Err(err) => out.warnings.push(err.to_string()),
             }
         }
         Ok(out)
@@ -386,6 +389,49 @@ impl ProjectDir {
 
     pub fn resolve_media(&self, logical: &str) -> Result<PathBuf, HostError> {
         self.resolve_with_exts(logical, MEDIA_EXTS)
+    }
+
+    /// Map a file under the asset root to a logical path (no extension).
+    pub fn logical_from_asset_file(&self, picked: &Path) -> Result<String, HostError> {
+        if !picked.is_file() {
+            return Err(HostError::Msg("not a file".into()));
+        }
+        let ext = picked
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default();
+        if !matches!(ext.as_str(), "png" | "webp" | "ico") {
+            return Err(HostError::Msg("pick a PNG (or webp / ico) under the asset root".into()));
+        }
+        let assets = galeng_schema::asset_dir(&self.root)
+            .canonicalize()
+            .map_err(|_| HostError::Msg("asset root missing".into()))?;
+        let file = picked
+            .canonicalize()
+            .map_err(|e| HostError::Msg(e.to_string()))?;
+        if !file.starts_with(&assets) {
+            return Err(HostError::Msg("file is outside the asset root".into()));
+        }
+        let rel = file
+            .strip_prefix(&assets)
+            .map_err(|_| HostError::Msg("file is outside the asset root".into()))?;
+        let logical = rel.with_extension("").to_string_lossy().replace('\\', "/");
+        if logical.is_empty() {
+            return Err(HostError::BadId);
+        }
+        for part in logical.split('/') {
+            if part.is_empty() || part == "." || part == ".." {
+                return Err(HostError::BadId);
+            }
+            if !part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                return Err(HostError::Msg(format!("invalid asset path `{logical}`")));
+            }
+        }
+        Ok(logical)
     }
 
     fn resolve_with_exts(&self, logical: &str, exts: &[&str]) -> Result<PathBuf, HostError> {

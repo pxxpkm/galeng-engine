@@ -189,7 +189,7 @@ export function RosterPanel({
             disabled={!project}
             onClick={() => project && onChange(removeCharacter(project, i))}
           >
-            {t("editor.delChar")}
+            {t("editor.rosterRemove")}
           </button>
         </div>
       ))}

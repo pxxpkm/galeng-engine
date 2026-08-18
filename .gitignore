@@ -41,6 +41,7 @@ ehthumbs.db
 *.obj
 *.lib
 *.dll
+!docs/**
 !third_party/SDL2/lib/**/*.dll
 !third_party/SDL2/lib/**/*.lib
 third_party/*.zip
@@ -56,9 +57,4 @@ galeng.local.json
 
 # Logs
 *.log
-
-# Workshop notes stay in the private repo
-HANDOFF.md
-journal/
-docs/
-Reviews/
+journal/*.tmp

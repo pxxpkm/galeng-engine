@@ -1,4 +1,4 @@
-use galeng_schema::Slot;
+use galeng_schema::{PauseButtons, Slot, TitleButtons};
 
 use crate::assets::{fit_bottom_center, Bank};
 use crate::camera::map_rect;
@@ -11,10 +11,12 @@ use crate::settings::{
 };
 use crate::gallery;
 use crate::music;
-use crate::title::{title_labels, title_rect, TITLE_COUNT};
+use crate::title::{
+    title_caption, title_face, title_rect, title_spec, TITLE_COUNT,
+};
 use crate::menu::{
-    index_to_slot, labels, menu_rect, slot_rect as file_slot_rect, slot_row_label, slot_title,
-    MENU_COUNT, SLOT_COUNT,
+    index_to_slot, menu_box, menu_caption, menu_spec, slot_rect as file_slot_rect, slot_row_label,
+    slot_title, MENU_COUNT, SLOT_COUNT,
 };
 use crate::vm::{Phase, View};
 
@@ -304,6 +306,9 @@ pub fn draw_title(
     pressed: Option<usize>,
     assets: &mut Bank,
     bg: Option<&str>,
+    hide_game_title: bool,
+    buttons: Option<&TitleButtons>,
+    sizes: &[Option<(u32, u32)>; TITLE_COUNT],
 ) {
     fb.fill(Rgba::rgb(8, 8, 16));
     if let Some(logical) = bg {
@@ -321,29 +326,54 @@ pub fn draw_title(
             fb.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, hash_rgb(logical));
         }
     }
-    font.draw_text(
-        fb,
-        200,
-        280,
-        72.0,
-        game_title,
-        Rgba::rgb(255, 230, 160),
-        1720,
-    );
-    let names = title_labels(locale);
-    for i in 0..TITLE_COUNT {
-        let (x, y, w, h) = title_rect(i);
-        draw_button(
+    if !hide_game_title {
+        font.draw_text(
             fb,
-            font,
-            x,
-            y,
-            w,
-            h,
-            names[i],
-            32.0,
-            button_state(i, selected, hover, pressed),
+            200,
+            280,
+            72.0,
+            game_title,
+            Rgba::rgb(255, 230, 160),
+            1720,
         );
+    }
+    for i in 0..TITLE_COUNT {
+        let spec = title_spec(buttons, i);
+        let (x, y, w, h) = title_rect(i, spec, sizes[i]);
+        let caption = title_caption(locale, spec, i);
+        let hot = hover == Some(i) || pressed == Some(i) || (hover.is_none() && selected == i);
+        if let Some(logical) = title_face(spec, hot) {
+            if let Some(pic) = assets.get(logical) {
+                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h);
+            } else {
+                fb.fill_rect(x, y, w, h, hash_rgb(logical));
+            }
+            if !caption.is_empty() {
+                font.draw_text_in_box(
+                    fb,
+                    x,
+                    y,
+                    w,
+                    h,
+                    20,
+                    32.0,
+                    &caption,
+                    Rgba::rgb(255, 255, 255),
+                );
+            }
+        } else {
+            draw_button(
+                fb,
+                font,
+                x,
+                y,
+                w,
+                h,
+                &caption,
+                32.0,
+                button_state(i, selected, hover, pressed),
+            );
+        }
     }
 }
 
@@ -616,6 +646,9 @@ pub fn draw_menu(
     selected: usize,
     hover: Option<usize>,
     pressed: Option<usize>,
+    assets: &mut Bank,
+    buttons: Option<&PauseButtons>,
+    sizes: &[Option<(u32, u32)>; MENU_COUNT],
 ) {
     fb.fill_rect(
         0,
@@ -629,20 +662,43 @@ pub fn draw_menu(
             a: 140,
         },
     );
-    let names = labels(locale);
     for i in 0..MENU_COUNT {
-        let (x, y, w, h) = menu_rect(i);
-        draw_button(
-            fb,
-            font,
-            x,
-            y,
-            w,
-            h,
-            names[i],
-            32.0,
-            button_state(i, selected, hover, pressed),
-        );
+        let spec = menu_spec(buttons, i);
+        let (x, y, w, h) = menu_box(i, spec, sizes[i]);
+        let caption = menu_caption(locale, spec, i);
+        let hot = hover == Some(i) || pressed == Some(i) || (hover.is_none() && selected == i);
+        if let Some(logical) = title_face(spec, hot) {
+            if let Some(pic) = assets.get(logical) {
+                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h);
+            } else {
+                fb.fill_rect(x, y, w, h, hash_rgb(logical));
+            }
+            if !caption.is_empty() {
+                font.draw_text_in_box(
+                    fb,
+                    x,
+                    y,
+                    w,
+                    h,
+                    20,
+                    32.0,
+                    &caption,
+                    Rgba::rgb(255, 255, 255),
+                );
+            }
+        } else {
+            draw_button(
+                fb,
+                font,
+                x,
+                y,
+                w,
+                h,
+                &caption,
+                32.0,
+                button_state(i, selected, hover, pressed),
+            );
+        }
     }
 }
 

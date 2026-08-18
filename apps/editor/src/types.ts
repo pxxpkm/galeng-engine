@@ -11,6 +11,46 @@ export interface GalleryItem {
   asset: string;
 }
 
+export const TITLE_BUTTON_KEYS = [
+  "newGame",
+  "continue",
+  "load",
+  "gallery",
+  "music",
+  "settings",
+  "quit",
+] as const;
+
+export type TitleButtonKey = (typeof TITLE_BUTTON_KEYS)[number];
+
+export interface TitleButton {
+  label?: string;
+  image?: string;
+  hover?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
+export type TitleButtons = Partial<Record<TitleButtonKey, TitleButton>>;
+
+export const PAUSE_BUTTON_KEYS = [
+  "continue",
+  "quickSave",
+  "quickLoad",
+  "autoLoad",
+  "save",
+  "load",
+  "settings",
+  "title",
+  "quit",
+] as const;
+
+export type PauseButtonKey = (typeof PAUSE_BUTTON_KEYS)[number];
+
+export type PauseButtons = Partial<Record<PauseButtonKey, TitleButton>>;
+
 export interface Project {
   id: string;
   title: string;
@@ -25,6 +65,9 @@ export interface Project {
   font?: string;
   msgBox?: string;
   icon?: string;
+  hideGameTitle?: boolean;
+  titleButtons?: TitleButtons;
+  pauseButtons?: PauseButtons;
   uiLanguages?: string[];
   characters?: Character[];
   cg?: GalleryItem[];

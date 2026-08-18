@@ -64,6 +64,22 @@ describe("collectCites", () => {
     expect(collectCites(null, [empty])).toEqual([]);
   });
 
+  it("cites title button images", () => {
+    const cites = collectCites(
+      {
+        ...project,
+        titleButtons: {
+          newGame: { image: "ui/title/start", hover: "ui/title/start_h" },
+        },
+      },
+      [park],
+    );
+    expect(cites.some((site) => site.logical === "ui/title/start" && site.field === "titleButton")).toBe(
+      true,
+    );
+    expect(cites.some((site) => site.logical === "ui/title/start_h")).toBe(true);
+  });
+
   it("cites amb path", () => {
     const rainy: Scene = {
       id: "rain",

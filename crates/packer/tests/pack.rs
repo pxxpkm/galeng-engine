@@ -64,6 +64,39 @@ fn pack_prologue_has_referenced_and_skips_unref() {
 }
 
 #[test]
+fn collect_refs_includes_title_button_images() {
+    let project = galeng_schema::validate_project_str(
+        r#"{
+          "id":"x","title":"x","schemaVersion":1,
+          "resolution":{"width":1920,"height":1080},
+          "startScene":"a","locale":"en",
+          "titleButtons":{
+            "newGame":{"image":"ui/title/start","hover":"ui/title/start_h"}
+          }
+        }"#,
+    )
+    .unwrap();
+    let refs = galeng_packer::collect_refs(&project, &[]);
+    assert!(refs.contains("ui/title/start"), "{refs:?}");
+    assert!(refs.contains("ui/title/start_h"), "{refs:?}");
+}
+
+#[test]
+fn collect_refs_includes_pause_button_images() {
+    let project = galeng_schema::validate_project_str(
+        r#"{
+          "id":"x","title":"x","schemaVersion":1,
+          "resolution":{"width":1920,"height":1080},
+          "startScene":"a","locale":"en",
+          "pauseButtons":{"continue":{"image":"ui/pause/cont"}}
+        }"#,
+    )
+    .unwrap();
+    let refs = galeng_packer::collect_refs(&project, &[]);
+    assert!(refs.contains("ui/pause/cont"), "{refs:?}");
+}
+
+#[test]
 fn pack_reads_back_project_id() {
     let project = temp_project("id");
     let pak_path = std::env::temp_dir().join(format!(

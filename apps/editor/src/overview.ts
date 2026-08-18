@@ -16,6 +16,7 @@ export type CiteField =
   | "font"
   | "msgBox"
   | "icon"
+  | "titleButton"
   | "gallery"
   | "music";
 
@@ -65,6 +66,22 @@ export function collectCites(project: Project | null, scenes: Scene[]): CiteSite
     }
     if (project.icon) {
       pushCite(out, { logical: project.icon, field: "icon" });
+    }
+    for (const btn of Object.values(project.titleButtons ?? {})) {
+      if (btn?.image) {
+        pushCite(out, { logical: btn.image, field: "titleButton" });
+      }
+      if (btn?.hover) {
+        pushCite(out, { logical: btn.hover, field: "titleButton" });
+      }
+    }
+    for (const btn of Object.values(project.pauseButtons ?? {})) {
+      if (btn?.image) {
+        pushCite(out, { logical: btn.image, field: "titleButton" });
+      }
+      if (btn?.hover) {
+        pushCite(out, { logical: btn.hover, field: "titleButton" });
+      }
     }
     for (const item of project.cg ?? []) {
       pushCite(out, { logical: item.asset, field: "gallery" });
