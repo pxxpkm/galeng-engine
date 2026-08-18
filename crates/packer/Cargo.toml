@@ -1,6 +1,6 @@
 [package]
 name = "galeng-packer"
-version = "0.1.1"
+version = "0.1.3"
 edition.workspace = true
 license.workspace = true
 description = "Pack a Galeng project into a zip-compatible game.pak"
