@@ -1,0 +1,12 @@
+export * from "./types";
+export * from "./commandBus";
+export * from "./commands";
+export * from "./matrix";
+export * from "./canvas";
+export * from "./problems";
+export * from "./fixture";
+export { ExploreCanvas } from "./ExploreCanvas";
+export { VerbMatrix } from "./VerbMatrix";
+export { DatabaseStub } from "./DatabaseStub";
+export { ProblemsPanel } from "./ProblemsPanel";
+export { ExploreWorkspace } from "./ExploreWorkspace";
