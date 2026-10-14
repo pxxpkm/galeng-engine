@@ -1,3 +1,4 @@
+import { uniqueId } from "./commands";
 import type { ExploreDoc } from "./types";
 
 export interface DatabaseStubProps {
@@ -38,7 +39,8 @@ export function DatabaseStub({
           type="button"
           data-testid="db-add-character"
           onClick={() => {
-            const id = `char_${doc.project.characters.length + 1}`;
+            const taken = new Set(doc.project.characters.map((c) => c.id));
+            const id = uniqueId("char", taken);
             onAddCharacter(id, id);
           }}
         >
@@ -61,7 +63,8 @@ export function DatabaseStub({
           type="button"
           data-testid="db-add-switch"
           onClick={() => {
-            const id = `sw_${doc.project.switches.length + 1}`;
+            const taken = new Set(doc.project.switches.map((s) => s.id));
+            const id = uniqueId("sw", taken);
             onAddSwitch(id, id);
           }}
         >
@@ -84,7 +87,8 @@ export function DatabaseStub({
           type="button"
           data-testid="db-add-item"
           onClick={() => {
-            const id = `item_${doc.project.items.length + 1}`;
+            const taken = new Set(doc.project.items.map((i) => i.id));
+            const id = uniqueId("item", taken);
             onAddItem(id, id);
           }}
         >

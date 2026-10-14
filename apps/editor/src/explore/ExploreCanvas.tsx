@@ -130,10 +130,18 @@ export function ExploreCanvas({
     if (drag.kind === "draw") {
       if (drag.current.w >= 8 && drag.current.h >= 8) onCreateRect(drag.current);
     } else if (drag.kind === "move" || drag.kind === "resize") {
-      onCommitRect(drag.id, drag.origin);
+      const hs = doc.scene.hotspots.find((h) => h.id === drag.id);
+      const same =
+        hs &&
+        isRect(hs.shape) &&
+        hs.shape.x === drag.origin.x &&
+        hs.shape.y === drag.origin.y &&
+        hs.shape.w === drag.origin.w &&
+        hs.shape.h === drag.origin.h;
+      if (!same) onCommitRect(drag.id, drag.origin);
     }
     setDrag(null);
-  }, [drag, onCommitRect, onCreateRect]);
+  }, [drag, doc.scene.hotspots, onCommitRect, onCreateRect]);
 
   const previewRect = (id: string, shape: Rect): Rect => {
     if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) {

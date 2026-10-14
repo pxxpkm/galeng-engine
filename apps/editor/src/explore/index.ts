@@ -10,3 +10,8 @@ export { VerbMatrix } from "./VerbMatrix";
 export { DatabaseStub } from "./DatabaseStub";
 export { ProblemsPanel } from "./ProblemsPanel";
 export { ExploreWorkspace } from "./ExploreWorkspace";
+
+export * from "./persist";
+export { HierarchyPanel } from "./HierarchyPanel";
+export { CellInspector, HotspotInspector } from "./InspectorPanels";
+export * from "./inspectorModel";

@@ -11,7 +11,7 @@ import {
   type SwitchDef,
 } from "./types";
 
-function uniqueId(base: string, taken: Set<string>): string {
+export function uniqueId(base: string, taken: Set<string>): string {
   if (!taken.has(base)) return base;
   let i = 2;
   while (taken.has(`${base}_${i}`)) i += 1;
@@ -66,10 +66,15 @@ export function removeHotspot(hotspotId: string): Command {
   };
 }
 
-export function updateHotspot(hotspotId: string, patch: Partial<Hotspot>): Command {
+export function updateHotspot(
+  hotspotId: string,
+  patch: Partial<Hotspot>,
+  coalesceKey?: string,
+): Command {
   return {
     id: "explore.updateHotspot",
     label: `Update hotspot ${hotspotId}`,
+    coalesceKey,
     apply(doc) {
       return {
         ...doc,
@@ -95,10 +100,12 @@ export function setInteraction(
   hotspotId: string,
   on: InteractionOn,
   rules: InteractionRule[],
+  coalesceKey?: string,
 ): Command {
   return {
     id: "explore.setInteraction",
     label: `Set interaction ${hotspotId}/${"verb" in on ? on.verb : on.item}`,
+    coalesceKey,
     apply(doc) {
       const rest = doc.scene.interactions.filter(
         (i) => !(i.hotspot === hotspotId && sameOn(i.on, on)),
@@ -303,4 +310,17 @@ export function loadExplore(
       clipboardRules: null,
     },
   };
+}
+
+
+/** Read rules for a matrix cell (empty array if unset). */
+export function getInteractionRules(
+  doc: ExploreDoc,
+  hotspotId: string,
+  on: InteractionOn,
+): InteractionRule[] {
+  const found = doc.scene.interactions.find(
+    (i) => i.hotspot === hotspotId && sameOn(i.on, on),
+  );
+  return found ? structuredClone(found.rules) : [];
 }
