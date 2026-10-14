@@ -82,7 +82,12 @@ export function exploreProjectToApi(
     owned.transitionDefaults = p.transitionDefaults;
   }
   // Do NOT hard-write skipTitle — preserve from raw or omit.
-  return { ...(raw ?? {}), ...owned };
+  const merged: Record<string, unknown> = { ...(raw ?? {}), ...owned };
+  // Cleared Explore-owned optional fields must not resurrect from raw.
+  if (!p.effectLibrary || p.effectLibrary.length === 0) {
+    delete merged.effectLibrary;
+  }
+  return merged;
 }
 
 /** Explore-owned scene fields overlaid on optional host raw (preserves exit etc.). */
@@ -92,7 +97,7 @@ export function exploreSceneToApi(
 ): Record<string, unknown> {
   const owned: Record<string, unknown> = {
     id: s.id,
-    ...(s.title !== undefined ? { title: s.title } : {}),
+    ...(s.title !== undefined && s.title !== "" ? { title: s.title } : {}),
     sceneKind: "explore",
     ...(s.bg ? { bg: s.bg } : {}),
     beats: [],
@@ -101,7 +106,18 @@ export function exploreSceneToApi(
     ...(s.onEnter && s.onEnter.length > 0 ? { onEnter: s.onEnter } : {}),
   };
   // Overlay must not delete exit / unknown keys — omit them from owned.
-  return { ...(raw ?? {}), ...owned };
+  const merged: Record<string, unknown> = { ...(raw ?? {}), ...owned };
+  // Cleared Explore-owned optional fields must not resurrect from raw.
+  if (s.title === undefined || s.title === "") {
+    delete merged.title;
+  }
+  if (!s.bg) {
+    delete merged.bg;
+  }
+  if (!s.onEnter || s.onEnter.length === 0) {
+    delete merged.onEnter;
+  }
+  return merged;
 }
 
 function defaultFallback(): Fallback {

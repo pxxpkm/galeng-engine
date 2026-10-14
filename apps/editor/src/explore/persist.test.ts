@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, setInteraction } from "./commands";
+import { addHotspot, addItem, setInteraction, setOnEnter, updateScene } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import {
   apiToExploreScene,
@@ -198,5 +198,92 @@ describe("Explore persist (real file path)", () => {
     expect(sceneOnDisk.exit).toEqual({ type: "return" });
     expect(sceneOnDisk.beats).toEqual([]);
     expect(sceneOnDisk.sceneKind).toBe("explore");
+  });
+
+  it("cleared bg/onEnter/title/effectLibrary do not resurrect from raw on save", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-clear-"));
+    await mkdir(path.join(root, "scenario"), { recursive: true });
+    const api = createFsPersistApi(root);
+
+    const projectSeed = {
+      id: "demo",
+      title: "Demo",
+      schemaVersion: 2,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "study",
+      locale: "zh-Hant",
+      verbs: [{ id: "look", label: "看", builtin: true }],
+      items: [],
+      switches: [],
+      fallback: { perVerb: { look: "…" }, global: "…" },
+      effectLibrary: [{ id: "fade_black", kind: "fade", params: { ms: 400 } }],
+    };
+    const sceneSeed = {
+      id: "study",
+      title: "書房",
+      sceneKind: "explore",
+      bg: { asset: "bg/study" },
+      beats: [],
+      hotspots: [],
+      interactions: [],
+      onEnter: [{ type: "say", text: "入場" }],
+    };
+    await writeFile(
+      path.join(root, "galeng.json"),
+      `${JSON.stringify(projectSeed, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "scenario", "study.json"),
+      `${JSON.stringify(sceneSeed, null, 2)}\n`,
+      "utf8",
+    );
+
+    let doc = await loadExploreDoc(api, "study");
+    expect(doc.scene.bg?.asset).toBe("bg/study");
+    expect(doc.scene.onEnter).toHaveLength(1);
+    expect(doc.project.effectLibrary?.[0]?.id).toBe("fade_black");
+
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, updateScene({ bg: undefined }, "clear-bg")));
+    ({ bus, doc } = dispatch(bus, doc, setOnEnter([])));
+    void bus;
+    // title / effectLibrary have no clear-via-command yet; mutate Explore-owned state directly.
+    doc = {
+      ...doc,
+      scene: { ...doc.scene, title: undefined },
+      project: { ...doc.project, effectLibrary: [] },
+    };
+
+    await saveExploreDoc(api, doc);
+
+    const sceneOnDisk = JSON.parse(
+      await readFile(path.join(root, "scenario", "study.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const projectOnDisk = JSON.parse(
+      await readFile(path.join(root, "galeng.json"), "utf8"),
+    ) as Record<string, unknown>;
+
+    expect(sceneOnDisk.bg).toBeUndefined();
+    expect(sceneOnDisk.onEnter).toBeUndefined();
+    expect(sceneOnDisk.title).toBeUndefined();
+    expect(projectOnDisk.effectLibrary).toBeUndefined();
+
+    // Unit-level: owned omit + raw merge must delete keys
+    const sceneMerged = exploreSceneToApi(
+      { ...blankExploreDoc("study").scene, bg: undefined, onEnter: [], title: undefined },
+      { id: "study", bg: { asset: "old" }, onEnter: [{ type: "say", text: "x" }], title: "old", exit: { type: "return" } },
+    );
+    expect(sceneMerged.bg).toBeUndefined();
+    expect(sceneMerged.onEnter).toBeUndefined();
+    expect(sceneMerged.title).toBeUndefined();
+    expect(sceneMerged.exit).toEqual({ type: "return" });
+
+    const projMerged = exploreProjectToApi(
+      { ...blankExploreDoc().project, effectLibrary: [] },
+      { effectLibrary: [{ id: "fade_black" }], font: "keep.ttf" },
+    );
+    expect(projMerged.effectLibrary).toBeUndefined();
+    expect(projMerged.font).toBe("keep.ttf");
   });
 });
