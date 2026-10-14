@@ -25,9 +25,13 @@ export interface CollectProblemsOptions {
   sceneCatalog?: SceneCatalogEntry[];
 }
 
-function walkActions(inter: Interaction, visit: (a: ExploreAction) => void): void {
+function walkActions(inter: Interaction, visit: (a: ExploreAction, actionIndex: number) => void): void {
+  let i = 0;
   for (const rule of inter.rules) {
-    for (const a of rule.do) visit(a);
+    for (const a of rule.do) {
+      visit(a, i);
+      i += 1;
+    }
   }
 }
 
@@ -46,7 +50,114 @@ function catalogMap(
   return m;
 }
 
-/** Problems rules for Explore editor (M2 + M3 dead-end Call). */
+type ActionLoc = {
+  /** Stable id fragment, e.g. hotspot id or "onEnter". */
+  loc: string;
+  hotspotId?: string;
+};
+
+/** Validate one action list (interaction do[] or scene.onEnter). */
+function checkActions(
+  actions: ExploreAction[],
+  loc: ActionLoc,
+  ctx: {
+    out: ExploreProblem[];
+    switchIds: Set<string>;
+    itemIds: Set<string>;
+    scenes: Map<string, SceneCatalogEntry>;
+    hasCatalog: boolean;
+    effects: Set<string>;
+  },
+): void {
+  const { out, switchIds, itemIds, scenes, hasCatalog, effects } = ctx;
+  const hs = loc.hotspotId;
+
+  for (let actionIndex = 0; actionIndex < actions.length; actionIndex++) {
+    const a = actions[actionIndex]!;
+    const idx = `${loc.loc}-${actionIndex}`;
+
+    if (a.type === "call" || a.type === "gotoScene") {
+      const scene = a.scene?.trim() ?? "";
+      if (!scene) {
+        out.push({
+          id: `empty-scene-${a.type}-${idx}`,
+          severity: "error",
+          key: "explore.emptySceneRef",
+          message: `${a.type} 未揀目標場景`,
+          hotspotId: hs,
+        });
+      } else if (hasCatalog && !scenes.has(scene)) {
+        out.push({
+          id: `bad-scene-${a.type}-${scene}-${idx}`,
+          severity: "error",
+          key: "explore.danglingSceneRef",
+          message: `${a.type} 指向未知場景：${scene}`,
+          hotspotId: hs,
+          detail: scene,
+        });
+      } else if (a.type === "call" && scenes.has(scene)) {
+        const meta = scenes.get(scene)!;
+        if (meta.kind === "dialogue" && meta.hasReturn === false) {
+          out.push({
+            id: `dead-call-${scene}-${idx}`,
+            severity: "error",
+            key: "explore.deadEndCall",
+            message: `死路 Call：場景「${scene}」唔會 Return`,
+            hotspotId: hs,
+            detail: scene,
+          });
+        }
+      }
+    }
+
+    if (a.type === "setSwitch" && !switchIds.has(a.id)) {
+      out.push({
+        id: `bad-switch-${a.id}-${idx}`,
+        severity: "error",
+        key: "explore.unknownSwitch",
+        message: `未知開關：${a.id}`,
+        hotspotId: hs,
+      });
+    }
+    if ((a.type === "giveItem" || a.type === "takeItem") && !itemIds.has(a.id)) {
+      out.push({
+        id: `bad-item-${a.id}-${idx}`,
+        severity: "error",
+        key: "explore.unknownItem",
+        message: `未知物品：${a.id}`,
+        hotspotId: hs,
+      });
+    }
+
+    if (a.type === "say" && (!a.text || !a.text.trim())) {
+      out.push({
+        id: `empty-say-${idx}`,
+        severity: "error",
+        key: "explore.emptySay",
+        message: `空對白（say.text）`,
+        hotspotId: hs,
+      });
+    }
+
+    if (
+      effects.size > 0 &&
+      (a.type === "call" || a.type === "return" || a.type === "gotoScene") &&
+      a.trans &&
+      !effects.has(a.trans)
+    ) {
+      out.push({
+        id: `bad-trans-${a.trans}-${idx}`,
+        severity: "warn",
+        key: "explore.unknownTrans",
+        message: `未知轉場：${a.trans}`,
+        hotspotId: hs,
+        detail: a.trans,
+      });
+    }
+  }
+}
+
+/** Problems rules for Explore editor (M2 + M3 dead-end Call + onEnter). */
 export function collectExploreProblems(
   doc: ExploreDoc,
   knownSceneIdsOrOpts: Set<string> | CollectProblemsOptions = {},
@@ -62,6 +173,8 @@ export function collectExploreProblems(
   const hotspotIds = new Set(doc.scene.hotspots.map((h) => h.id));
   const scenes = catalogMap(opts);
   const hasCatalog = scenes.size > 0;
+  const effects = new Set((doc.project.effectLibrary ?? []).map((e) => e.id));
+  const ctx = { out, switchIds, itemIds, scenes, hasCatalog, effects };
 
   // Rule 1: duplicate hotspot ids
   const seen = new Set<string>();
@@ -81,8 +194,9 @@ export function collectExploreProblems(
   // Rule 2: interaction references missing hotspot
   for (const inter of doc.scene.interactions) {
     if (!hotspotIds.has(inter.hotspot)) {
+      const onKey = "verb" in inter.on ? inter.on.verb : inter.on.item;
       out.push({
-        id: `orphan-inter-${inter.hotspot}-${"verb" in inter.on ? inter.on.verb : inter.on.item}`,
+        id: `orphan-inter-${inter.hotspot}-${onKey}`,
         severity: "error",
         key: "explore.orphanInteraction",
         message: `互動指向不存在嘅熱區：${inter.hotspot}`,
@@ -91,72 +205,17 @@ export function collectExploreProblems(
     }
   }
 
-  // Rule 3–3c: call / goto scene refs + dead-end + empty
+  // Rule 3–6: action checks on interactions (call/goto/switch/item/say/trans)
   for (const inter of doc.scene.interactions) {
+    const flat: ExploreAction[] = [];
     walkActions(inter, (a) => {
-      if (a.type === "call" || a.type === "gotoScene") {
-        const scene = a.scene?.trim() ?? "";
-        if (!scene) {
-          out.push({
-            id: `empty-scene-${a.type}-${inter.hotspot}`,
-            severity: "error",
-            key: "explore.emptySceneRef",
-            message: `${a.type} 未揀目標場景`,
-            hotspotId: inter.hotspot,
-          });
-          return;
-        }
-        if (hasCatalog && !scenes.has(scene)) {
-          out.push({
-            id: `bad-scene-${a.type}-${scene}-${inter.hotspot}`,
-            severity: "error",
-            key: "explore.danglingSceneRef",
-            message: `${a.type} 指向未知場景：${scene}`,
-            hotspotId: inter.hotspot,
-            detail: scene,
-          });
-        }
-        // M3: dead-end Call — dialogue target without return exit
-        if (a.type === "call" && scenes.has(scene)) {
-          const meta = scenes.get(scene)!;
-          if (meta.kind === "dialogue" && meta.hasReturn === false) {
-            out.push({
-              id: `dead-call-${scene}-${inter.hotspot}`,
-              severity: "error",
-              key: "explore.deadEndCall",
-              message: `死路 Call：場景「${scene}」唔會 Return`,
-              hotspotId: inter.hotspot,
-              detail: scene,
-            });
-          }
-        }
-      }
+      flat.push(a);
     });
+    checkActions(flat, { loc: inter.hotspot, hotspotId: inter.hotspot }, ctx);
   }
 
-  // Rule 4: setSwitch / giveItem / takeItem unknown ids
-  for (const inter of doc.scene.interactions) {
-    walkActions(inter, (a) => {
-      if (a.type === "setSwitch" && !switchIds.has(a.id)) {
-        out.push({
-          id: `bad-switch-${a.id}-${inter.hotspot}`,
-          severity: "error",
-          key: "explore.unknownSwitch",
-          message: `未知開關：${a.id}`,
-          hotspotId: inter.hotspot,
-        });
-      }
-      if ((a.type === "giveItem" || a.type === "takeItem") && !itemIds.has(a.id)) {
-        out.push({
-          id: `bad-item-${a.id}-${inter.hotspot}`,
-          severity: "error",
-          key: "explore.unknownItem",
-          message: `未知物品：${a.id}`,
-          hotspotId: inter.hotspot,
-        });
-      }
-    });
-  }
+  // Rule 3–6b: same checks on scene.onEnter (OnEnterInspector)
+  checkActions(doc.scene.onEnter ?? [], { loc: "onEnter" }, ctx);
 
   // Rule 5: warn empty explore room (no hotspots)
   if (doc.scene.hotspots.length === 0) {
@@ -165,21 +224,6 @@ export function collectExploreProblems(
       severity: "warn",
       key: "explore.noHotspots",
       message: "探險場景未有熱區",
-    });
-  }
-
-  // Rule 5b: empty say text (schema nonEmptyString)
-  for (const inter of doc.scene.interactions) {
-    walkActions(inter, (a) => {
-      if (a.type === "say" && (!a.text || !a.text.trim())) {
-        out.push({
-          id: `empty-say-${inter.hotspot}`,
-          severity: "error",
-          key: "explore.emptySay",
-          message: `空對白（say.text）`,
-          hotspotId: inter.hotspot,
-        });
-      }
     });
   }
 
@@ -205,29 +249,6 @@ export function collectExploreProblems(
         key: "explore.nonPositiveHotspot",
         message: `熱區「${h.id}」寬高必須 > 0`,
         hotspotId: h.id,
-      });
-    }
-  }
-
-  // Rule 6: warn unknown transition id on actions (if effectLibrary present)
-  const effects = new Set((doc.project.effectLibrary ?? []).map((e) => e.id));
-  if (effects.size > 0) {
-    for (const inter of doc.scene.interactions) {
-      walkActions(inter, (a) => {
-        if (
-          (a.type === "call" || a.type === "return" || a.type === "gotoScene") &&
-          a.trans &&
-          !effects.has(a.trans)
-        ) {
-          out.push({
-            id: `bad-trans-${a.trans}-${inter.hotspot}`,
-            severity: "warn",
-            key: "explore.unknownTrans",
-            message: `未知轉場：${a.trans}`,
-            hotspotId: inter.hotspot,
-            detail: a.trans,
-          });
-        }
       });
     }
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, addSwitch, setInteraction } from "./commands";
+import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import { collectExploreProblems } from "./problems";
 import { buildSceneCatalog } from "./sceneCatalog";
@@ -207,5 +207,78 @@ describe("explore problems catalog Next chain", () => {
     const probs = collectExploreProblems(doc, { sceneCatalog });
     expect(probs.some((p) => p.key === "explore.deadEndCall")).toBe(false);
     expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
+  });
+});
+
+describe("explore problems onEnter", () => {
+  it("errors on empty say in onEnter", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEnter([{ type: "say", text: "" }]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.emptySay" && p.id.includes("onEnter"))).toBe(
+      true,
+    );
+  });
+
+  it("errors on empty call scene in onEnter", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEnter([{ type: "call", scene: "" }]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [{ id: "room", kind: "explore" }],
+    });
+    expect(probs.some((p) => p.key === "explore.emptySceneRef")).toBe(true);
+  });
+
+  it("errors on dangling gotoScene in onEnter", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEnter([{ type: "gotoScene", scene: "missing_room" }]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [{ id: "room", kind: "explore" }],
+    });
+    expect(probs.some((p) => p.key === "explore.danglingSceneRef")).toBe(true);
+  });
+
+  it("unique problem ids when two empty says share a hotspot", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("desk", { verb: "look" }, [
+        {
+          when: [],
+          do: [
+            { type: "say", text: "" },
+            { type: "say", text: "   " },
+          ],
+        },
+      ]),
+    ));
+    void bus;
+    const empties = collectExploreProblems(doc).filter((p) => p.key === "explore.emptySay");
+    expect(empties.length).toBe(2);
+    expect(new Set(empties.map((p) => p.id)).size).toBe(2);
   });
 });
