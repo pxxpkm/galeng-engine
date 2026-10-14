@@ -40,6 +40,8 @@ import {
   type ExplorePersistApi,
 } from "./persist";
 import { ProblemsPanel } from "./ProblemsPanel";
+import { TracePanel } from "./TracePanel";
+import { resolveTrace } from "./trace";
 import { collectExploreProblems } from "./problems";
 import { PresetBrowser } from "./PresetBrowser";
 import { applyPreset, setTransitionDefaults } from "./presets";
@@ -77,7 +79,7 @@ interface WorkspaceState {
   dirty: boolean;
 }
 
-type BottomTab = "problems" | "database";
+type BottomTab = "problems" | "database" | "trace";
 
 /**
  * Self-contained Explore editor shell for M2.
@@ -437,6 +439,12 @@ export function ExploreWorkspace({
   const errorCount = problems.filter((p) => p.severity === "error").length;
   const warnCount = problems.filter((p) => p.severity === "warn").length;
 
+  const traceResolution = useMemo(() => {
+    const cell = doc.ui.selectedCell;
+    if (!cell) return null;
+    return resolveTrace(doc, cell.hotspotId, cell.on);
+  }, [doc]);
+
   const selectedHotspot = doc.ui.selectedHotspotId
     ? doc.scene.hotspots.find((h) => h.id === doc.ui.selectedHotspotId)
     : undefined;
@@ -736,7 +744,7 @@ export function ExploreWorkspace({
         </div>
       </div>
 
-      {/* 底部 tab：Problems｜資料庫 */}
+      {/* 底部 tab：Problems｜資料庫｜Trace */}
       <div style={{ marginTop: 12, borderTop: "1px solid #333", paddingTop: 8 }}>
         <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
           <button
@@ -776,9 +784,32 @@ export function ExploreWorkspace({
           >
             資料庫
           </button>
+          <button
+            type="button"
+            data-testid="tab-trace"
+            data-active={bottomTab === "trace" ? "1" : "0"}
+            onClick={() => setBottomTab("trace")}
+            style={{
+              background: bottomTab === "trace" ? "#234" : "transparent",
+              border: "1px solid #445",
+              color: "inherit",
+              padding: "4px 10px",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+          >
+            Trace
+            {traceResolution ? (
+              <span data-testid="trace-badge" style={{ marginLeft: 6, opacity: 0.85 }}>
+                {traceResolution.winningLayer}
+              </span>
+            ) : null}
+          </button>
         </div>
         {bottomTab === "problems" ? (
           <ProblemsPanel problems={problems} />
+        ) : bottomTab === "trace" ? (
+          <TracePanel resolution={traceResolution} />
         ) : (
           <DatabaseStub
             doc={doc}

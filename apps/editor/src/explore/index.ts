@@ -9,6 +9,8 @@ export { ExploreCanvas } from "./ExploreCanvas";
 export { VerbMatrix } from "./VerbMatrix";
 export { DatabaseStub } from "./DatabaseStub";
 export { ProblemsPanel } from "./ProblemsPanel";
+export { TracePanel } from "./TracePanel";
+export * from "./trace";
 export { ExploreWorkspace } from "./ExploreWorkspace";
 
 export * from "./persist";
