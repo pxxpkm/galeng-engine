@@ -1,0 +1,15 @@
+{
+  "id": "dlg_butler",
+  "title": "同管家傾偈",
+  "sceneKind": "dialogue",
+  "beats": [
+    {
+      "say": { "speaker": "管家", "text": "少爺，書房落鎖咗。" }
+    },
+    {
+      "say": { "speaker": "管家", "text": "鎖匙喺書枱度。" },
+      "set": { "hint": 1 }
+    }
+  ],
+  "exit": { "type": "return", "trans": "fade_black" }
+}

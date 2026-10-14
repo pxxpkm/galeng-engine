@@ -1,0 +1,17 @@
+{
+  "id": "on_enter_room",
+  "title": "入場",
+  "sceneKind": "explore",
+  "hotspots": [
+    {
+      "id": "box",
+      "name": "箱",
+      "shape": { "type": "rect", "x": 10, "y": 10, "w": 100, "h": 100 }
+    }
+  ],
+  "interactions": [],
+  "onEnter": [
+    { "type": "setSwitch", "id": "entered", "value": true },
+    { "type": "giveItem", "id": "key" }
+  ]
+}
