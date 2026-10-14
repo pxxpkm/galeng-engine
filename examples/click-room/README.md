@@ -12,6 +12,10 @@ tech-spec §6：1 房、4 熱區、1 物、2 開關、1 短對話、1 結局。
 
 ## 出包
 
+**Explore GUI（host 開住本專案時）：** 頂欄按 **出包** → `POST /api/pack` → 預設寫入專案 `export/game/game.pak`。
+
+**CLI：**
+
 ```bash
 cargo run -p galeng-packer -- --project examples/click-room --out /tmp/click-room.pak [--strict]
 ```

@@ -44,6 +44,11 @@ import { collectExploreProblems } from "./problems";
 import { PresetBrowser } from "./PresetBrowser";
 import { applyPreset, setTransitionDefaults } from "./presets";
 import { blankExploreDoc } from "./fixture";
+import {
+  createHttpPackApi,
+  formatExplorePackStatus,
+  type ExplorePackApi,
+} from "./packClient";
 import type {
   ExploreDoc,
   InteractionOn,
@@ -59,6 +64,11 @@ export interface ExploreWorkspaceProps {
   sceneCatalog?: SceneCatalogEntry[];
   /** When set, Save/Reload hit real project/scene JSON (HTTP or FS). */
   persist?: ExplorePersistApi;
+  /**
+   * Pack via host POST /api/pack. Default: HTTP pack API.
+   * Pass a stub in tests; omit to use createHttpPackApi().
+   */
+  packApi?: ExplorePackApi | null;
 }
 
 interface WorkspaceState {
@@ -78,6 +88,7 @@ export function ExploreWorkspace({
   knownSceneIds,
   sceneCatalog,
   persist,
+  packApi,
 }: ExploreWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(() => ({
     doc: initial,
@@ -340,6 +351,76 @@ export function ExploreWorkspace({
     }
   }, [persist, dirty, state.doc.project, state.doc._rawProject, effectiveCatalog]);
 
+  const resolvedPackApi = useMemo(
+    () => (packApi === null ? null : packApi ?? createHttpPackApi()),
+    [packApi],
+  );
+
+  const doPack = useCallback(async () => {
+    if (!resolvedPackApi) {
+      setSaveStatus("未接出包 API（需要 host /api/pack）");
+      return;
+    }
+    if (dirty) {
+      if (!persist) {
+        setSaveStatus("請先存檔再出包（未接 persist）");
+        return;
+      }
+      const catalog =
+        sceneCatalog && sceneCatalog.length > 0
+          ? sceneCatalog
+          : knownSceneIds && knownSceneIds.size > 0
+            ? [...knownSceneIds].map((id) => ({ id, kind: "explore" as const }))
+            : [{ id: state.doc.scene.id, kind: "explore" as const }];
+      const errs = collectExploreProblems(state.doc, {
+        sceneCatalog: catalog,
+        knownSceneIds,
+      }).filter((p) => p.severity === "error");
+      if (errs.length > 0) {
+        setSaveStatus(`無法出包：${errs.length} 個錯誤（見 Problems）`);
+        setBottomTab("problems");
+        return;
+      }
+      setSaveStatus("存檔後出包…");
+      try {
+        const saved = await saveExploreDoc(persist, state.doc);
+        setState((s) => ({
+          ...s,
+          dirty: false,
+          doc: {
+            ...s.doc,
+            project: saved.project,
+            scene: saved.scene,
+            _rawProject: saved._rawProject,
+            _rawScene: saved._rawScene,
+          },
+        }));
+      } catch (e) {
+        setSaveStatus(`存檔失敗，未出包：${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+    }
+    setSaveStatus("出包中…");
+    try {
+      const result = await resolvedPackApi.pack({});
+      const warn = result.warnings?.length ?? 0;
+      setSaveStatus(
+        warn > 0
+          ? `${formatExplorePackStatus(result)}：${result.warnings!.slice(0, 2).join("；")}`
+          : formatExplorePackStatus(result),
+      );
+    } catch (e) {
+      setSaveStatus(`出包失敗：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [
+    resolvedPackApi,
+    dirty,
+    persist,
+    state.doc,
+    sceneCatalog,
+    knownSceneIds,
+  ]);
+
   const problems = useMemo(
     () =>
       collectExploreProblems(doc, {
@@ -457,9 +538,22 @@ export function ExploreWorkspace({
         )}
         <button
           type="button"
+          data-testid="explore-pack"
+          onClick={() => void doPack()}
+          disabled={resolvedPackApi === null}
+          title={
+            resolvedPackApi === null
+              ? "未接出包 API"
+              : "呼叫 host POST /api/pack（預設 export/game）"
+          }
+        >
+          出包
+        </button>
+        <button
+          type="button"
           data-testid="play-placeholder"
           disabled
-          title="M3：由此場景播放"
+          title="需要 SDL／galeng-player（本環境可缺）"
           style={{ opacity: 0.45 }}
         >
           ▶ 播放
