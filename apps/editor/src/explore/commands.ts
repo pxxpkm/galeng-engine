@@ -349,3 +349,48 @@ export function getInteractionRules(
   );
   return found ? structuredClone(found.rules) : [];
 }
+
+/** Patch scene meta (title / bg). Does not replace hotspots or interactions. */
+export function updateScene(
+  patch: { title?: string; bg?: ExploreDoc["scene"]["bg"] },
+  coalesceKey?: string,
+): Command {
+  return {
+    id: "explore.updateScene",
+    label: "Update scene",
+    coalesceKey,
+    apply(doc) {
+      return {
+        ...doc,
+        scene: {
+          ...doc.scene,
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
+          ...(patch.bg !== undefined ? { bg: structuredClone(patch.bg) } : {}),
+        },
+      };
+    },
+  };
+}
+
+/** Patch project meta (id / title / startScene). Does not replace db arrays. */
+export function updateProject(
+  patch: { id?: string; title?: string; startScene?: string },
+  coalesceKey?: string,
+): Command {
+  return {
+    id: "db.updateProject",
+    label: "Update project",
+    coalesceKey,
+    apply(doc) {
+      return {
+        ...doc,
+        project: {
+          ...doc.project,
+          ...(patch.id !== undefined ? { id: patch.id } : {}),
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
+          ...(patch.startScene !== undefined ? { startScene: patch.startScene } : {}),
+        },
+      };
+    },
+  };
+}
