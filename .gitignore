@@ -58,3 +58,9 @@ galeng.local.json
 # Logs
 *.log
 journal/*.tmp
+
+# Playwright
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/playwright/.cache/
