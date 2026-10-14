@@ -350,7 +350,8 @@ export function getInteractionRules(
   return found ? structuredClone(found.rules) : [];
 }
 
-/** Patch scene meta (title / bg). Does not replace hotspots or interactions. */
+/** Patch scene meta (title / bg). Does not replace hotspots or interactions.
+ * Pass `bg: undefined` (key present) to clear background. */
 export function updateScene(
   patch: { title?: string; bg?: ExploreDoc["scene"]["bg"] },
   coalesceKey?: string,
@@ -360,14 +361,13 @@ export function updateScene(
     label: "Update scene",
     coalesceKey,
     apply(doc) {
-      return {
-        ...doc,
-        scene: {
-          ...doc.scene,
-          ...(patch.title !== undefined ? { title: patch.title } : {}),
-          ...(patch.bg !== undefined ? { bg: structuredClone(patch.bg) } : {}),
-        },
-      };
+      const scene = { ...doc.scene };
+      if (patch.title !== undefined) scene.title = patch.title;
+      if ("bg" in patch) {
+        scene.bg =
+          patch.bg === undefined ? undefined : structuredClone(patch.bg);
+      }
+      return { ...doc, scene };
     },
   };
 }

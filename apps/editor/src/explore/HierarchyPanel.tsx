@@ -3,29 +3,129 @@ import type { ExploreDoc } from "./types";
 export interface HierarchyPanelProps {
   doc: ExploreDoc;
   onSelectHotspot: (id: string | null) => void;
+  /** Patch scene title / bg via updateScene. */
+  onUpdateScene?: (
+    patch: { title?: string; bg?: ExploreDoc["scene"]["bg"] },
+    coalesceKey?: string,
+  ) => void;
+  /** Patch project title / startScene via updateProject. */
+  onUpdateProject?: (
+    patch: { title?: string; startScene?: string },
+    coalesceKey?: string,
+  ) => void;
 }
 
-/** Minimal left Hierarchy: scene + hotspot list (select / highlight). */
-export function HierarchyPanel({ doc, onSelectHotspot }: HierarchyPanelProps) {
-  const sel = doc.ui.selectedHotspotId;
+/** Left Hierarchy: scene/project meta (editable) + hotspot list. */
+export function HierarchyPanel({
+  doc,
+  onSelectHotspot,
+  onUpdateScene,
+  onUpdateProject,
+}: HierarchyPanelProps) {
+  const sel = doc.scene.hotspots;
+  const selected = doc.ui.selectedHotspotId;
+  const bgAsset = doc.scene.bg?.asset ?? "";
+  const canEditScene = !!onUpdateScene;
+  const canEditProject = !!onUpdateProject;
+
   return (
     <div
       className="hierarchy-panel"
       data-testid="hierarchy-panel"
       style={{ fontSize: 12, borderRight: "1px solid #333", paddingRight: 8 }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>
-        場景：{doc.scene.title ?? doc.scene.id}
+      <div
+        data-testid="hierarchy-project-meta"
+        style={{ marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid #333" }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>專案</div>
+        <label style={{ display: "block", marginBottom: 4 }}>
+          標題
+          <input
+            data-testid="hierarchy-project-title"
+            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+            value={doc.project.title}
+            disabled={!canEditProject}
+            onChange={(e) =>
+              onUpdateProject?.({ title: e.target.value }, "project-title")
+            }
+          />
+        </label>
+        <label style={{ display: "block", marginBottom: 4 }}>
+          起始場景
+          <input
+            data-testid="hierarchy-start-scene"
+            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+            value={doc.project.startScene}
+            disabled={!canEditProject}
+            onChange={(e) =>
+              onUpdateProject?.({ startScene: e.target.value }, "project-startScene")
+            }
+          />
+        </label>
       </div>
+
+      <div
+        data-testid="hierarchy-scene-meta"
+        style={{ marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid #333" }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>
+          場景
+          <span style={{ opacity: 0.45, fontWeight: 400, marginLeft: 6 }}>
+            {doc.scene.id}
+          </span>
+        </div>
+        <label style={{ display: "block", marginBottom: 4 }}>
+          標題
+          <input
+            data-testid="hierarchy-scene-title"
+            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+            value={doc.scene.title ?? ""}
+            disabled={!canEditScene}
+            onChange={(e) =>
+              onUpdateScene?.({ title: e.target.value }, "scene-title")
+            }
+          />
+        </label>
+        <label style={{ display: "block", marginBottom: 4 }}>
+          背景 asset
+          <input
+            data-testid="hierarchy-scene-bg-asset"
+            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+            value={bgAsset}
+            placeholder="bg/room"
+            disabled={!canEditScene}
+            onChange={(e) => {
+              const asset = e.target.value;
+              const prev = doc.scene.bg;
+              if (!asset.trim()) {
+                onUpdateScene?.({ bg: undefined }, "scene-bg-asset");
+                return;
+              }
+              onUpdateScene?.(
+                {
+                  bg: {
+                    asset,
+                    ...(prev?.trans !== undefined ? { trans: prev.trans } : {}),
+                    ...(prev?.ms !== undefined ? { ms: prev.ms } : {}),
+                  },
+                },
+                "scene-bg-asset",
+              );
+            }}
+          />
+        </label>
+      </div>
+
       <div style={{ opacity: 0.7, marginBottom: 4 }}>熱區</div>
-      {doc.scene.hotspots.length === 0 ? (
+      {sel.length === 0 ? (
         <div style={{ opacity: 0.55 }} data-testid="hierarchy-empty">
           （未有熱區 — 喺畫布畫一個）
         </div>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {doc.scene.hotspots.map((h) => {
-            const active = sel === h.id;
+          {sel.map((h) => {
+            const active = selected === h.id;
             return (
               <li key={h.id}>
                 <button

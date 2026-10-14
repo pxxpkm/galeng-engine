@@ -28,6 +28,8 @@ import {
   updateCharacter,
   updateHotspot,
   updateItem,
+  updateProject,
+  updateScene,
   updateSwitch,
 } from "./commands";
 import { DatabaseStub } from "./DatabaseStub";
@@ -614,12 +616,21 @@ export function ExploreWorkspace({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "160px 1fr 300px",
+          gridTemplateColumns: "200px 1fr 300px",
           gap: 12,
           minHeight: 420,
         }}
       >
-        <HierarchyPanel doc={doc} onSelectHotspot={selectHotspotOnly} />
+        <HierarchyPanel
+          doc={doc}
+          onSelectHotspot={selectHotspotOnly}
+          onUpdateScene={(patch, coalesceKey) =>
+            applyCmd(updateScene(patch, coalesceKey))
+          }
+          onUpdateProject={(patch, coalesceKey) =>
+            applyCmd(updateProject(patch, coalesceKey))
+          }
+        />
 
         <div>
           <ExploreCanvas
