@@ -57,22 +57,55 @@ export function hitTestHotspots(hotspots: Hotspot[], px: number, py: number): st
 
 export type Handle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 
-const HANDLE_PAD = 8;
+/** Eight resize handles, corners then edges (hit-test order prefers corners). */
+export const HANDLES: readonly Handle[] = [
+  "nw",
+  "ne",
+  "sw",
+  "se",
+  "n",
+  "s",
+  "e",
+  "w",
+];
 
-export function hitTestHandle(rect: Rect, px: number, py: number): Handle | null {
+/** Fallback pad in stage coords when display size is unknown (≈1:1). */
+export const HANDLE_PAD = 8;
+
+/** Target hit / visual size in CSS (screen) pixels when the stage is scaled. */
+export const HANDLE_SCREEN_PX = 8;
+
+/**
+ * Stage-space hit radius so ~HANDLE_SCREEN_PX screen pixels stay clickable
+ * when the canvas CSS width ≠ logical stage width (e.g. 640px showing 1920).
+ */
+export function handlePadStage(stageWidth: number, displayWidth: number): number {
+  if (!(stageWidth > 0) || !(displayWidth > 0)) return HANDLE_PAD;
+  return Math.max(2, (HANDLE_SCREEN_PX * stageWidth) / displayWidth);
+}
+
+export function handleCenters(rect: Rect): { h: Handle; cx: number; cy: number }[] {
   const { x, y, w, h } = rect;
-  const pts: { h: Handle; cx: number; cy: number }[] = [
+  return [
     { h: "nw", cx: x, cy: y },
     { h: "ne", cx: x + w, cy: y },
     { h: "sw", cx: x, cy: y + h },
     { h: "se", cx: x + w, cy: y + h },
     { h: "n", cx: x + w / 2, cy: y },
     { h: "s", cx: x + w / 2, cy: y + h },
-    { h: "w", cx: x, cy: y + h / 2 },
     { h: "e", cx: x + w, cy: y + h / 2 },
+    { h: "w", cx: x, cy: y + h / 2 },
   ];
-  for (const p of pts) {
-    if (Math.abs(px - p.cx) <= HANDLE_PAD && Math.abs(py - p.cy) <= HANDLE_PAD) return p.h;
+}
+
+export function hitTestHandle(
+  rect: Rect,
+  px: number,
+  py: number,
+  pad: number = HANDLE_PAD,
+): Handle | null {
+  for (const p of handleCenters(rect)) {
+    if (Math.abs(px - p.cx) <= pad && Math.abs(py - p.cy) <= pad) return p.h;
   }
   return null;
 }
@@ -117,4 +150,9 @@ export function rectHasNonInteger(rect: Rect): boolean {
     isIntCoord(rect.w) &&
     isIntCoord(rect.h)
   );
+}
+
+/** data-testid for a visible resize handle on the selected hotspot. */
+export function resizeHandleTestId(hotspotId: string, handle: Handle): string {
+  return `resize-handle-${hotspotId}-${handle}`;
 }

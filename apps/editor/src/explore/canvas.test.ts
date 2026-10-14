@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  HANDLES,
+  HANDLE_PAD,
+  HANDLE_SCREEN_PX,
   clampRect,
+  handleCenters,
+  handlePadStage,
   hitTestHandle,
   hitTestHotspots,
   moveRect,
   normalizeRect,
+  resizeHandleTestId,
   resizeRect,
 } from "./canvas";
 import type { Hotspot } from "./types";
@@ -74,7 +80,6 @@ describe("canvas geometry", () => {
       h: 10,
     });
   });
-});
 
   it("clamps w/h to at least 1", () => {
     expect(clampRect({ x: 10, y: 10, w: 0, h: -5 }, { width: 100, height: 100 })).toEqual({
@@ -85,3 +90,26 @@ describe("canvas geometry", () => {
     });
   });
 
+  it("lists eight handle centers", () => {
+    expect(HANDLES).toHaveLength(8);
+    const centers = handleCenters({ x: 10, y: 20, w: 100, h: 40 });
+    expect(centers.map((c) => c.h)).toEqual([...HANDLES]);
+    expect(centers.find((c) => c.h === "se")).toEqual({ h: "se", cx: 110, cy: 60 });
+    expect(centers.find((c) => c.h === "n")).toEqual({ h: "n", cx: 60, cy: 20 });
+  });
+
+  it("scales HANDLE_PAD for shrunk canvas display", () => {
+    // 1920 stage shown at 640 CSS px → ~24 stage units ≈ 8 screen px
+    expect(handlePadStage(1920, 640)).toBe(HANDLE_SCREEN_PX * (1920 / 640));
+    expect(handlePadStage(1920, 640)).toBe(24);
+    expect(handlePadStage(1920, 1920)).toBe(HANDLE_PAD);
+    // default pad misses a point 16 stage-px from corner; scaled pad hits it
+    const rect = { x: 0, y: 0, w: 100, h: 50 };
+    expect(hitTestHandle(rect, 16, 0, HANDLE_PAD)).toBeNull();
+    expect(hitTestHandle(rect, 16, 0, handlePadStage(1920, 640))).toBe("nw");
+  });
+
+  it("builds resize-handle test ids", () => {
+    expect(resizeHandleTestId("desk", "se")).toBe("resize-handle-desk-se");
+  });
+});

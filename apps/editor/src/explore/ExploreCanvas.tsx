@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mediaUrl } from "../media";
 import {
+  HANDLES,
+  HANDLE_SCREEN_PX,
   clampRect,
+  handlePadStage,
   hitTestHandle,
   hitTestHotspots,
   isRect,
   moveRect,
   normalizeRect,
+  resizeHandleTestId,
   resizeRect,
   type Handle,
   type Rect,
@@ -48,6 +52,28 @@ export function exploreCanvasBgSrc(bg?: { asset: string } | null): string | null
   return mediaUrl(asset);
 }
 
+/** CSS inset % for a handle relative to its hotspot box (center of edge/corner). */
+function handleInset(handle: Handle): { left: string; top: string } {
+  switch (handle) {
+    case "nw":
+      return { left: "0%", top: "0%" };
+    case "n":
+      return { left: "50%", top: "0%" };
+    case "ne":
+      return { left: "100%", top: "0%" };
+    case "e":
+      return { left: "100%", top: "50%" };
+    case "se":
+      return { left: "100%", top: "100%" };
+    case "s":
+      return { left: "50%", top: "100%" };
+    case "sw":
+      return { left: "0%", top: "100%" };
+    case "w":
+      return { left: "0%", top: "50%" };
+  }
+}
+
 /** Minimal Explore room canvas: draw / select / move / resize rect hotspots. */
 export function ExploreCanvas({
   doc,
@@ -69,10 +95,14 @@ export function ExploreCanvas({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Primary button only — ignore right / middle / pen eraser.
+      if (e.button !== 0) return;
       const el = ref.current;
       if (!el) return;
       el.setPointerCapture(e.pointerId);
       const p = stagePoint(el, e.clientX, e.clientY, width, height);
+      const displayW = el.getBoundingClientRect().width;
+      const pad = handlePadStage(width, displayW);
 
       if (tool === "drawRect") {
         const rect = normalizeRect(p, p);
@@ -84,7 +114,7 @@ export function ExploreCanvas({
       if (selected) {
         const hs = doc.scene.hotspots.find((h) => h.id === selected);
         if (hs && isRect(hs.shape)) {
-          const handle = hitTestHandle(hs.shape, p.x, p.y);
+          const handle = hitTestHandle(hs.shape, p.x, p.y, pad);
           if (handle) {
             setDrag({ kind: "resize", id: selected, handle, origin: { ...hs.shape } });
             return;
@@ -162,6 +192,8 @@ export function ExploreCanvas({
     }
     return shape;
   };
+
+  const handlePx = HANDLE_SCREEN_PX;
 
   return (
     <div
@@ -250,6 +282,33 @@ export function ExploreCanvas({
             >
               {h.name}
             </span>
+            {sel
+              ? HANDLES.map((handle) => {
+                  const inset = handleInset(handle);
+                  return (
+                    <div
+                      key={handle}
+                      data-testid={resizeHandleTestId(h.id, handle)}
+                      data-handle={handle}
+                      style={{
+                        position: "absolute",
+                        left: inset.left,
+                        top: inset.top,
+                        width: handlePx,
+                        height: handlePx,
+                        marginLeft: -handlePx / 2,
+                        marginTop: -handlePx / 2,
+                        background: "#6cf",
+                        border: "1px solid #fff",
+                        boxSizing: "border-box",
+                        boxShadow: "0 0 2px #000",
+                        pointerEvents: "none",
+                        zIndex: 2,
+                      }}
+                    />
+                  );
+                })
+              : null}
           </div>
         );
       })}
