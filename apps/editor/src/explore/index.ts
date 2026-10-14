@@ -13,5 +13,11 @@ export { ExploreWorkspace } from "./ExploreWorkspace";
 
 export * from "./persist";
 export { HierarchyPanel } from "./HierarchyPanel";
-export { CellInspector, HotspotInspector } from "./InspectorPanels";
+export { CellInspector, HotspotInspector, OnEnterInspector } from "./InspectorPanels";
 export * from "./inspectorModel";
+
+export * from "./transitions";
+export * from "./presets";
+export { PresetBrowser } from "./PresetBrowser";
+
+export * from "./sceneCatalog";

@@ -24,12 +24,16 @@ import {
   removeSwitch,
   setHotspotRect,
   setInteraction,
+  setOnEnter,
+  updateCharacter,
   updateHotspot,
+  updateItem,
+  updateSwitch,
 } from "./commands";
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";
-import { CellInspector, HotspotInspector } from "./InspectorPanels";
+import { CellInspector, HotspotInspector, OnEnterInspector } from "./InspectorPanels";
 import {
   loadExploreDoc,
   saveExploreDoc,
@@ -37,12 +41,22 @@ import {
 } from "./persist";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { collectExploreProblems } from "./problems";
-import type { ExploreDoc, InteractionOn, InteractionRule } from "./types";
+import { PresetBrowser } from "./PresetBrowser";
+import { applyPreset, setTransitionDefaults } from "./presets";
+import { blankExploreDoc } from "./fixture";
+import type {
+  ExploreDoc,
+  InteractionOn,
+  InteractionRule,
+  SceneCatalogEntry,
+} from "./types";
 import { VerbMatrix } from "./VerbMatrix";
 
 export interface ExploreWorkspaceProps {
   initial: ExploreDoc;
   knownSceneIds?: Set<string>;
+  /** Preferred over knownSceneIds for Call picker + dead-end Problems. */
+  sceneCatalog?: SceneCatalogEntry[];
   /** When set, Save/Reload hit real project/scene JSON (HTTP or FS). */
   persist?: ExplorePersistApi;
 }
@@ -62,6 +76,7 @@ type BottomTab = "problems" | "database";
 export function ExploreWorkspace({
   initial,
   knownSceneIds,
+  sceneCatalog,
   persist,
 }: ExploreWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(() => ({
@@ -71,7 +86,16 @@ export function ExploreWorkspace({
   }));
   const [saveStatus, setSaveStatus] = useState<string>("");
   const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
+  const [localCatalog, setLocalCatalog] = useState<SceneCatalogEntry[]>(
+    () => sceneCatalog ?? [],
+  );
   const { doc, bus, dirty } = state;
+
+  useEffect(() => {
+    if (sceneCatalog && sceneCatalog.length > 0) {
+      setLocalCatalog(sceneCatalog);
+    }
+  }, [sceneCatalog]);
 
   const applyCmd = useCallback((cmd: Command) => {
     setState((s) => {
@@ -116,15 +140,40 @@ export function ExploreWorkspace({
       setSaveStatus("未接 persist");
       return;
     }
+    const catalog =
+      sceneCatalog && sceneCatalog.length > 0
+        ? sceneCatalog
+        : knownSceneIds && knownSceneIds.size > 0
+          ? [...knownSceneIds].map((id) => ({ id, kind: "explore" as const }))
+          : [{ id: state.doc.scene.id, kind: "explore" as const }];
+    const errs = collectExploreProblems(state.doc, {
+      sceneCatalog: catalog,
+      knownSceneIds,
+    }).filter((p) => p.severity === "error");
+    if (errs.length > 0) {
+      setSaveStatus(`無法儲存：${errs.length} 個錯誤（見 Problems）`);
+      setBottomTab("problems");
+      return;
+    }
     setSaveStatus("儲存中…");
     try {
-      await saveExploreDoc(persist, state.doc);
-      setState((s) => ({ ...s, dirty: false }));
+      const saved = await saveExploreDoc(persist, state.doc);
+      setState((s) => ({
+        ...s,
+        dirty: false,
+        doc: {
+          ...s.doc,
+          project: saved.project,
+          scene: saved.scene,
+          _rawProject: saved._rawProject,
+          _rawScene: saved._rawScene,
+        },
+      }));
       setSaveStatus("已儲存");
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc]);
+  }, [persist, state.doc, sceneCatalog, knownSceneIds]);
 
   const doReload = useCallback(async () => {
     if (!persist) {
@@ -140,6 +189,31 @@ export function ExploreWorkspace({
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
   }, [persist, state.doc.scene.id]);
+
+  const doSwitchScene = useCallback(
+    async (sceneId: string) => {
+      if (!sceneId || sceneId === state.doc.scene.id) return;
+      if (dirty) {
+        setSaveStatus("請先存檔再切換場景");
+        return;
+      }
+      if (!persist) {
+        setSaveStatus("未接 persist，無法切換場景");
+        return;
+      }
+      setSaveStatus("切換中…");
+      try {
+        const next = await loadExploreDoc(persist, sceneId);
+        setState({ doc: next, bus: emptyBus(), dirty: false });
+        setSaveStatus(`已切換：${sceneId}`);
+      } catch (e) {
+        setSaveStatus(
+          `無法切換「${sceneId}」：${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    },
+    [persist, state.doc.scene.id, dirty],
+  );
 
   const copySelected = useCallback(() => {
     const cell = doc.ui.selectedCell;
@@ -187,9 +261,92 @@ export function ExploreWorkspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [copySelected, pasteSelected, doUndo, doRedo, doSave, persist, doc.ui]);
 
+  const effectiveCatalog = useMemo(() => {
+    if (localCatalog.length > 0) {
+      const byId = new Map(localCatalog.map((e) => [e.id, e]));
+      if (!byId.has(doc.scene.id)) {
+        byId.set(doc.scene.id, {
+          id: doc.scene.id,
+          kind: "explore",
+          title: doc.scene.title,
+        });
+      }
+      return [...byId.values()];
+    }
+    if (knownSceneIds && knownSceneIds.size > 0) {
+      return [...knownSceneIds].map(
+        (id): SceneCatalogEntry => ({ id, kind: "explore" }),
+      );
+    }
+    return [{ id: doc.scene.id, kind: "explore" as const, title: doc.scene.title }];
+  }, [localCatalog, knownSceneIds, doc.scene.id, doc.scene.title]);
+
+  const doCreateScene = useCallback(async () => {
+    const raw =
+      typeof window !== "undefined"
+        ? window.prompt("新探險場景 ID（檔名）", "room_2")
+        : null;
+    if (raw === null) return;
+    const id = raw.trim();
+    if (!id) {
+      setSaveStatus("場景 ID 不可為空");
+      return;
+    }
+    if (effectiveCatalog.some((c) => c.id === id)) {
+      setSaveStatus(`場景「${id}」已存在於目錄`);
+      return;
+    }
+    if (dirty) {
+      setSaveStatus("請先存檔再建新場景");
+      return;
+    }
+    const blank = blankExploreDoc(id);
+    const nextDoc: ExploreDoc = {
+      ...blank,
+      project: structuredClone(state.doc.project),
+      _rawProject: state.doc._rawProject,
+      scene: { ...blank.scene, title: id },
+    };
+    if (persist) {
+      setSaveStatus("建立中…");
+      try {
+        const saved = await saveExploreDoc(persist, nextDoc);
+        const loaded: ExploreDoc = {
+          ...nextDoc,
+          project: saved.project,
+          scene: saved.scene,
+          _rawProject: saved._rawProject,
+          _rawScene: saved._rawScene,
+          ui: blank.ui,
+        };
+        setLocalCatalog((prev) => {
+          if (prev.some((c) => c.id === id)) return prev;
+          return [...prev, { id, kind: "explore", title: loaded.scene.title }];
+        });
+        setState({ doc: loaded, bus: emptyBus(), dirty: false });
+        setSaveStatus(`已建立並切換：${id}`);
+      } catch (e) {
+        setSaveStatus(
+          `建立失敗：${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    } else {
+      setLocalCatalog((prev) => {
+        if (prev.some((c) => c.id === id)) return prev;
+        return [...prev, { id, kind: "explore", title: nextDoc.scene.title }];
+      });
+      setState({ doc: nextDoc, bus: emptyBus(), dirty: true });
+      setSaveStatus(`已建立（記憶體）：${id}`);
+    }
+  }, [persist, dirty, state.doc.project, state.doc._rawProject, effectiveCatalog]);
+
   const problems = useMemo(
-    () => collectExploreProblems(doc, knownSceneIds),
-    [doc, knownSceneIds],
+    () =>
+      collectExploreProblems(doc, {
+        sceneCatalog: effectiveCatalog,
+        knownSceneIds,
+      }),
+    [doc, effectiveCatalog, knownSceneIds],
   );
   const problemHs = useMemo(
     () => new Set(problems.filter((p) => p.hotspotId).map((p) => p.hotspotId!)),
@@ -236,6 +393,33 @@ export function ExploreWorkspace({
         >
           {dirty ? "未儲存 *" : "已同步"}
         </span>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+          場景
+          <select
+            data-testid="scene-switch"
+            value={doc.scene.id}
+            onChange={(e) => void doSwitchScene(e.target.value)}
+            title="切換探險場景（請先存檔）"
+          >
+            {effectiveCatalog.map((s) => (
+              <option key={s.id} value={s.id} disabled={s.kind === "dialogue"}>
+                {s.title ? `${s.title} (${s.id})` : s.id}
+                {s.kind === "dialogue" ? " ·對話（請用對話編輯器）" : ""}
+              </option>
+            ))}
+            {!effectiveCatalog.some((s) => s.id === doc.scene.id) ? (
+              <option value={doc.scene.id}>{doc.scene.id}</option>
+            ) : null}
+          </select>
+        </label>
+        <button
+          type="button"
+          data-testid="scene-create"
+          onClick={() => void doCreateScene()}
+          title="新建空白探險場景"
+        >
+          ＋場景
+        </button>
         <button
           type="button"
           data-testid="undo"
@@ -360,6 +544,7 @@ export function ExploreWorkspace({
           {doc.ui.selectedCell ? (
             <CellInspector
               doc={doc}
+              sceneCatalog={effectiveCatalog}
               onChangeRules={(rules: InteractionRule[], coalesceKey?: string) =>
                 applyCmd(
                   setInteraction(
@@ -384,6 +569,76 @@ export function ExploreWorkspace({
               選熱區或矩陣格
             </div>
           )}
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px solid #333",
+            }}
+          >
+            <OnEnterInspector
+              doc={doc}
+              sceneCatalog={effectiveCatalog}
+              onChange={(actions, coalesceKey) =>
+                applyCmd(setOnEnter(actions, coalesceKey))
+              }
+            />
+          </div>
+          <div
+            data-testid="transition-defaults"
+            style={{
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px solid #333",
+              fontSize: 12,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>轉場預設（E1-min）</div>
+            {(
+              [
+                ["toDialogue", "Call→對話"],
+                ["fromDialogue", "Return"],
+                ["gotoScene", "Goto"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} style={{ display: "block", marginBottom: 4 }}>
+                {label}
+                <select
+                  data-testid={`trans-default-${key}`}
+                  style={{ width: "100%", display: "block" }}
+                  value={doc.project.transitionDefaults?.[key] ?? ""}
+                  onChange={(e) =>
+                    applyCmd(
+                      setTransitionDefaults({
+                        ...doc.project.transitionDefaults,
+                        [key]: e.target.value || undefined,
+                      }),
+                    )
+                  }
+                >
+                  <option value="">（無）</option>
+                  {(doc.project.effectLibrary ?? []).map((ef) => (
+                    <option key={ef.id} value={ef.id}>
+                      {ef.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid #333" }}>
+            <PresetBrowser
+              onApply={(id) => applyCmd(applyPreset(id))}
+              canApply={(p) => {
+                if (p.id === "trans.fadeDefaults") return true;
+                if (p.id === "hotspot.pickup")
+                  return !!(doc.ui.selectedHotspotId || doc.ui.selectedCell);
+                if (p.id === "action.callTalk" || p.id === "action.return")
+                  return !!doc.ui.selectedCell;
+                return true;
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -434,13 +689,36 @@ export function ExploreWorkspace({
           <DatabaseStub
             doc={doc}
             onAddCharacter={(id, name) =>
-              applyCmd(addCharacter({ id, display: { "zh-Hant": name } }))
+              applyCmd(
+                addCharacter({
+                  id,
+                  display: { [doc.project.locale || "zh-Hant"]: name },
+                }),
+              )
             }
             onAddSwitch={(id, name) => applyCmd(addSwitch({ id, name, init: false }))}
             onAddItem={(id, name) => applyCmd(addItem({ id, name }))}
             onRemoveCharacter={(id) => applyCmd(removeCharacter(id))}
             onRemoveSwitch={(id) => applyCmd(removeSwitch(id))}
             onRemoveItem={(id) => applyCmd(removeItem(id))}
+            onUpdateCharacter={(id, name) => {
+              const locale = doc.project.locale || "zh-Hant";
+              const prev = doc.project.characters.find((c) => c.id === id);
+              applyCmd(
+                updateCharacter(
+                  id,
+                  { display: { ...(prev?.display ?? {}), [locale]: name } },
+                  `db-char-name:${id}`,
+                ),
+              );
+            }}
+            onUpdateSwitch={(id, name) =>
+              applyCmd(updateSwitch(id, { name }, `db-sw-name:${id}`))
+            }
+            onUpdateItem={(id, patch) => {
+              const field = "name" in patch ? "name" : "icon" in patch ? "icon" : "consume";
+              applyCmd(updateItem(id, patch, `db-item:${id}:${field}`));
+            }}
           />
         )}
       </div>

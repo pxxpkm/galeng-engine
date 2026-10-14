@@ -1,0 +1,23 @@
+# Click Room（MVP 範例）
+
+tech-spec §6：1 房、4 熱區、1 物、2 開關、1 短對話、1 結局。
+
+## 通關（玩家）
+
+1. **開**書桌 → 抽屜開（`drawer_open`）
+2. **拎**書桌 → 得到黃銅鎖匙
+3. （可選）**講**管家 → 短對話提示後 Return
+4. 對門 **用**鎖匙 → `door_open`，鎖匙經明確 `takeItem` 消耗（唔用 `consumeOnUse`）
+5. **去**門 → 結局場景
+
+## 出包
+
+```bash
+cargo run -p galeng-packer -- --project examples/click-room --out /tmp/click-room.pak [--strict]
+```
+
+缺 SDL 時仍可驗證 packer／schema；player 畫面另計。
+
+## 編輯器
+
+可用 Explore 編輯器載入本專案 `galeng.json`＋`scenario/*.json`（HTTP persist 或 FS）。本目錄 JSON 結構對齊 editor `persist`／schema v2。

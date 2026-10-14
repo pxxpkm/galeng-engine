@@ -1,7 +1,9 @@
+import { roundRect } from "./canvas";
 import type { Command } from "./commandBus";
 import {
   sameOn,
   type CharacterDef,
+  type ExploreAction,
   type ExploreDoc,
   type Hotspot,
   type Interaction,
@@ -92,8 +94,11 @@ export function updateHotspot(
 export function setHotspotRect(
   hotspotId: string,
   rect: { x: number; y: number; w: number; h: number },
+  coalesceKey?: string,
 ): Command {
-  return updateHotspot(hotspotId, { shape: { type: "rect", ...rect } });
+  const r = roundRect(rect);
+  const shape = { type: "rect" as const, ...r };
+  return updateHotspot(hotspotId, { shape }, coalesceKey);
 }
 
 export function setInteraction(
@@ -152,10 +157,11 @@ export function addSwitch(def: SwitchDef): Command {
   };
 }
 
-export function updateSwitch(id: string, patch: Partial<SwitchDef>): Command {
+export function updateSwitch(id: string, patch: Partial<SwitchDef>, coalesceKey?: string): Command {
   return {
     id: "db.updateSwitch",
     label: `Update switch ${id}`,
+    coalesceKey,
     apply(doc) {
       return {
         ...doc,
@@ -200,10 +206,11 @@ export function addItem(def: ItemDef): Command {
   };
 }
 
-export function updateItem(id: string, patch: Partial<ItemDef>): Command {
+export function updateItem(id: string, patch: Partial<ItemDef>, coalesceKey?: string): Command {
   return {
     id: "db.updateItem",
     label: `Update item ${id}`,
+    coalesceKey,
     apply(doc) {
       return {
         ...doc,
@@ -251,10 +258,11 @@ export function addCharacter(def: CharacterDef): Command {
   };
 }
 
-export function updateCharacter(id: string, patch: Partial<CharacterDef>): Command {
+export function updateCharacter(id: string, patch: Partial<CharacterDef>, coalesceKey?: string): Command {
   return {
     id: "db.updateCharacter",
     label: `Update character ${id}`,
+    coalesceKey,
     apply(doc) {
       return {
         ...doc,
@@ -280,6 +288,23 @@ export function removeCharacter(id: string): Command {
           ...doc.project,
           characters: doc.project.characters.filter((c) => c.id !== id),
         },
+      };
+    },
+  };
+}
+
+export function setOnEnter(
+  actions: ExploreAction[],
+  coalesceKey?: string,
+): Command {
+  return {
+    id: "explore.setOnEnter",
+    label: "Set onEnter",
+    coalesceKey,
+    apply(doc) {
+      return {
+        ...doc,
+        scene: { ...doc.scene, onEnter: structuredClone(actions) },
       };
     },
   };

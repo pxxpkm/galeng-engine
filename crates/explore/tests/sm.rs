@@ -175,18 +175,53 @@ fn return_empty_stack_errors() {
 
 #[test]
 fn save_roundtrip_preserves_inventory_and_stack() {
-    let mut eng = load_click_room();
+    // Call into a dialogue that lands on Choices (stable boundary) so save is allowed.
+    let project = r#"{
+      "id": "sv",
+      "title": "SV",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true,
+      "items": [{ "id": "key", "name": "Key" }]
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "dlg_ask" }] }]
+        }
+      ]
+    }"#;
+    let dlg_ask = r#"{
+      "id": "dlg_ask",
+      "sceneKind": "dialogue",
+      "beats": [],
+      "exit": {
+        "type": "choices",
+        "options": [{ "text": "ok", "goto": "dlg_ask" }]
+      }
+    }"#;
+    let mut eng = Engine::from_json(project, &[("room", room), ("dlg_ask", dlg_ask)]).unwrap();
     eng.give_item_for_test("key");
     eng.select_verb(Some("talk"));
-    eng.interact("butler").unwrap();
-    assert_eq!(eng.scene_id(), "dlg_butler");
-    let save = eng.to_save();
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.scene_id(), "dlg_ask");
+    assert_eq!(eng.phase(), &Phase::Choices);
+    let save = eng.to_save().unwrap();
     assert_eq!(save.call_stack.len(), 1);
     assert!(save.inventory.contains("key"));
 
-    let mut eng2 = load_click_room();
+    let mut eng2 = Engine::from_json(project, &[("room", room), ("dlg_ask", dlg_ask)]).unwrap();
     eng2.load_save(&save).unwrap();
-    assert_eq!(eng2.scene_id(), "dlg_butler");
+    assert_eq!(eng2.scene_id(), "dlg_ask");
     assert_eq!(eng2.view().call_depth, 1);
     assert!(eng2.view().inventory.contains("key"));
     assert_eq!(eng2.view().selected_verb.as_deref(), Some("talk"));
@@ -195,7 +230,7 @@ fn save_roundtrip_preserves_inventory_and_stack() {
 #[test]
 fn save_schema_mismatch_rejects() {
     let eng = load_click_room();
-    let mut save = eng.to_save();
+    let mut save = eng.to_save().unwrap();
     save.schema_version = 99;
     let mut eng2 = load_click_room();
     let err = eng2.load_save(&save).unwrap_err();
@@ -292,9 +327,317 @@ fn click_uses_hit_test() {
 #[test]
 fn save_json_roundtrip() {
     let eng = load_click_room();
-    let save = eng.to_save();
+    let save = eng.to_save().unwrap();
     let text = serde_json::to_string_pretty(&save).unwrap();
     let back: ExploreSave = serde_json::from_str(&text).unwrap();
     assert_eq!(back.schema_version, 2);
     assert_eq!(back.scene_id, "study");
+}
+
+#[test]
+fn transition_defaults_fill_missing_trans_on_call_and_return() {
+    let project = r#"{
+      "id": "td",
+      "title": "TD",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true,
+      "transitionDefaults": {
+        "toDialogue": "fade_black",
+        "fromDialogue": "crossfade",
+        "gotoScene": "fade_black"
+      }
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "dlg" }] }]
+        }
+      ]
+    }"#;
+    let dlg = r#"{
+      "id": "dlg",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "hi" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let mut eng = Engine::from_json(project, &[("room", room), ("dlg", dlg)]).unwrap();
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.view().last_trans.as_deref(), Some("fade_black"));
+    assert_eq!(eng.scene_id(), "dlg");
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.scene_id(), "room");
+    assert_eq!(eng.view().last_trans.as_deref(), Some("crossfade"));
+}
+
+#[test]
+fn call_then_exit_next_preserves_stack_for_return() {
+    // explore --call--> dlg_a --Exit::Next--> dlg_b --Exit::Return--> explore
+    let project = r#"{
+      "id": "chain",
+      "title": "Chain",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "dlg_a" }] }]
+        }
+      ]
+    }"#;
+    let dlg_a = r#"{
+      "id": "dlg_a",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "first" } }],
+      "exit": { "type": "next", "goto": "dlg_b" }
+    }"#;
+    let dlg_b = r#"{
+      "id": "dlg_b",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "B", "text": "second" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let mut eng = Engine::from_json(project, &[("room", room), ("dlg_a", dlg_a), ("dlg_b", dlg_b)]).unwrap();
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.scene_id(), "dlg_a");
+    assert_eq!(eng.view().call_depth, 1);
+    eng.dismiss_say().unwrap();
+    // Exit::Next must NOT clear stack
+    assert_eq!(eng.scene_id(), "dlg_b");
+    assert_eq!(eng.view().call_depth, 1);
+    assert_eq!(eng.view().say_text.as_deref(), Some("second"));
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.scene_id(), "room");
+    assert_eq!(eng.phase(), &Phase::Explore);
+    assert_eq!(eng.view().call_depth, 0);
+}
+
+#[test]
+fn call_then_choices_preserves_stack_for_return() {
+    let project = r#"{
+      "id": "ch",
+      "title": "Ch",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "dlg_ask" }] }]
+        }
+      ]
+    }"#;
+    let dlg_ask = r#"{
+      "id": "dlg_ask",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "pick" } }],
+      "exit": {
+        "type": "choices",
+        "options": [
+          { "text": "go", "goto": "dlg_ok" }
+        ]
+      }
+    }"#;
+    let dlg_ok = r#"{
+      "id": "dlg_ok",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "ok" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let mut eng = Engine::from_json(
+        project,
+        &[("room", room), ("dlg_ask", dlg_ask), ("dlg_ok", dlg_ok)],
+    )
+    .unwrap();
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.phase(), &Phase::Choices);
+    assert_eq!(eng.view().call_depth, 1);
+    assert!(eng.choose(0).unwrap());
+    assert_eq!(eng.scene_id(), "dlg_ok");
+    assert_eq!(eng.view().call_depth, 1);
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.scene_id(), "room");
+    assert_eq!(eng.view().call_depth, 0);
+}
+
+#[test]
+fn explicit_goto_scene_action_still_clears_stack() {
+    let project = r#"{
+      "id": "g",
+      "title": "G",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } },
+        { "id": "portal", "name": "P", "shape": { "type": "rect", "x": 100, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "dlg" }] }]
+        },
+        {
+          "hotspot": "portal",
+          "on": { "verb": "move" },
+          "rules": [{ "when": [], "do": [{ "type": "gotoScene", "scene": "ending" }] }]
+        }
+      ]
+    }"#;
+    let dlg = r#"{
+      "id": "dlg",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "hi" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let ending = r#"{
+      "id": "ending",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "N", "text": "end" } }]
+    }"#;
+    let mut eng =
+        Engine::from_json(project, &[("room", room), ("dlg", dlg), ("ending", ending)]).unwrap();
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.view().call_depth, 1);
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.scene_id(), "room");
+    assert_eq!(eng.view().call_depth, 0);
+    // push again then hard goto
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.view().call_depth, 1);
+    // Still in dlg — return first then goto from explore
+    eng.dismiss_say().unwrap();
+    eng.select_verb(Some("move"));
+    eng.interact("portal").unwrap();
+    assert_eq!(eng.scene_id(), "ending");
+    assert_eq!(eng.view().call_depth, 0);
+}
+
+#[test]
+fn dialogue_exit_call_then_return_does_not_loop() {
+    // Root dialogue A exits with Call→B; B returns. Must End, not re-Call forever.
+    let project = r#"{
+      "id": "loop",
+      "title": "Loop",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "A",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let a = r#"{
+      "id": "A",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "go" } }],
+      "exit": { "type": "call", "scene": "B" }
+    }"#;
+    let b = r#"{
+      "id": "B",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "B", "text": "back" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let mut eng = Engine::from_json(project, &[("A", a), ("B", b)]).unwrap();
+    assert_eq!(eng.phase(), &Phase::Saying);
+    assert_eq!(eng.scene_id(), "A");
+    eng.dismiss_say().unwrap();
+    // A exit Call → B
+    assert_eq!(eng.scene_id(), "B");
+    assert_eq!(eng.phase(), &Phase::Saying);
+    eng.dismiss_say().unwrap();
+    // B Return → A at end → Ended (must not re-enter Call)
+    assert_eq!(eng.phase(), &Phase::Ended);
+    assert_eq!(eng.scene_id(), "A");
+    // Bounded advances must stay Ended (no loop)
+    for _ in 0..8 {
+        eng.advance().unwrap();
+        assert_eq!(eng.phase(), &Phase::Ended);
+    }
+}
+
+#[test]
+fn try_to_save_rejects_mid_saying() {
+    let project = r#"{
+      "id": "say",
+      "title": "Say",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "r",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let scene = r#"{
+      "id": "r",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "a", "name": "A", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "a",
+          "on": { "verb": "look" },
+          "rules": [{
+            "when": [],
+            "do": [
+              { "type": "say", "text": "one" },
+              { "type": "setSwitch", "id": "done", "value": true }
+            ]
+          }]
+        }
+      ]
+    }"#;
+    let mut eng = Engine::from_json(project, &[("r", scene)]).unwrap();
+    assert!(eng.try_to_save().is_ok());
+    eng.select_verb(Some("look"));
+    eng.interact("a").unwrap();
+    assert_eq!(eng.phase(), &Phase::Saying);
+    let err = eng.try_to_save().unwrap_err();
+    assert!(matches!(err, Error::InvalidState(_)));
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.phase(), &Phase::Explore);
+    let save = eng.try_to_save().unwrap();
+    assert_eq!(save.scene_id, "r");
 }

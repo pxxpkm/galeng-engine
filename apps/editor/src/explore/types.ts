@@ -83,6 +83,28 @@ export interface Fallback {
   global?: string;
 }
 
+/** E1-min effect library entry (fade / crossfade). */
+export interface EffectDef {
+  id: string;
+  kind: "fade" | "crossfade";
+  params?: { ms?: number; color?: string };
+}
+
+export interface TransitionDefaults {
+  toDialogue?: string;
+  fromDialogue?: string;
+  gotoScene?: string;
+}
+
+/** Optional catalog entry for Problems / Call scene picker. */
+export interface SceneCatalogEntry {
+  id: string;
+  kind: SceneKind;
+  /** Dialogue that exits with return; false = dead-end for Call. */
+  hasReturn?: boolean;
+  title?: string;
+}
+
 export interface ExploreProject {
   id: string;
   title: string;
@@ -95,6 +117,8 @@ export interface ExploreProject {
   switches: SwitchDef[];
   characters: CharacterDef[];
   fallback: Fallback;
+  effectLibrary?: EffectDef[];
+  transitionDefaults?: TransitionDefaults;
 }
 
 export interface ExploreScene {
@@ -122,6 +146,10 @@ export interface ExploreDoc {
   project: ExploreProject;
   scene: ExploreScene;
   ui: ExploreUi;
+  /** Raw host project JSON (lossless round-trip for non-Explore fields). */
+  _rawProject?: Record<string, unknown>;
+  /** Raw host scene JSON (lossless round-trip for exit / unknown keys). */
+  _rawScene?: Record<string, unknown>;
 }
 
 export function emptyUi(): ExploreUi {
@@ -153,3 +181,4 @@ export const BUILTIN_VERBS: Verb[] = [
   { id: "open", label: "開", builtin: true },
   { id: "move", label: "去", builtin: true },
 ];
+

@@ -1,0 +1,308 @@
+{
+  "id": "study",
+  "title": "書房",
+  "sceneKind": "explore",
+  "bg": {
+    "asset": "bg/study",
+    "trans": "fade",
+    "ms": 400
+  },
+  "hotspots": [
+    {
+      "id": "desk",
+      "name": "書桌",
+      "shape": {
+        "type": "rect",
+        "x": 600,
+        "y": 500,
+        "w": 420,
+        "h": 220
+      }
+    },
+    {
+      "id": "door",
+      "name": "門",
+      "shape": {
+        "type": "rect",
+        "x": 1400,
+        "y": 180,
+        "w": 280,
+        "h": 720
+      },
+      "defaultVerb": "move"
+    },
+    {
+      "id": "butler",
+      "name": "管家",
+      "shape": {
+        "type": "rect",
+        "x": 200,
+        "y": 220,
+        "w": 300,
+        "h": 700
+      }
+    },
+    {
+      "id": "window",
+      "name": "窗",
+      "shape": {
+        "type": "rect",
+        "x": 100,
+        "y": 80,
+        "w": 300,
+        "h": 220
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "hotspot": "desk",
+      "on": {
+        "verb": "look"
+      },
+      "rules": [
+        {
+          "when": [
+            {
+              "switch": "drawer_open",
+              "is": true
+            }
+          ],
+          "do": [
+            {
+              "type": "say",
+              "text": "抽屜開咗，裏面空咗。"
+            }
+          ]
+        },
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "一張舊書桌，抽屜似乎可以開。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "desk",
+      "on": {
+        "verb": "open"
+      },
+      "rules": [
+        {
+          "when": [
+            {
+              "switch": "drawer_open",
+              "is": true
+            }
+          ],
+          "do": [
+            {
+              "type": "say",
+              "text": "已經開咗。"
+            }
+          ]
+        },
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "setSwitch",
+              "id": "drawer_open",
+              "value": true
+            },
+            {
+              "type": "say",
+              "text": "你拉開抽屜，見到一把黃銅鎖匙。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "desk",
+      "on": {
+        "verb": "take"
+      },
+      "rules": [
+        {
+          "when": [
+            {
+              "switch": "drawer_open",
+              "is": true
+            }
+          ],
+          "do": [
+            {
+              "type": "giveItem",
+              "id": "key"
+            },
+            {
+              "type": "say",
+              "text": "拎到黃銅鎖匙。"
+            }
+          ]
+        },
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "抽屜仲鎖住／關住，拎唔到。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "door",
+      "on": {
+        "verb": "look"
+      },
+      "rules": [
+        {
+          "when": [
+            {
+              "switch": "door_open",
+              "is": true
+            }
+          ],
+          "do": [
+            {
+              "type": "say",
+              "text": "門已經開咗。"
+            }
+          ]
+        },
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "厚重木門，落咗鎖。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "door",
+      "on": {
+        "item": "key"
+      },
+      "rules": [
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "setSwitch",
+              "id": "door_open",
+              "value": true
+            },
+            {
+              "type": "takeItem",
+              "id": "key"
+            },
+            {
+              "type": "say",
+              "text": "鎖匙對上，門開咗。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "door",
+      "on": {
+        "verb": "move"
+      },
+      "rules": [
+        {
+          "when": [
+            {
+              "switch": "door_open",
+              "is": true
+            }
+          ],
+          "do": [
+            {
+              "type": "gotoScene",
+              "scene": "ending",
+              "trans": "fade_black"
+            }
+          ]
+        },
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "鎖住咗。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "butler",
+      "on": {
+        "verb": "look"
+      },
+      "rules": [
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "管家靜靜企喺度。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "butler",
+      "on": {
+        "verb": "talk"
+      },
+      "rules": [
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "call",
+              "scene": "dlg_butler",
+              "trans": "fade_black"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "hotspot": "window",
+      "on": {
+        "verb": "look"
+      },
+      "rules": [
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "窗外係漆黑庭園。"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "onEnter": [
+    {
+      "type": "say",
+      "text": "你走進書房。"
+    }
+  ]
+}

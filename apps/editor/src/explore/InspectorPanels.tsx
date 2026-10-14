@@ -1,14 +1,18 @@
+import { clampRect } from "./canvas";
 import {
   EDITABLE_ACTION_TYPES,
   actionChipLabel,
   addAction,
+  addActionToList,
   addRule,
   addWhen,
   getCellRules,
   interactionCoalesceKey,
   isEditableAction,
   isEditablePred,
+  onEnterCoalesceKey,
   patchAction,
+  patchActionInList,
   patchPred,
   predChipLabel,
   removeAction,
@@ -23,19 +27,23 @@ import type {
   InteractionOn,
   InteractionRule,
   Pred,
+  SceneCatalogEntry,
 } from "./types";
 
 export interface CellInspectorProps {
   doc: ExploreDoc;
   onChangeRules: (rules: InteractionRule[], coalesceKey?: string) => void;
+  /** Scenes available for Call / Goto pickers. */
+  sceneCatalog?: SceneCatalogEntry[];
 }
 
 /** Rule-card Inspector for a matrix cell — When/Do via GUI; never wipe unsupported. */
-export function CellInspector({ doc, onChangeRules }: CellInspectorProps) {
+export function CellInspector({ doc, onChangeRules, sceneCatalog = [] }: CellInspectorProps) {
   const cell = doc.ui.selectedCell!;
   const rules = getCellRules(doc, cell.hotspotId, cell.on);
   const switches = doc.project.switches;
   const items = doc.project.items;
+  const effectIds = (doc.project.effectLibrary ?? []).map((e) => e.id);
   const onLabel =
     "verb" in cell.on ? `動詞：${cell.on.verb}` : `物品：${cell.on.item}`;
 
@@ -60,6 +68,8 @@ export function CellInspector({ doc, onChangeRules }: CellInspectorProps) {
           items={items}
           hotspotId={cell.hotspotId}
           on={cell.on}
+          sceneCatalog={sceneCatalog}
+          effectIds={effectIds}
           onPatch={(next, coalesceKey) => commit(next, coalesceKey)}
           onRemove={() => commit(removeRule(rules, ri))}
           allRules={rules}
@@ -84,6 +94,8 @@ function RuleCard({
   items,
   hotspotId,
   on,
+  sceneCatalog,
+  effectIds,
   allRules,
   onPatch,
   onRemove,
@@ -94,6 +106,8 @@ function RuleCard({
   items: ExploreDoc["project"]["items"];
   hotspotId: string;
   on: InteractionOn;
+  sceneCatalog: SceneCatalogEntry[];
+  effectIds: string[];
   allRules: InteractionRule[];
   onPatch: (rules: InteractionRule[], coalesceKey?: string) => void;
   onRemove: () => void;
@@ -205,6 +219,8 @@ function RuleCard({
               items={items}
               hotspotId={hotspotId}
               on={on}
+              sceneCatalog={sceneCatalog}
+              effectIds={effectIds}
               allRules={allRules}
               onPatch={onPatch}
             />
@@ -244,6 +260,124 @@ function RuleCard({
   );
 }
 
+function emptyForType(
+  t: EditableActionType,
+  switches: ExploreDoc["project"]["switches"],
+  items: ExploreDoc["project"]["items"],
+  sceneCatalog: SceneCatalogEntry[],
+  prev: ExploreAction,
+): ExploreAction {
+  switch (t) {
+    case "say":
+      return { type: "say", text: prev.type === "say" ? prev.text : "" };
+    case "setSwitch":
+      return {
+        type: "setSwitch",
+        id: prev.type === "setSwitch" ? prev.id : switches[0]?.id ?? "",
+        value: prev.type === "setSwitch" ? prev.value : true,
+      };
+    case "giveItem":
+      return {
+        type: "giveItem",
+        id: prev.type === "giveItem" ? prev.id : items[0]?.id ?? "",
+      };
+    case "takeItem":
+      return {
+        type: "takeItem",
+        id:
+          prev.type === "takeItem" || prev.type === "giveItem"
+            ? prev.id
+            : items[0]?.id ?? "",
+      };
+    case "call":
+      return {
+        type: "call",
+        scene:
+          prev.type === "call" || prev.type === "gotoScene"
+            ? prev.scene
+            : sceneCatalog.find((s) => s.kind === "dialogue")?.id ?? "",
+        trans: prev.type === "call" || prev.type === "return" || prev.type === "gotoScene" ? prev.trans : undefined,
+      };
+    case "return":
+      return {
+        type: "return",
+        trans: prev.type === "call" || prev.type === "return" || prev.type === "gotoScene" ? prev.trans : undefined,
+      };
+    case "gotoScene":
+      return {
+        type: "gotoScene",
+        scene:
+          prev.type === "call" || prev.type === "gotoScene"
+            ? prev.scene
+            : sceneCatalog[0]?.id ?? "",
+        trans: prev.type === "call" || prev.type === "return" || prev.type === "gotoScene" ? prev.trans : undefined,
+      };
+  }
+}
+
+function TransSelect({
+  testId,
+  value,
+  effectIds,
+  onChange,
+}: {
+  testId: string;
+  value?: string;
+  effectIds: string[];
+  onChange: (v: string | undefined) => void;
+}) {
+  return (
+    <select
+      data-testid={testId}
+      value={value ?? ""}
+      title="轉場（空＝用專案 transitionDefaults）"
+      onChange={(e) => onChange(e.target.value || undefined)}
+    >
+      <option value="">（預設）</option>
+      {effectIds.map((id) => (
+        <option key={id} value={id}>
+          {id}
+        </option>
+      ))}
+      {value && !effectIds.includes(value) ? (
+        <option value={value}>{value}（未知）</option>
+      ) : null}
+    </select>
+  );
+}
+
+function SceneSelect({
+  testId,
+  value,
+  sceneCatalog,
+  onChange,
+}: {
+  testId: string;
+  value: string;
+  sceneCatalog: SceneCatalogEntry[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      data-testid={testId}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">（揀場景）</option>
+      {sceneCatalog.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.title ? `${s.title} (${s.id})` : s.id}
+          {s.kind === "dialogue" ? " ·對話" : " ·探險"}
+          {s.kind === "dialogue" && s.hasReturn === false ? " ⚠無Return" : ""}
+        </option>
+      ))}
+      {value && !sceneCatalog.some((s) => s.id === value) ? (
+        <option value={value}>{value}（未知）</option>
+      ) : null}
+    </select>
+  );
+}
+
 function EditableActionRow({
   ruleIndex,
   actionIndex,
@@ -252,6 +386,8 @@ function EditableActionRow({
   items,
   hotspotId,
   on,
+  sceneCatalog,
+  effectIds,
   allRules,
   onPatch,
 }: {
@@ -262,6 +398,8 @@ function EditableActionRow({
   items: ExploreDoc["project"]["items"];
   hotspotId: string;
   on: InteractionOn;
+  sceneCatalog: SceneCatalogEntry[];
+  effectIds: string[];
   allRules: InteractionRule[];
   onPatch: (rules: InteractionRule[], coalesceKey?: string) => void;
 }) {
@@ -271,19 +409,7 @@ function EditableActionRow({
       value={action.type}
       onChange={(e) => {
         const t = e.target.value as EditableActionType;
-        let next: ExploreAction;
-        if (t === "say") next = { type: "say", text: action.type === "say" ? action.text : "" };
-        else if (t === "setSwitch")
-          next = {
-            type: "setSwitch",
-            id: action.type === "setSwitch" ? action.id : switches[0]?.id ?? "",
-            value: action.type === "setSwitch" ? action.value : true,
-          };
-        else
-          next = {
-            type: "giveItem",
-            id: action.type === "giveItem" ? action.id : items[0]?.id ?? "",
-          };
+        const next = emptyForType(t, switches, items, sceneCatalog, action);
         onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
       }}
     >
@@ -360,12 +486,15 @@ function EditableActionRow({
           </select>
         </>
       ) : null}
-      {action.type === "giveItem" ? (
+      {action.type === "giveItem" || action.type === "takeItem" ? (
         <select
           data-testid={`action-item-id-${ruleIndex}-${actionIndex}`}
           value={action.id}
           onChange={(e) => {
-            const next: ExploreAction = { type: "giveItem", id: e.target.value };
+            const next: ExploreAction =
+              action.type === "giveItem"
+                ? { type: "giveItem", id: e.target.value }
+                : { type: "takeItem", id: e.target.value };
             onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
           }}
         >
@@ -379,6 +508,34 @@ function EditableActionRow({
             <option value={action.id}>{action.id}（未知）</option>
           ) : null}
         </select>
+      ) : null}
+      {action.type === "call" || action.type === "gotoScene" ? (
+        <SceneSelect
+          testId={`action-scene-${ruleIndex}-${actionIndex}`}
+          value={action.scene}
+          sceneCatalog={sceneCatalog}
+          onChange={(scene) => {
+            const next: ExploreAction =
+              action.type === "call"
+                ? { type: "call", scene, trans: action.trans }
+                : { type: "gotoScene", scene, trans: action.trans };
+            onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
+          }}
+        />
+      ) : null}
+      {action.type === "call" || action.type === "return" || action.type === "gotoScene" ? (
+        <TransSelect
+          testId={`action-trans-${ruleIndex}-${actionIndex}`}
+          value={action.trans}
+          effectIds={effectIds}
+          onChange={(trans) => {
+            let next: ExploreAction;
+            if (action.type === "call") next = { type: "call", scene: action.scene, trans };
+            else if (action.type === "return") next = { type: "return", trans };
+            else next = { type: "gotoScene", scene: action.scene, trans };
+            onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
+          }}
+        />
       ) : null}
       <button
         type="button"
@@ -466,14 +623,23 @@ export function HotspotInspector({ doc, hotspot, onUpdate }: HotspotInspectorPro
                 onChange={(e) => {
                   const n = Number(e.target.value);
                   if (Number.isNaN(n)) return;
+                  const next = clampRect(
+                    {
+                      x: key === "x" ? n : shape.x,
+                      y: key === "y" ? n : shape.y,
+                      w: key === "w" ? n : shape.w,
+                      h: key === "h" ? n : shape.h,
+                    },
+                    doc.project.resolution,
+                  );
                   onUpdate(
                     {
                       shape: {
                         type: "rect",
-                        x: key === "x" ? n : shape.x,
-                        y: key === "y" ? n : shape.y,
-                        w: key === "w" ? n : shape.w,
-                        h: key === "h" ? n : shape.h,
+                        x: next.x,
+                        y: next.y,
+                        w: next.w,
+                        h: next.h,
                       },
                     },
                     `hs-rect:${hotspot.id}:${key}`,
@@ -486,6 +652,244 @@ export function HotspotInspector({ doc, hotspot, onUpdate }: HotspotInspectorPro
       ) : (
         <div style={{ opacity: 0.65 }}>多邊形熱區（座標稍後編輯）</div>
       )}
+    </div>
+  );
+}
+
+export interface OnEnterInspectorProps {
+  doc: ExploreDoc;
+  sceneCatalog?: SceneCatalogEntry[];
+  onChange: (actions: ExploreAction[], coalesceKey?: string) => void;
+}
+
+/** Scene-level onEnter action list — same editable types as rule Do. */
+export function OnEnterInspector({
+  doc,
+  sceneCatalog = [],
+  onChange,
+}: OnEnterInspectorProps) {
+  const actions = doc.scene.onEnter ?? [];
+  const switches = doc.project.switches;
+  const items = doc.project.items;
+  const effectIds = (doc.project.effectLibrary ?? []).map((e) => e.id);
+  const list = actions.length ? actions : [];
+
+  const commit = (next: ExploreAction[], coalesceKey?: string) => {
+    onChange(next, coalesceKey);
+  };
+
+  return (
+    <div data-testid="on-enter-inspector" style={{ fontSize: 12 }}>
+      <div style={{ marginBottom: 6, fontWeight: 600 }}>入場動作（onEnter）</div>
+      {list.length === 0 ? (
+        <div style={{ opacity: 0.65, marginBottom: 6 }}>無（進入場景唔跑動作）</div>
+      ) : null}
+      {list.map((a, ai) =>
+        isEditableAction(a) ? (
+          <OnEnterActionRow
+            key={ai}
+            actionIndex={ai}
+            action={a}
+            switches={switches}
+            items={items}
+            sceneCatalog={sceneCatalog}
+            effectIds={effectIds}
+            allActions={list}
+            onPatch={commit}
+          />
+        ) : (
+          <div
+            key={ai}
+            data-testid={`onenter-readonly-${ai}`}
+            style={{
+              display: "inline-block",
+              padding: "2px 6px",
+              marginBottom: 4,
+              marginRight: 4,
+              background: "#333",
+              borderRadius: 4,
+              opacity: 0.85,
+            }}
+            title="未支援嘅動作（只讀保留）"
+          >
+            {actionChipLabel(a)}
+          </div>
+        ),
+      )}
+      <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+        {EDITABLE_ACTION_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            data-testid={`onenter-add-${t}`}
+            onClick={() => commit(addActionToList(list, t))}
+          >
+            ＋{t}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OnEnterActionRow({
+  actionIndex,
+  action,
+  switches,
+  items,
+  sceneCatalog,
+  effectIds,
+  allActions,
+  onPatch,
+}: {
+  actionIndex: number;
+  action: Extract<ExploreAction, { type: EditableActionType }>;
+  switches: ExploreDoc["project"]["switches"];
+  items: ExploreDoc["project"]["items"];
+  sceneCatalog: SceneCatalogEntry[];
+  effectIds: string[];
+  allActions: ExploreAction[];
+  onPatch: (actions: ExploreAction[], coalesceKey?: string) => void;
+}) {
+  return (
+    <div
+      data-testid={`onenter-row-${actionIndex}`}
+      style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center", flexWrap: "wrap" }}
+    >
+      <select
+        data-testid={`onenter-type-${actionIndex}`}
+        value={action.type}
+        onChange={(e) => {
+          const t = e.target.value as EditableActionType;
+          const next = emptyForType(t, switches, items, sceneCatalog, action);
+          onPatch(patchActionInList(allActions, actionIndex, next));
+        }}
+      >
+        {EDITABLE_ACTION_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+      {action.type === "say" ? (
+        <input
+          data-testid={`onenter-say-${actionIndex}`}
+          style={{ flex: 1, minWidth: 80 }}
+          value={action.text}
+          onChange={(e) => {
+            const next: ExploreAction = {
+              type: "say",
+              text: e.target.value,
+              speaker: action.speaker,
+            };
+            onPatch(
+              patchActionInList(allActions, actionIndex, next),
+              onEnterCoalesceKey(actionIndex, "say"),
+            );
+          }}
+        />
+      ) : null}
+      {action.type === "setSwitch" ? (
+        <>
+          <select
+            data-testid={`onenter-switch-id-${actionIndex}`}
+            value={action.id}
+            onChange={(e) => {
+              const next: ExploreAction = {
+                type: "setSwitch",
+                id: e.target.value,
+                value: action.value,
+              };
+              onPatch(patchActionInList(allActions, actionIndex, next));
+            }}
+          >
+            <option value="">（揀開關）</option>
+            {switches.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name ? `${s.name} (${s.id})` : s.id}
+              </option>
+            ))}
+            {action.id && !switches.some((s) => s.id === action.id) ? (
+              <option value={action.id}>{action.id}（未知）</option>
+            ) : null}
+          </select>
+          <select
+            data-testid={`onenter-switch-val-${actionIndex}`}
+            value={action.value ? "true" : "false"}
+            onChange={(e) => {
+              const next: ExploreAction = {
+                type: "setSwitch",
+                id: action.id,
+                value: e.target.value === "true",
+              };
+              onPatch(patchActionInList(allActions, actionIndex, next));
+            }}
+          >
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </>
+      ) : null}
+      {action.type === "giveItem" || action.type === "takeItem" ? (
+        <select
+          data-testid={`onenter-item-id-${actionIndex}`}
+          value={action.id}
+          onChange={(e) => {
+            const next: ExploreAction =
+              action.type === "giveItem"
+                ? { type: "giveItem", id: e.target.value }
+                : { type: "takeItem", id: e.target.value };
+            onPatch(patchActionInList(allActions, actionIndex, next));
+          }}
+        >
+          <option value="">（揀物品）</option>
+          {items.map((it) => (
+            <option key={it.id} value={it.id}>
+              {it.name} ({it.id})
+            </option>
+          ))}
+          {action.id && !items.some((i) => i.id === action.id) ? (
+            <option value={action.id}>{action.id}（未知）</option>
+          ) : null}
+        </select>
+      ) : null}
+      {action.type === "call" || action.type === "gotoScene" ? (
+        <SceneSelect
+          testId={`onenter-scene-${actionIndex}`}
+          value={action.scene}
+          sceneCatalog={sceneCatalog}
+          onChange={(scene) => {
+            const next: ExploreAction =
+              action.type === "call"
+                ? { type: "call", scene, trans: action.trans }
+                : { type: "gotoScene", scene, trans: action.trans };
+            onPatch(patchActionInList(allActions, actionIndex, next));
+          }}
+        />
+      ) : null}
+      {action.type === "call" || action.type === "return" || action.type === "gotoScene" ? (
+        <TransSelect
+          testId={`onenter-trans-${actionIndex}`}
+          value={action.trans}
+          effectIds={effectIds}
+          onChange={(trans) => {
+            let next: ExploreAction;
+            if (action.type === "call") next = { type: "call", scene: action.scene, trans };
+            else if (action.type === "return") next = { type: "return", trans };
+            else next = { type: "gotoScene", scene: action.scene, trans };
+            onPatch(patchActionInList(allActions, actionIndex, next));
+          }}
+        />
+      ) : null}
+      <button
+        type="button"
+        data-testid={`onenter-remove-${actionIndex}`}
+        onClick={() =>
+          onPatch(allActions.filter((_, i) => i !== actionIndex))
+        }
+      >
+        ✕
+      </button>
     </div>
   );
 }

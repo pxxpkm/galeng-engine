@@ -26,6 +26,15 @@ export function blankExploreDoc(sceneId = "room"): ExploreDoc {
         itemOnHotspot: "用呢樣嘢冇效果。",
         global: "……",
       },
+      effectLibrary: [
+        { id: "fade_black", kind: "fade", params: { ms: 400, color: "#000000" } },
+        { id: "crossfade", kind: "crossfade", params: { ms: 400 } },
+      ],
+      transitionDefaults: {
+        toDialogue: "fade_black",
+        fromDialogue: "fade_black",
+        gotoScene: "fade_black",
+      },
     },
     scene: {
       id: sceneId,

@@ -3,6 +3,7 @@ import { dispatch, emptyBus } from "./commandBus";
 import { addHotspot, addItem, addSwitch, setInteraction } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import { collectExploreProblems } from "./problems";
+import { buildSceneCatalog } from "./sceneCatalog";
 
 describe("explore problems", () => {
   it("warns when no hotspots", () => {
@@ -61,6 +62,150 @@ describe("explore problems", () => {
       ]),
     ));
     const probs = collectExploreProblems(doc, new Set(["room"]));
+    expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
+  });
+});
+
+describe("explore problems M3 dead-end call", () => {
+  it("errors on empty call scene", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("npc", { verb: "talk" }, [
+        { when: [], do: [{ type: "call", scene: "" }] },
+      ]),
+    ));
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [{ id: "dlg_ok", kind: "dialogue", hasReturn: true }],
+    });
+    expect(probs.some((p) => p.key === "explore.emptySceneRef")).toBe(true);
+  });
+
+  it("errors on dead-end call (dialogue without return)", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("npc", { verb: "talk" }, [
+        { when: [], do: [{ type: "call", scene: "dlg_end" }] },
+      ]),
+    ));
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [
+        { id: "room", kind: "explore" },
+        { id: "dlg_end", kind: "dialogue", hasReturn: false },
+        { id: "dlg_butler", kind: "dialogue", hasReturn: true },
+      ],
+    });
+    expect(probs.some((p) => p.key === "explore.deadEndCall")).toBe(true);
+  });
+
+  it("allows call to dialogue with return", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("npc", { verb: "talk" }, [
+        { when: [], do: [{ type: "call", scene: "dlg_butler", trans: "fade_black" }] },
+      ]),
+    ));
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [
+        { id: "room", kind: "explore" },
+        { id: "dlg_butler", kind: "dialogue", hasReturn: true },
+      ],
+    });
+    expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
+  });
+});
+
+describe("explore problems schema-aligned validation", () => {
+  it("errors on empty say text", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("desk", { verb: "look" }, [
+        { when: [], do: [{ type: "say", text: "   " }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.emptySay")).toBe(true);
+  });
+
+  it("errors on non-integer hotspot coords", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      addHotspot({
+        id: "desk",
+        shape: { type: "rect", x: 10.5, y: 20, w: 100, h: 80 },
+      }),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.nonIntegerHotspot")).toBe(true);
+  });
+});
+
+  it("errors on non-positive hotspot w/h", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      addHotspot({
+        id: "desk",
+        shape: { type: "rect", x: 10, y: 20, w: 0, h: 80 },
+      }),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.nonPositiveHotspot")).toBe(true);
+  });
+
+describe("explore problems catalog Next chain", () => {
+  it("dlg_a -> Next -> dlg_b(return) does not flag deadEndCall", () => {
+    const sceneCatalog = buildSceneCatalog([
+      {
+        id: "dlg_a",
+        sceneKind: "dialogue",
+        exit: { type: "next", goto: "dlg_b" },
+      },
+      {
+        id: "dlg_b",
+        sceneKind: "dialogue",
+        exit: { type: "return" },
+      },
+      { id: "room", sceneKind: "explore", hotspots: [{ id: "x" }] },
+    ]);
+    expect(sceneCatalog.find((c) => c.id === "dlg_a")?.hasReturn).toBe(true);
+
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("npc", { verb: "talk" }, [
+        { when: [], do: [{ type: "call", scene: "dlg_a" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc, { sceneCatalog });
+    expect(probs.some((p) => p.key === "explore.deadEndCall")).toBe(false);
     expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
   });
 });

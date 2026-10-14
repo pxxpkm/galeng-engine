@@ -99,6 +99,13 @@ pub struct WorldState {
     pub hotspot_enabled: HashMap<(String, String), bool>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum TransDefaultKind {
+    ToDialogue,
+    FromDialogue,
+    GotoScene,
+}
+
 pub struct Engine {
     project: Project,
     scenes: HashMap<String, Scene>,
@@ -352,11 +359,37 @@ impl Engine {
         if let Some(set) = &opt.set {
             apply_set(&mut self.world.vars, set);
         }
-        self.goto_scene_clear_stack(&opt.goto, None)?;
+        // Choices navigate like Exit::Next: keep call stack so Call→…→Return still works.
+        // Explicit ExploreAction::GotoScene is the clear-stack jump.
+        self.last_trans = self.resolve_trans(None, TransDefaultKind::GotoScene);
+        self.goto_scene_keep_stack(&opt.goto)?;
         Ok(true)
     }
 
-    pub fn to_save(&self) -> ExploreSave {
+    /// Save only at Explore idle / dialogue beat boundary / Choices / Ended.
+    /// Rejects mid-Saying, non-empty action queue, or Error phase (does not serialize queue/say).
+    pub fn try_to_save(&self) -> Result<ExploreSave, Error> {
+        if matches!(self.phase, Phase::Saying) {
+            return Err(Error::InvalidState(
+                "cannot save while Saying (dismiss first)".into(),
+            ));
+        }
+        if matches!(self.phase, Phase::Error(_)) {
+            return Err(Error::InvalidState("cannot save in Error phase".into()));
+        }
+        if !self.action_queue.is_empty() {
+            return Err(Error::InvalidState(
+                "cannot save with pending action queue".into(),
+            ));
+        }
+        Ok(self.build_save())
+    }
+
+    pub fn to_save(&self) -> Result<ExploreSave, Error> {
+        self.try_to_save()
+    }
+
+    fn build_save(&self) -> ExploreSave {
         let mut hotspot_visible = BTreeMap::new();
         for ((s, h), v) in &self.world.hotspot_visible {
             hotspot_visible.insert(override_key(s, h), *v);
@@ -575,13 +608,25 @@ impl Engine {
         });
     }
 
+    fn resolve_trans(&self, explicit: Option<String>, kind: TransDefaultKind) -> Option<String> {
+        if explicit.is_some() {
+            return explicit;
+        }
+        let d = &self.project.transition_defaults;
+        match kind {
+            TransDefaultKind::ToDialogue => d.to_dialogue.clone(),
+            TransDefaultKind::FromDialogue => d.from_dialogue.clone(),
+            TransDefaultKind::GotoScene => d.goto_scene.clone(),
+        }
+    }
+
     fn call_scene(&mut self, scene: &str, trans: Option<String>) -> Result<(), Error> {
         let kind = self.current_scene()?.scene_kind;
         match kind {
             SceneKind::Explore => self.push_explore_frame(),
             SceneKind::Dialogue => self.push_dialogue_frame(),
         }
-        self.last_trans = trans;
+        self.last_trans = self.resolve_trans(trans, TransDefaultKind::ToDialogue);
         self.goto_scene_keep_stack(scene)?;
         Ok(())
     }
@@ -591,7 +636,7 @@ impl Engine {
             self.phase = Phase::Error("return with empty call stack".into());
             return Err(Error::EmptyReturn);
         };
-        self.last_trans = trans;
+        self.last_trans = self.resolve_trans(trans, TransDefaultKind::FromDialogue);
         self.action_queue.clear();
         self.say_speaker = None;
         self.say_text = None;
@@ -616,12 +661,15 @@ impl Engine {
                 self.scene_id = scene_id;
                 self.beat_index = beat_index;
                 self.phase = Phase::Dialogue;
-                // Resume after the beat that called? Spec: restore beat_index as saved.
-                // Caller typically pushed before leaving; restored index is the call site.
-                // For simplicity after return from nested, settle if past end.
+                // Exit was already consumed when we left for the callee.
+                // Re-entering Exit::Call here would loop forever.
                 let len = self.current_scene()?.beats.len();
                 if self.beat_index >= len {
-                    self.enter_exit()?;
+                    self.phase = Phase::Ended;
+                } else {
+                    // Mid-dialogue Call (ExploreAction): advance past call site.
+                    self.beat_index += 1;
+                    self.settle_dialogue()?;
                 }
             }
         }
@@ -630,7 +678,7 @@ impl Engine {
 
     fn goto_scene_clear_stack(&mut self, id: &str, trans: Option<String>) -> Result<(), Error> {
         self.call_stack.clear();
-        self.last_trans = trans;
+        self.last_trans = self.resolve_trans(trans, TransDefaultKind::GotoScene);
         self.goto_scene_keep_stack(id)
     }
 
@@ -702,18 +750,22 @@ impl Engine {
                 }
             }
             Some(Exit::Next { goto }) => {
-                self.goto_scene_clear_stack(&goto, None)?;
+                // Preserve call stack so nested dialogue chains can still Return to explore.
+                self.last_trans = self.resolve_trans(None, TransDefaultKind::GotoScene);
+                self.goto_scene_keep_stack(&goto)?;
             }
             Some(Exit::Branch {
                 if_cond,
                 then,
                 else_goto,
             }) => {
-                if condition_holds(&self.world.vars, &if_cond) {
-                    self.goto_scene_clear_stack(&then, None)?;
+                let target = if condition_holds(&self.world.vars, &if_cond) {
+                    then
                 } else {
-                    self.goto_scene_clear_stack(&else_goto, None)?;
-                }
+                    else_goto
+                };
+                self.last_trans = self.resolve_trans(None, TransDefaultKind::GotoScene);
+                self.goto_scene_keep_stack(&target)?;
             }
             Some(Exit::Call { scene, trans }) => {
                 self.call_scene(&scene, trans)?;

@@ -20,6 +20,8 @@ export interface ExplorePersistApi {
   saveProject(body: unknown): Promise<unknown>;
   loadScene(id: string): Promise<unknown>;
   saveScene(id: string, body: unknown): Promise<unknown>;
+  /** Optional: list scenario ids for Call picker / Problems catalog. */
+  listSceneIds?(): Promise<string[]>;
 }
 
 export function createHttpPersistApi(): ExplorePersistApi {
@@ -28,6 +30,13 @@ export function createHttpPersistApi(): ExplorePersistApi {
     saveProject: (body) => putJson("/api/project", body),
     loadScene: (id) => getJson(`/api/scenes/${id}`),
     saveScene: (id, body) => putJson(`/api/scenes/${id}`, body),
+    listSceneIds: async () => {
+      const metas = await getJson<{ id: string }[]>("/api/scenes");
+      if (!Array.isArray(metas)) return [];
+      return metas
+        .map((m) => (m && typeof m.id === "string" ? m.id : ""))
+        .filter(Boolean);
+    },
   };
 }
 
@@ -38,27 +47,26 @@ function asRecord(raw: unknown, label: string): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
-export function exploreProjectToApi(p: ExploreProject): Record<string, unknown> {
-  return {
+/** Explore-owned project fields overlaid on optional host raw (lossless). */
+export function exploreProjectToApi(
+  p: ExploreProject,
+  raw?: Record<string, unknown>,
+): Record<string, unknown> {
+  const owned: Record<string, unknown> = {
     id: p.id,
     title: p.title,
     schemaVersion: p.schemaVersion,
     resolution: p.resolution,
     startScene: p.startScene,
     locale: p.locale,
-    skipTitle: true,
     verbs: p.verbs,
     items: p.items,
     switches: p.switches,
-    ...(p.characters.length > 0
-      ? {
-          characters: p.characters.map((c) => ({
-            id: c.id,
-            ...(c.display ? { display: c.display } : {}),
-            ...(c.textRate !== undefined ? { textRate: c.textRate } : {}),
-          })),
-        }
-      : {}),
+    characters: p.characters.map((c) => ({
+      id: c.id,
+      ...(c.display ? { display: c.display } : {}),
+      ...(c.textRate !== undefined ? { textRate: c.textRate } : {}),
+    })),
     fallback: {
       perVerb: p.fallback.perVerb ?? {},
       ...(p.fallback.itemOnHotspot !== undefined
@@ -67,10 +75,22 @@ export function exploreProjectToApi(p: ExploreProject): Record<string, unknown> 
       ...(p.fallback.global !== undefined ? { global: p.fallback.global } : {}),
     },
   };
+  if (p.effectLibrary && p.effectLibrary.length > 0) {
+    owned.effectLibrary = p.effectLibrary;
+  }
+  if (p.transitionDefaults) {
+    owned.transitionDefaults = p.transitionDefaults;
+  }
+  // Do NOT hard-write skipTitle — preserve from raw or omit.
+  return { ...(raw ?? {}), ...owned };
 }
 
-export function exploreSceneToApi(s: ExploreScene): Record<string, unknown> {
-  return {
+/** Explore-owned scene fields overlaid on optional host raw (preserves exit etc.). */
+export function exploreSceneToApi(
+  s: ExploreScene,
+  raw?: Record<string, unknown>,
+): Record<string, unknown> {
+  const owned: Record<string, unknown> = {
     id: s.id,
     ...(s.title !== undefined ? { title: s.title } : {}),
     sceneKind: "explore",
@@ -80,6 +100,8 @@ export function exploreSceneToApi(s: ExploreScene): Record<string, unknown> {
     interactions: s.interactions,
     ...(s.onEnter && s.onEnter.length > 0 ? { onEnter: s.onEnter } : {}),
   };
+  // Overlay must not delete exit / unknown keys — omit them from owned.
+  return { ...(raw ?? {}), ...owned };
 }
 
 function defaultFallback(): Fallback {
@@ -129,6 +151,13 @@ export function apiToExploreProject(raw: unknown): ExploreProject {
       itemOnHotspot: fb.itemOnHotspot,
       global: fb.global,
     },
+    effectLibrary: Array.isArray(o.effectLibrary)
+      ? (o.effectLibrary as ExploreProject["effectLibrary"])
+      : undefined,
+    transitionDefaults:
+      o.transitionDefaults && typeof o.transitionDefaults === "object"
+        ? (o.transitionDefaults as ExploreProject["transitionDefaults"])
+        : undefined,
   };
 }
 
@@ -164,14 +193,30 @@ export function apiToExploreScene(raw: unknown): ExploreScene {
 export async function saveExploreDoc(
   api: ExplorePersistApi,
   doc: ExploreDoc,
-): Promise<{ project: ExploreProject; scene: ExploreScene }> {
-  const projectBody = exploreProjectToApi(doc.project);
-  const sceneBody = exploreSceneToApi(doc.scene);
+): Promise<{
+  project: ExploreProject;
+  scene: ExploreScene;
+  _rawProject: Record<string, unknown>;
+  _rawScene: Record<string, unknown>;
+}> {
+  const projectBody = exploreProjectToApi(doc.project, doc._rawProject);
+  const sceneBody = exploreSceneToApi(doc.scene, doc._rawScene);
   const savedProject = await api.saveProject(projectBody);
   const savedScene = await api.saveScene(doc.scene.id, sceneBody);
+  // Refresh raw from what we wrote (FS api returns body; HTTP may too).
+  const _rawProject = asRecord(
+    savedProject && typeof savedProject === "object" ? savedProject : projectBody,
+    "saved project",
+  );
+  const _rawScene = asRecord(
+    savedScene && typeof savedScene === "object" ? savedScene : sceneBody,
+    "saved scene",
+  );
   return {
-    project: apiToExploreProject(savedProject),
-    scene: apiToExploreScene(savedScene),
+    project: apiToExploreProject(_rawProject),
+    scene: apiToExploreScene(_rawScene),
+    _rawProject,
+    _rawScene,
   };
 }
 
@@ -181,5 +226,11 @@ export async function loadExploreDoc(
 ): Promise<ExploreDoc> {
   const projectRaw = await api.loadProject();
   const sceneRaw = await api.loadScene(sceneId);
-  return loadExplore(apiToExploreProject(projectRaw), apiToExploreScene(sceneRaw));
+  const _rawProject = asRecord(projectRaw, "project");
+  const _rawScene = asRecord(sceneRaw, "scene");
+  const doc = loadExplore(
+    apiToExploreProject(_rawProject),
+    apiToExploreScene(_rawScene),
+  );
+  return { ...doc, _rawProject, _rawScene };
 }

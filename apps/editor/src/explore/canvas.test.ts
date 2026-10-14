@@ -59,4 +59,29 @@ describe("canvas geometry", () => {
     expect(hitTestHandle({ x: 0, y: 0, w: 100, h: 50 }, 100, 50)).toBe("se");
     expect(hitTestHandle({ x: 0, y: 0, w: 100, h: 50 }, 50, 25)).toBeNull();
   });
+
+  it("rounds floats to integers (schema i32)", () => {
+    expect(normalizeRect({ x: 10.4, y: 20.6 }, { x: 5.2, y: 8.1 })).toEqual({
+      x: 5,
+      y: 8,
+      w: 5,
+      h: 13,
+    });
+    expect(clampRect({ x: 1.2, y: 3.8, w: 10.4, h: 9.6 }, { width: 100, height: 100 })).toEqual({
+      x: 1,
+      y: 4,
+      w: 10,
+      h: 10,
+    });
+  });
 });
+
+  it("clamps w/h to at least 1", () => {
+    expect(clampRect({ x: 10, y: 10, w: 0, h: -5 }, { width: 100, height: 100 })).toEqual({
+      x: 10,
+      y: 10,
+      w: 1,
+      h: 1,
+    });
+  });
+

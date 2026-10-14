@@ -1,0 +1,92 @@
+{
+  "id": "click-room",
+  "title": "Click Room",
+  "schemaVersion": 2,
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "startScene": "study",
+  "locale": "zh-Hant",
+  "skipTitle": true,
+  "verbs": [
+    {
+      "id": "look",
+      "label": "看",
+      "builtin": true
+    },
+    {
+      "id": "talk",
+      "label": "講",
+      "builtin": true
+    },
+    {
+      "id": "take",
+      "label": "拎",
+      "builtin": true
+    },
+    {
+      "id": "use",
+      "label": "用",
+      "builtin": true
+    },
+    {
+      "id": "open",
+      "label": "開",
+      "builtin": true
+    },
+    {
+      "id": "move",
+      "label": "去",
+      "builtin": true
+    }
+  ],
+  "items": [
+    {
+      "id": "key",
+      "name": "黃銅鎖匙",
+      "icon": "items/key",
+      "desc": "一把舊鎖匙",
+      "consumeOnUse": false
+    }
+  ],
+  "switches": [
+    {
+      "id": "drawer_open",
+      "name": "抽屜已開",
+      "init": false
+    },
+    {
+      "id": "door_open",
+      "name": "門已開",
+      "init": false
+    }
+  ],
+  "fallback": {
+    "perVerb": {
+      "look": "冇咩特別。",
+      "take": "拎唔到。",
+      "use": "咁樣用唔到。",
+      "talk": "冇人應。",
+      "open": "開唔到。",
+      "move": "去唔到。"
+    },
+    "itemOnHotspot": "用呢樣嘢冇效果。",
+    "global": "……"
+  },
+  "effectLibrary": [
+    {
+      "id": "fade_black",
+      "kind": "fade",
+      "params": {
+        "ms": 400,
+        "color": "#000000"
+      }
+    }
+  ],
+  "transitionDefaults": {
+    "toDialogue": "fade_black",
+    "fromDialogue": "fade_black",
+    "gotoScene": "fade_black"
+  }
+}

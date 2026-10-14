@@ -1,0 +1,11 @@
+{
+  "id": "ending",
+  "title": "結局",
+  "sceneKind": "explore",
+  "bg": { "asset": "bg/ending", "trans": "fade", "ms": 400 },
+  "hotspots": [],
+  "interactions": [],
+  "onEnter": [
+    { "type": "say", "text": "你離開咗書房。— 結局 —" }
+  ]
+}

@@ -12,8 +12,16 @@ import type {
 } from "./types";
 import { sameOn } from "./types";
 
-/** Action types editable via M2 GUI dropdowns. */
-export const EDITABLE_ACTION_TYPES = ["say", "setSwitch", "giveItem"] as const;
+/** Action types editable via GUI dropdowns (M2 + M3 Call/Return/Goto). */
+export const EDITABLE_ACTION_TYPES = [
+  "say",
+  "setSwitch",
+  "giveItem",
+  "takeItem",
+  "call",
+  "return",
+  "gotoScene",
+] as const;
 export type EditableActionType = (typeof EDITABLE_ACTION_TYPES)[number];
 
 export function isEditableAction(a: ExploreAction): a is Extract<
@@ -51,6 +59,14 @@ export function emptyEditableAction(type: EditableActionType): ExploreAction {
       return { type: "setSwitch", id: "", value: true };
     case "giveItem":
       return { type: "giveItem", id: "" };
+    case "takeItem":
+      return { type: "takeItem", id: "" };
+    case "call":
+      return { type: "call", scene: "" };
+    case "return":
+      return { type: "return" };
+    case "gotoScene":
+      return { type: "gotoScene", scene: "" };
   }
 }
 
@@ -153,11 +169,11 @@ export function actionChipLabel(a: ExploreAction): string {
     case "takeItem":
       return `takeItem ${a.id}`;
     case "call":
-      return `call ${a.scene}`;
+      return `call ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
     case "return":
-      return "return";
+      return `return${a.trans ? ` [${a.trans}]` : ""}`;
     case "gotoScene":
-      return `gotoScene ${a.scene}`;
+      return `gotoScene ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
     case "setVar":
       return `setVar ${a.id}=${a.value}`;
     case "addVar":
@@ -202,6 +218,34 @@ export function interactionCoalesceKey(
 
 export function hotspotNameCoalesceKey(hotspotId: string): string {
   return `hs-name:${hotspotId}`;
+}
+
+/** Patch one action in a flat list (e.g. scene.onEnter). */
+export function patchActionInList(
+  actions: ExploreAction[],
+  actionIndex: number,
+  next: ExploreAction,
+): ExploreAction[] {
+  return actions.map((a, i) => (i === actionIndex ? next : a));
+}
+
+export function addActionToList(
+  actions: ExploreAction[],
+  type: EditableActionType = "say",
+): ExploreAction[] {
+  return [...actions, emptyEditableAction(type)];
+}
+
+export function removeActionFromList(
+  actions: ExploreAction[],
+  actionIndex: number,
+): ExploreAction[] {
+  const next = actions.filter((_, i) => i !== actionIndex);
+  return next.length ? next : [{ type: "say", text: "" }];
+}
+
+export function onEnterCoalesceKey(actionIndex: number, field: string): string {
+  return `onEnter:a${actionIndex}:${field}`;
 }
 
 /** Compare project+scene only (ignore ui). */

@@ -35,8 +35,8 @@ function stagePoint(
   height: number,
 ): { x: number; y: number } {
   const r = el.getBoundingClientRect();
-  const x = ((clientX - r.left) / r.width) * width;
-  const y = ((clientY - r.top) / r.height) * height;
+  const x = Math.round(((clientX - r.left) / r.width) * width);
+  const y = Math.round(((clientY - r.top) / r.height) * height);
   return { x, y };
 }
 

@@ -43,6 +43,22 @@ pub struct PackOpts {
     pub strict: bool,
 }
 
+
+fn collect_explore_action_refs(out: &mut BTreeSet<String>, actions: &[galeng_schema::ExploreAction]) {
+    use galeng_schema::ExploreAction;
+    for action in actions {
+        match action {
+            ExploreAction::PlaySe { asset } => {
+                out.insert(asset.clone());
+            }
+            ExploreAction::Bgm { asset: Some(asset), .. } => {
+                out.insert(asset.clone());
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn collect_refs(project: &Project, scenes: &[Scene]) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     if let Some(s) = &project.title_bgm {
@@ -83,8 +99,26 @@ pub fn collect_refs(project: &Project, scenes: &[Scene]) -> BTreeSet<String> {
             out.insert(item.asset.clone());
         }
     }
+    for item in &project.items {
+        if let Some(icon) = &item.icon {
+            out.insert(icon.clone());
+        }
+    }
     for scene in scenes {
+        if let Some(bg) = &scene.bg {
+            out.insert(bg.asset.clone());
+        }
+        collect_explore_action_refs(&mut out, &scene.on_enter);
+        for interaction in &scene.interactions {
+            for rule in &interaction.rules {
+                collect_explore_action_refs(&mut out, &rule.actions);
+            }
+        }
         for beat in &scene.beats {
+            if let Some(bg) = &beat.bg {
+                out.insert(bg.asset.clone());
+            }
+
             if let Some(bg) = &beat.bg {
                 out.insert(bg.asset.clone());
             }

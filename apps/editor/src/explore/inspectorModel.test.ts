@@ -9,16 +9,22 @@ import {
 } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import {
+  EDITABLE_ACTION_TYPES,
   addAction,
+  addActionToList,
   addRule,
   addWhen,
+  emptyEditableAction,
   getCellRules,
   isEditableAction,
   patchAction,
+  patchActionInList,
   patchPred,
   removeAction,
+  removeActionFromList,
   sameProjectScene,
 } from "./inspectorModel";
+import { setOnEnter, updateItem } from "./commands";
 
 describe("inspectorModel", () => {
   it("patchAction say text preserves when + sibling actions", () => {
@@ -39,7 +45,7 @@ describe("inspectorModel", () => {
     expect(next[0]!.do[1]).toEqual({ type: "say", text: "門開咗啦。" });
     expect(next[0]!.do[2]).toEqual({ type: "call", scene: "dlg_x" });
     expect(next[1]!.do[0]).toEqual({ type: "say", text: "鎖住。" });
-    expect(isEditableAction(next[0]!.do[2]!)).toBe(false);
+    expect(isEditableAction(next[0]!.do[2]!)).toBe(true); // M3: call editable
   });
 
   it("addWhen / patchPred / addAction keep unsupported", () => {
@@ -178,5 +184,46 @@ describe("commandBus no-op + coalesce", () => {
     ));
     const rules = getCellRules(doc, "chest", { verb: "take" });
     expect(rules[0]!.do[0]).toEqual({ type: "giveItem", id: "key" });
+  });
+
+  it("takeItem is editable and emptyEditableAction yields takeItem", () => {
+    expect(EDITABLE_ACTION_TYPES).toContain("takeItem");
+    expect(emptyEditableAction("takeItem")).toEqual({ type: "takeItem", id: "" });
+    expect(isEditableAction({ type: "takeItem", id: "key" })).toBe(true);
+    let rules: import("./types").InteractionRule[] = [
+      { when: [], do: [{ type: "say", text: "" }] },
+    ];
+    rules = addAction(rules, 0, "takeItem");
+    expect(rules[0]!.do[1]).toEqual({ type: "takeItem", id: "" });
+    rules = patchAction(rules, 0, 1, { type: "takeItem", id: "key" });
+    expect(rules[0]!.do[1]).toEqual({ type: "takeItem", id: "key" });
+  });
+
+  it("addItem with custom id + setOnEnter + takeItem via command bus", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addItem({ id: "key", name: "黃銅鎖匙", consumeOnUse: false })));
+    expect(doc.project.items[0]).toMatchObject({ id: "key", name: "黃銅鎖匙" });
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateItem("key", { name: "鎖匙", consumeOnUse: true, icon: "items/key" }),
+    ));
+    expect(doc.project.items[0]).toMatchObject({
+      id: "key",
+      name: "鎖匙",
+      consumeOnUse: true,
+      icon: "items/key",
+    });
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEnter([{ type: "say", text: "書房入面靜悄悄。" }]),
+    ));
+    expect(doc.scene.onEnter).toEqual([{ type: "say", text: "書房入面靜悄悄。" }]);
+    const list = addActionToList(doc.scene.onEnter ?? [], "takeItem");
+    const patched = patchActionInList(list, 1, { type: "takeItem", id: "key" });
+    expect(patched[1]).toEqual({ type: "takeItem", id: "key" });
+    expect(removeActionFromList(patched, 1)).toHaveLength(1);
   });
 });

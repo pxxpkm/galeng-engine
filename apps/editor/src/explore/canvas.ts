@@ -7,6 +7,20 @@ export interface Rect {
   h: number;
 }
 
+/** Schema requires integer hotspot coords (1920×1080 logical stage). */
+export function intCoord(n: number): number {
+  return Math.round(n);
+}
+
+export function roundRect(rect: Rect): Rect {
+  return {
+    x: intCoord(rect.x),
+    y: intCoord(rect.y),
+    w: Math.max(1, intCoord(rect.w)),
+    h: Math.max(1, intCoord(rect.h)),
+  };
+}
+
 export function isRect(shape: HotspotShape): shape is Rect & { type: "rect" } {
   return shape.type === "rect";
 }
@@ -16,15 +30,16 @@ export function normalizeRect(a: { x: number; y: number }, b: { x: number; y: nu
   const y = Math.min(a.y, b.y);
   const w = Math.max(1, Math.abs(b.x - a.x));
   const h = Math.max(1, Math.abs(b.y - a.y));
-  return { x, y, w, h };
+  return roundRect({ x, y, w, h });
 }
 
 export function clampRect(rect: Rect, bounds: { width: number; height: number }): Rect {
-  const w = Math.max(1, Math.min(rect.w, bounds.width));
-  const h = Math.max(1, Math.min(rect.h, bounds.height));
-  const x = Math.max(0, Math.min(rect.x, bounds.width - w));
-  const y = Math.max(0, Math.min(rect.y, bounds.height - h));
-  return { x, y, w, h };
+  const r = roundRect(rect);
+  const w = Math.max(1, Math.min(r.w, bounds.width));
+  const h = Math.max(1, Math.min(r.h, bounds.height));
+  const x = Math.max(0, Math.min(r.x, bounds.width - w));
+  const y = Math.max(0, Math.min(r.y, bounds.height - h));
+  return roundRect({ x, y, w, h });
 }
 
 export function pointInRect(px: number, py: number, r: Rect): boolean {
@@ -87,5 +102,19 @@ export function resizeRect(rect: Rect, handle: Handle, px: number, py: number): 
 }
 
 export function moveRect(rect: Rect, dx: number, dy: number): Rect {
-  return { x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h };
+  return roundRect({ x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h });
+}
+
+/** True if number is a finite integer (schema-aligned). */
+export function isIntCoord(n: number): boolean {
+  return Number.isFinite(n) && Number.isInteger(n);
+}
+
+export function rectHasNonInteger(rect: Rect): boolean {
+  return !(
+    isIntCoord(rect.x) &&
+    isIntCoord(rect.y) &&
+    isIntCoord(rect.w) &&
+    isIntCoord(rect.h)
+  );
 }

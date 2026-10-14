@@ -205,3 +205,77 @@ fn blocked_system_font_names() {
     assert!(!galeng_packer::is_blocked_system_font("fonts/mplus"));
     assert!(!galeng_packer::is_blocked_system_font("fonts/source-han-sans"));
 }
+
+#[test]
+fn pack_click_room_includes_explore_bg_and_item_icon() {
+    let root = repo_root().join("examples/click-room");
+    assert!(root.join("galeng.json").is_file(), "click-room example missing");
+    let pak_path = std::env::temp_dir().join(format!(
+        "galeng-click-room-{}.pak",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&pak_path);
+    let report = pack(&root, &pak_path).expect("pack click-room");
+    assert!(
+        report.scenes.iter().any(|id| id == "study"),
+        "scenes={:?}",
+        report.scenes
+    );
+    assert!(
+        report.scenes.iter().any(|id| id == "dlg_butler"),
+        "scenes={:?}",
+        report.scenes
+    );
+    assert!(
+        report.scenes.iter().any(|id| id == "ending"),
+        "scenes={:?}",
+        report.scenes
+    );
+    assert!(
+        report.assets.contains_key("bg/study"),
+        "assets={:?}",
+        report.assets
+    );
+    assert!(
+        report.assets.contains_key("bg/ending"),
+        "assets={:?}",
+        report.assets
+    );
+    assert!(
+        report.assets.contains_key("items/key"),
+        "assets={:?}",
+        report.assets
+    );
+    assert!(
+        report.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        report.warnings
+    );
+    let reader = PakReader::open(&pak_path).expect("open pak");
+    assert!(reader.has_entry("galeng.json"));
+    assert!(reader.has_entry("scenario/study.json"));
+    assert!(reader.has_entry("scenario/dlg_butler.json"));
+    assert!(reader.has_entry("assets/bg/study.png"));
+    assert!(reader.has_entry("assets/items/key.png"));
+    let _ = fs::remove_file(&pak_path);
+}
+
+#[test]
+fn collect_refs_includes_explore_scene_bg_and_item_icons() {
+    let project = galeng_schema::validate_project_file(
+        repo_root().join("examples/click-room/galeng.json"),
+    )
+    .expect("project");
+    let study = galeng_schema::validate_scene_file(
+        repo_root().join("examples/click-room/scenario/study.json"),
+    )
+    .expect("study");
+    let ending = galeng_schema::validate_scene_file(
+        repo_root().join("examples/click-room/scenario/ending.json"),
+    )
+    .expect("ending");
+    let refs = galeng_packer::collect_refs(&project, &[study, ending]);
+    assert!(refs.contains("bg/study"), "{refs:?}");
+    assert!(refs.contains("bg/ending"), "{refs:?}");
+    assert!(refs.contains("items/key"), "{refs:?}");
+}
