@@ -150,19 +150,33 @@ export function ExploreWorkspace({
     [setUi],
   );
 
+  const effectiveCatalog = useMemo(() => {
+    if (localCatalog.length > 0) {
+      const byId = new Map(localCatalog.map((e) => [e.id, e]));
+      if (!byId.has(doc.scene.id)) {
+        byId.set(doc.scene.id, {
+          id: doc.scene.id,
+          kind: "explore",
+          title: doc.scene.title,
+        });
+      }
+      return [...byId.values()];
+    }
+    if (knownSceneIds && knownSceneIds.size > 0) {
+      return [...knownSceneIds].map(
+        (id): SceneCatalogEntry => ({ id, kind: "explore" }),
+      );
+    }
+    return [{ id: doc.scene.id, kind: "explore" as const, title: doc.scene.title }];
+  }, [localCatalog, knownSceneIds, doc.scene.id, doc.scene.title]);
+
   const doSave = useCallback(async () => {
     if (!persist) {
       setSaveStatus("未接 persist");
       return;
     }
-    const catalog =
-      sceneCatalog && sceneCatalog.length > 0
-        ? sceneCatalog
-        : knownSceneIds && knownSceneIds.size > 0
-          ? [...knownSceneIds].map((id) => ({ id, kind: "explore" as const }))
-          : [{ id: state.doc.scene.id, kind: "explore" as const }];
     const errs = collectExploreProblems(state.doc, {
-      sceneCatalog: catalog,
+      sceneCatalog: effectiveCatalog,
       knownSceneIds,
     }).filter((p) => p.severity === "error");
     if (errs.length > 0) {
@@ -188,7 +202,7 @@ export function ExploreWorkspace({
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc, sceneCatalog, knownSceneIds]);
+  }, [persist, state.doc, effectiveCatalog, knownSceneIds]);
 
   const doReload = useCallback(async () => {
     if (!persist) {
@@ -276,26 +290,6 @@ export function ExploreWorkspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [copySelected, pasteSelected, doUndo, doRedo, doSave, persist, doc.ui]);
 
-  const effectiveCatalog = useMemo(() => {
-    if (localCatalog.length > 0) {
-      const byId = new Map(localCatalog.map((e) => [e.id, e]));
-      if (!byId.has(doc.scene.id)) {
-        byId.set(doc.scene.id, {
-          id: doc.scene.id,
-          kind: "explore",
-          title: doc.scene.title,
-        });
-      }
-      return [...byId.values()];
-    }
-    if (knownSceneIds && knownSceneIds.size > 0) {
-      return [...knownSceneIds].map(
-        (id): SceneCatalogEntry => ({ id, kind: "explore" }),
-      );
-    }
-    return [{ id: doc.scene.id, kind: "explore" as const, title: doc.scene.title }];
-  }, [localCatalog, knownSceneIds, doc.scene.id, doc.scene.title]);
-
   const doCreateScene = useCallback(async () => {
     const raw =
       typeof window !== "undefined"
@@ -370,14 +364,8 @@ export function ExploreWorkspace({
         setSaveStatus("請先存檔再出包（未接 persist）");
         return;
       }
-      const catalog =
-        sceneCatalog && sceneCatalog.length > 0
-          ? sceneCatalog
-          : knownSceneIds && knownSceneIds.size > 0
-            ? [...knownSceneIds].map((id) => ({ id, kind: "explore" as const }))
-            : [{ id: state.doc.scene.id, kind: "explore" as const }];
       const errs = collectExploreProblems(state.doc, {
-        sceneCatalog: catalog,
+        sceneCatalog: effectiveCatalog,
         knownSceneIds,
       }).filter((p) => p.severity === "error");
       if (errs.length > 0) {
@@ -421,7 +409,7 @@ export function ExploreWorkspace({
     dirty,
     persist,
     state.doc,
-    sceneCatalog,
+    effectiveCatalog,
     knownSceneIds,
   ]);
 
