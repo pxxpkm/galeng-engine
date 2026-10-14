@@ -1,8 +1,9 @@
 use std::fs;
 
 use galeng_schema::{
-    repo_root, validate_project_file, validate_project_str, validate_scene_file, validate_scene_str,
-    Exit, SetValue,
+    repo_root, validate_project_file, validate_project_str, validate_project_value,
+    validate_scene_file, validate_scene_str, validate_scene_value, Exit, ExploreAction,
+    HotspotShape, InteractionOn, Pred, SceneKind, SetValue,
 };
 
 #[test]
@@ -335,6 +336,282 @@ fn empty_required_string_error_includes_pointer() {
         msg.contains("/beats/0/chars/0/id"),
         "missing char id pointer: {msg}"
     );
+}
+
+fn value_roundtrip_project(text: &str) {
+    let original: serde_json::Value = serde_json::from_str(text).unwrap();
+    let project = validate_project_value(&original).expect("project");
+    let back = serde_json::to_value(&project).unwrap();
+    assert_eq!(original, back);
+}
+
+fn value_roundtrip_scene(text: &str) {
+    let original: serde_json::Value = serde_json::from_str(text).unwrap();
+    let scene = validate_scene_value(&original).expect("scene");
+    let back = serde_json::to_value(&scene).unwrap();
+    assert_eq!(original, back);
+}
+
+#[test]
+fn prologue_project_value_roundtrip() {
+    let path = repo_root().join("examples/prologue/galeng.json");
+    let text = fs::read_to_string(path).unwrap();
+    value_roundtrip_project(&text);
+}
+
+#[test]
+fn prologue_scenes_value_roundtrip() {
+    let dir = repo_root().join("examples/prologue/scenario");
+    for name in ["home_01.json", "park_01.json", "park_02.json"] {
+        let text = fs::read_to_string(dir.join(name)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let scene = validate_scene_value(&original).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let back = serde_json::to_value(&scene).unwrap();
+        assert_eq!(original, back, "{name}");
+    }
+}
+
+#[test]
+fn missing_scene_kind_is_dialogue() {
+    let scene = validate_scene_str(r#"{"id":"only"}"#).expect("defaults");
+    assert_eq!(scene.scene_kind, SceneKind::Dialogue);
+    assert!(scene.beats.is_empty());
+    assert!(scene.hotspots.is_empty());
+    assert!(scene.on_enter.is_empty());
+    let back = serde_json::to_value(&scene).unwrap();
+    assert!(back.get("sceneKind").is_none());
+    assert!(back.get("hotspots").is_none());
+    assert!(back.get("onEnter").is_none());
+    assert_eq!(back["beats"], serde_json::json!([]));
+}
+
+#[test]
+fn explore_fixture_deserializes() {
+    let scene = validate_scene_file(repo_root().join("fixtures/valid/scene-explore-study.json"))
+        .expect("study");
+    assert_eq!(scene.id, "study");
+    assert_eq!(scene.scene_kind, SceneKind::Explore);
+    assert!(scene.beats.is_empty());
+    assert_eq!(scene.bg.as_ref().unwrap().asset, "bg/study");
+    assert!(scene.on_enter.is_empty());
+
+    let desk = scene.hotspots.iter().find(|h| h.id == "desk").unwrap();
+    assert_eq!(desk.visible_if, Some(None));
+    assert_eq!(desk.enabled_if, Some(None));
+    assert!(matches!(
+        desk.shape,
+        HotspotShape::Rect {
+            x: 600,
+            y: 500,
+            w: 420,
+            h: 220
+        }
+    ));
+
+    let window = scene.hotspots.iter().find(|h| h.id == "window").unwrap();
+    match &window.shape {
+        HotspotShape::Polygon { points } => {
+            assert_eq!(points.len(), 4);
+            assert_eq!(points[0], [100, 80]);
+        }
+        other => panic!("expected polygon, got {other:?}"),
+    }
+    assert_eq!(
+        scene
+            .hotspots
+            .iter()
+            .find(|h| h.id == "door")
+            .unwrap()
+            .default_verb
+            .as_deref(),
+        Some("move")
+    );
+
+    assert!(matches!(
+        &scene.interactions[0].on,
+        InteractionOn::Verb(on) if on.verb == "look"
+    ));
+    assert!(matches!(
+        &scene.interactions[0].rules[0].when[0],
+        Pred::Switch(pred) if pred.switch == "drawer_open" && pred.is
+    ));
+    assert!(scene.interactions[0].rules[1].when.is_empty());
+    assert!(matches!(
+        &scene.interactions[0].rules[1].actions[0],
+        ExploreAction::Say { text, speaker: None } if text == "一張舊書桌。"
+    ));
+
+    assert!(matches!(
+        &scene.interactions[1].on,
+        InteractionOn::Item(on) if on.item == "key"
+    ));
+    assert!(matches!(
+        &scene.interactions[1].rules[0].actions[0],
+        ExploreAction::SetSwitch { id, value: true } if id == "drawer_open"
+    ));
+
+    assert!(matches!(
+        &scene.interactions[2].rules[0].actions[0],
+        ExploreAction::GotoScene { scene, trans } if scene == "ending" && trans.as_deref() == Some("fade_black")
+    ));
+    assert!(matches!(
+        &scene.interactions[3].rules[0].actions[0],
+        ExploreAction::Call { scene, trans } if scene == "dlg_butler" && trans.as_deref() == Some("fade_black")
+    ));
+}
+
+#[test]
+fn explore_actions_and_exit_roundtrip() {
+    value_roundtrip_scene(
+        r##"{
+          "id": "ops",
+          "beats": [],
+          "exit": { "type": "call", "scene": "dlg", "trans": "fade_black" },
+          "onEnter": [
+            { "type": "say", "text": "hi", "speaker": "sora" },
+            { "type": "say", "text": "旁白" },
+            { "type": "setSwitch", "id": "door_open", "value": true },
+            { "type": "setVar", "id": "n", "value": 2 },
+            { "type": "addVar", "id": "n", "delta": -1 },
+            { "type": "giveItem", "id": "key" },
+            { "type": "takeItem", "id": "key" },
+            { "type": "gotoScene", "scene": "ending", "trans": "fade_black" },
+            { "type": "call", "scene": "dlg" },
+            { "type": "return" },
+            { "type": "return", "trans": "fade_black" },
+            { "type": "playSe", "asset": "se/breeze" },
+            { "type": "bgm", "asset": null, "fadeMs": 200 },
+            { "type": "bgm", "asset": "bgm/park" },
+            { "type": "fx", "ref": "fade_black", "override": { "ms": 300, "color": "#000000" } },
+            { "type": "fx", "ref": "crossfade" },
+            { "type": "showHotspot", "id": "desk" },
+            { "type": "hideHotspot", "id": "desk" },
+            { "type": "enableHotspot", "id": "desk" },
+            { "type": "disableHotspot", "id": "desk" }
+          ]
+        }"##,
+    );
+    value_roundtrip_scene(r#"{"id":"x","beats":[],"exit":{"type":"return"}}"#);
+    value_roundtrip_scene(
+        r#"{"id":"x","beats":[],"exit":{"type":"return","trans":"fade_black"}}"#,
+    );
+    let returned = validate_scene_str(r#"{"id":"x","exit":{"type":"return"}}"#).unwrap();
+    assert!(matches!(returned.exit, Some(Exit::Return { trans: None })));
+    assert_eq!(returned.scene_kind, SceneKind::Dialogue);
+}
+
+#[test]
+fn explore_predicates_roundtrip() {
+    value_roundtrip_scene(
+        r#"{
+          "id": "preds",
+          "beats": [],
+          "hotspots": [
+            {
+              "id": "drawer",
+              "name": "抽屜",
+              "shape": { "type": "rect", "x": 1, "y": -2, "w": 3, "h": 4 },
+              "visibleIf": [
+                { "switch": "drawer_open", "is": false },
+                { "var": "clues", "eq": 1 },
+                { "hasItem": "key" }
+              ],
+              "enabledIf": null
+            }
+          ]
+        }"#,
+    );
+}
+
+#[test]
+fn explore_project_fields_roundtrip() {
+    value_roundtrip_project(
+        r##"{
+          "id": "room",
+          "title": "書房",
+          "schemaVersion": 2,
+          "resolution": { "width": 1920, "height": 1080 },
+          "startScene": "study",
+          "locale": "zh-Hant",
+          "skipTitle": false,
+          "verbs": [
+            { "id": "look", "label": "看", "builtin": true },
+            { "id": "use", "label": "用" }
+          ],
+          "items": [
+            { "id": "key", "name": "黃銅鎖匙", "icon": "items/key", "desc": "一把鎖匙" }
+          ],
+          "switches": [
+            { "id": "door_open", "name": "門已開" },
+            { "id": "drawer_open", "init": true }
+          ],
+          "fallback": {
+            "perVerb": { "look": "冇咩特別。", "use": "咁樣用唔到。" },
+            "itemOnHotspot": "用呢樣嘢冇效果。",
+            "global": "……"
+          },
+          "effectLibrary": [
+            { "id": "fade_black", "kind": "fade", "params": { "ms": 400, "color": "#000000" } },
+            { "id": "crossfade", "kind": "crossfade", "params": { "ms": 500 } }
+          ],
+          "transitionDefaults": {
+            "toDialogue": "fade_black",
+            "fromDialogue": "crossfade",
+            "gotoScene": "fade_black"
+          }
+        }"##,
+    );
+    assert!(validate_project_str(
+        r#"{
+          "id":"x","title":"x","schemaVersion":3,
+          "resolution":{"width":1920,"height":1080},
+          "startScene":"a","locale":"en"
+        }"#
+    )
+    .is_err());
+    assert!(validate_project_str(
+        r#"{
+          "id":"x","title":"x","schemaVersion":2,
+          "resolution":{"width":1920,"height":1080},
+          "startScene":"a","locale":"en",
+          "effectLibrary":[{ "id":"wipe_out","kind":"wipe" }]
+        }"#
+    )
+    .is_err());
+}
+
+#[test]
+fn unknown_exit_type_rejected() {
+    let err = validate_scene_file(repo_root().join("fixtures/invalid/scene-unknown-exit.json"))
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("exit") || msg.contains("teleport") || msg.contains("oneOf"),
+        "{msg}"
+    );
+    assert!(validate_scene_str(
+        r#"{"id":"bad","beats":[],"exit":{"type":"teleport","goto":"home_01"}}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn unknown_explore_action_rejected() {
+    let err = validate_scene_file(repo_root().join("fixtures/invalid/scene-unknown-action.json"))
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("onEnter") || msg.contains("explode") || msg.contains("oneOf"),
+        "{msg}"
+    );
+    assert!(validate_scene_str(
+        r#"{"id":"bad","interactions":[{"hotspot":"desk","on":{"verb":"look"},"rules":[{"when":[],"do":[{"type":"eval","text":"no"}]}]}]}"#
+    )
+    .is_err());
+    assert!(validate_scene_str(
+        r#"{"id":"bad","hotspots":[{"id":"d","name":"桌","shape":{"type":"circle","x":1,"y":2}}]}"#
+    )
+    .is_err());
 }
 
 #[test]

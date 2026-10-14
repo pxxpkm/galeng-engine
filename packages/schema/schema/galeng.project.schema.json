@@ -8,7 +8,7 @@
   "properties": {
     "id": { "$ref": "#/$defs/nonEmptyString" },
     "title": { "$ref": "#/$defs/nonEmptyString" },
-    "schemaVersion": { "type": "integer", "const": 1 },
+    "schemaVersion": { "type": "integer", "enum": [1, 2] },
     "resolution": { "$ref": "#/$defs/resolution" },
     "startScene": { "$ref": "#/$defs/nonEmptyString" },
     "locale": { "$ref": "#/$defs/nonEmptyString" },
@@ -38,7 +38,25 @@
     "musicGallery": {
       "type": "array",
       "items": { "$ref": "#/$defs/galleryItem" }
-    }
+    },
+    "verbs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verb" }
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/itemDef" }
+    },
+    "switches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/switchDef" }
+    },
+    "fallback": { "$ref": "#/$defs/fallback" },
+    "effectLibrary": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/effectDef" }
+    },
+    "transitionDefaults": { "$ref": "#/$defs/transitionDefaults" }
   },
   "$defs": {
     "nonEmptyString": { "type": "string", "minLength": 1 },
@@ -118,6 +136,77 @@
         "y": { "type": "integer" },
         "w": { "type": "integer", "minimum": 1 },
         "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "verb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "label": { "$ref": "#/$defs/nonEmptyString" },
+        "builtin": { "type": "boolean" }
+      }
+    },
+    "itemDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "icon": { "$ref": "#/$defs/assetPath" },
+        "desc": { "type": "string" },
+        "consumeOnUse": { "type": "boolean" }
+      }
+    },
+    "switchDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "type": "string" },
+        "init": { "type": "boolean" }
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "perVerb": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "itemOnHotspot": { "type": "string" },
+        "global": { "type": "string" }
+      }
+    },
+    "effectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ms": { "type": "integer", "minimum": 0 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+      }
+    },
+    "effectDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "kind": { "enum": ["fade", "crossfade"] },
+        "params": { "$ref": "#/$defs/effectParams" }
+      }
+    },
+    "transitionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "toDialogue": { "$ref": "#/$defs/nonEmptyString" },
+        "fromDialogue": { "$ref": "#/$defs/nonEmptyString" },
+        "gotoScene": { "$ref": "#/$defs/nonEmptyString" }
       }
     }
   }

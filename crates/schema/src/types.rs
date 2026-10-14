@@ -1,6 +1,20 @@
 use std::collections::BTreeMap;
 
+use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize};
+
+fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = u32::deserialize(deserializer)?;
+    match version {
+        1 | 2 => Ok(version),
+        other => Err(DeError::custom(format!(
+            "schemaVersion must be 1 or 2, got {other}"
+        ))),
+    }
+}
 
 /// JSON `null` stays `Some(None)` so a missing key (no change) is distinct from close.
 fn deserialize_present_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -183,11 +197,104 @@ impl PauseButtons {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Verb {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub builtin: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemDef {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desc: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub consume_on_use: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchDef {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Missing and `false` both mean the switch starts off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub init: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Fallback {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub per_verb: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_on_hotspot: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global: Option<String>,
+}
+
+impl Fallback {
+    fn is_empty(&self) -> bool {
+        self.per_verb.is_empty() && self.item_on_hotspot.is_none() && self.global.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EffectKind {
+    Fade,
+    Crossfade,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct EffectParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectDef {
+    pub id: String,
+    pub kind: EffectKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<EffectParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionDefaults {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_dialogue: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_dialogue: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goto_scene: Option<String>,
+}
+
+impl TransitionDefaults {
+    fn is_empty(&self) -> bool {
+        self.to_dialogue.is_none() && self.from_dialogue.is_none() && self.goto_scene.is_none()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: String,
     pub title: String,
+    /// `1` is dialogue-only. `2` adds explore. Other integers are rejected.
+    #[serde(deserialize_with = "deserialize_schema_version")]
     pub schema_version: u32,
     pub resolution: Resolution,
     pub start_scene: String,
@@ -220,6 +327,18 @@ pub struct Project {
     pub cg: Option<Vec<GalleryItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub music_gallery: Option<Vec<GalleryItem>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verbs: Vec<Verb>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<ItemDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub switches: Vec<SwitchDef>,
+    #[serde(default, skip_serializing_if = "Fallback::is_empty")]
+    pub fallback: Fallback,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effect_library: Vec<EffectDef>,
+    #[serde(default, skip_serializing_if = "TransitionDefaults::is_empty")]
+    pub transition_defaults: TransitionDefaults,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,19 +350,72 @@ pub struct Bg {
     pub ms: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Stage pose. `slot_in_json` keeps an omitted slot omitted and an explicit `"center"` explicit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "CharOnStageJson", into = "CharOnStageJson")]
 pub struct CharOnStage {
     pub id: String,
     pub face: String,
-    #[serde(default)]
     pub slot: Slot,
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub x: i32,
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub y: i32,
-    #[serde(default, rename = "slideMs", skip_serializing_if = "Option::is_none")]
     pub slide_ms: Option<u32>,
+    slot_in_json: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CharOnStageJson {
+    id: String,
+    face: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slot: Option<Slot>,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    x: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    y: i32,
+    #[serde(default, rename = "slideMs", skip_serializing_if = "Option::is_none")]
+    slide_ms: Option<u32>,
+}
+
+impl From<CharOnStageJson> for CharOnStage {
+    fn from(raw: CharOnStageJson) -> Self {
+        Self {
+            id: raw.id,
+            face: raw.face,
+            slot_in_json: raw.slot.is_some(),
+            slot: raw.slot.unwrap_or_default(),
+            x: raw.x,
+            y: raw.y,
+            slide_ms: raw.slide_ms,
+        }
+    }
+}
+
+impl From<CharOnStage> for CharOnStageJson {
+    fn from(ch: CharOnStage) -> Self {
+        Self {
+            id: ch.id,
+            face: ch.face,
+            slot: ch.slot_in_json.then_some(ch.slot),
+            x: ch.x,
+            y: ch.y,
+            slide_ms: ch.slide_ms,
+        }
+    }
+}
+
+impl PartialEq for CharOnStage {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.face == other.face
+            && self.slot == other.slot
+            && self.x == other.x
+            && self.y == other.y
+            && self.slide_ms == other.slide_ms
+    }
+}
+
+impl Eq for CharOnStage {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -437,14 +609,188 @@ pub enum Exit {
         #[serde(rename = "else")]
         else_goto: String,
     },
+    Call {
+        scene: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trans: Option<String>,
+    },
+    #[serde(rename = "return")]
+    Return {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trans: Option<String>,
+    },
+}
+
+/// Dialogue is the v1 default. Explore uses hotspots instead of a required beat list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneKind {
+    #[default]
+    Dialogue,
+    Explore,
+}
+
+fn is_default_scene_kind(kind: &SceneKind) -> bool {
+    *kind == SceneKind::Dialogue
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum HotspotShape {
+    Rect { x: i32, y: i32, w: i32, h: i32 },
+    Polygon { points: Vec<[i32; 2]> },
+}
+
+/// One AND atom. Untagged: `{switch,is}` / `{var,eq}` / `{hasItem}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwitchPred {
+    pub switch: String,
+    pub is: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VarPred {
+    pub var: String,
+    pub eq: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HasItemPred {
+    pub has_item: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Pred {
+    Switch(SwitchPred),
+    Var(VarPred),
+    HasItem(HasItemPred),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerbOn {
+    pub verb: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemOn {
+    pub item: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum InteractionOn {
+    Verb(VerbOn),
+    Item(ItemOn),
+}
+
+/// Explore opcode. `type` is camelCase; unknown tags fail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum ExploreAction {
+    Say {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speaker: Option<String>,
+    },
+    SetSwitch { id: String, value: bool },
+    SetVar { id: String, value: i32 },
+    AddVar { id: String, delta: i32 },
+    GiveItem { id: String },
+    TakeItem { id: String },
+    GotoScene {
+        scene: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trans: Option<String>,
+    },
+    Call {
+        scene: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trans: Option<String>,
+    },
+    #[serde(rename = "return")]
+    Return {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trans: Option<String>,
+    },
+    PlaySe { asset: String },
+    Bgm {
+        asset: Option<String>,
+        #[serde(default, rename = "fadeMs", skip_serializing_if = "Option::is_none")]
+        fade_ms: Option<u32>,
+    },
+    Fx {
+        #[serde(rename = "ref")]
+        effect_ref: String,
+        #[serde(default, rename = "override", skip_serializing_if = "Option::is_none")]
+        override_params: Option<EffectParams>,
+    },
+    ShowHotspot { id: String },
+    HideHotspot { id: String },
+    EnableHotspot { id: String },
+    DisableHotspot { id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InteractionRule {
+    pub when: Vec<Pred>,
+    #[serde(rename = "do")]
+    pub actions: Vec<ExploreAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Interaction {
+    pub hotspot: String,
+    pub on: InteractionOn,
+    pub rules: Vec<InteractionRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hotspot {
+    pub id: String,
+    pub name: String,
+    pub shape: HotspotShape,
+    /// `None` omitted, `Some(None)` JSON null, `Some(Some(_))` predicate list.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present_option"
+    )]
+    pub visible_if: Option<Option<Vec<Pred>>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present_option"
+    )]
+    pub enabled_if: Option<Option<Vec<Pred>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_verb: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Scene {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default_scene_kind")]
+    pub scene_kind: SceneKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<Bg>,
+    #[serde(default)]
     pub beats: Vec<Beat>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hotspots: Vec<Hotspot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interactions: Vec<Interaction>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_enter: Vec<ExploreAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit: Option<Exit>,
 }

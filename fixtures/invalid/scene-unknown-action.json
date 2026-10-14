@@ -1,0 +1,5 @@
+{
+  "id": "bad",
+  "sceneKind": "explore",
+  "onEnter": [{ "type": "explode" }]
+}

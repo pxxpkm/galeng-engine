@@ -51,7 +51,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(ok.ok).toBe(true);
     if (ok.ok) {
-      expect(ok.value.beats[0]?.chars?.[0]?.slideMs).toBe(400);
+      expect(ok.value.beats?.[0]?.chars?.[0]?.slideMs).toBe(400);
     }
   });
 
@@ -62,7 +62,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(ok.ok).toBe(true);
     if (ok.ok) {
-      expect(ok.value.beats[0]?.chars?.[0]).toMatchObject({ x: 80, y: -20, slot: "left" });
+      expect(ok.value.beats?.[0]?.chars?.[0]).toMatchObject({ x: 80, y: -20, slot: "left" });
     }
   });
 
@@ -73,8 +73,8 @@ describe("valid examples and fixtures", () => {
     });
     expect(ok.ok).toBe(true);
     if (ok.ok) {
-      expect(ok.value.beats[0]?.fx?.type).toBe("flash");
-      expect(ok.value.beats[1]?.fx?.ms).toBe(120);
+      expect(ok.value.beats?.[0]?.fx?.type).toBe("flash");
+      expect(ok.value.beats?.[1]?.fx?.ms).toBe(120);
     }
   });
 
@@ -85,7 +85,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(path.ok).toBe(true);
     if (path.ok) {
-      expect(path.value.beats[0]?.camera).toEqual({ x: 80, y: -40, zoom: 160 });
+      expect(path.value.beats?.[0]?.camera).toEqual({ x: 80, y: -40, zoom: 160 });
     }
     const closed = validateScene({
       id: "ok",
@@ -93,7 +93,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(closed.ok).toBe(true);
     if (closed.ok) {
-      expect(closed.value.beats[0]?.camera).toBeNull();
+      expect(closed.value.beats?.[0]?.camera).toBeNull();
     }
     const bad = validateScene({
       id: "bad",
@@ -109,7 +109,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(path.ok).toBe(true);
     if (path.ok) {
-      expect(path.value.beats[0]?.amb).toBe("amb/rain");
+      expect(path.value.beats?.[0]?.amb).toBe("amb/rain");
     }
     const closed = validateScene({
       id: "ok",
@@ -117,7 +117,7 @@ describe("valid examples and fixtures", () => {
     });
     expect(closed.ok).toBe(true);
     if (closed.ok) {
-      expect(closed.value.beats[0]?.amb).toBeNull();
+      expect(closed.value.beats?.[0]?.amb).toBeNull();
     }
   });
 
@@ -256,7 +256,7 @@ describe("valid examples and fixtures", () => {
     const result = validateScene(load("fixtures/valid/scene-english-say.json"));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.beats[0]?.say?.text).toBe("The wind feels nice today.");
+      expect(result.value.beats?.[0]?.say?.text).toBe("The wind feels nice today.");
     }
   });
 });

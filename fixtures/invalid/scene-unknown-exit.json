@@ -1,0 +1,5 @@
+{
+  "id": "bad",
+  "beats": [],
+  "exit": { "type": "teleport", "goto": "home_01" }
+}

@@ -317,6 +317,12 @@ mod tests {
             }]),
             cg: None,
             music_gallery: None,
+            verbs: Vec::new(),
+            items: Vec::new(),
+            switches: Vec::new(),
+            fallback: Default::default(),
+            effect_library: Vec::new(),
+            transition_defaults: Default::default(),
         };
         assert_eq!(text_rate_of(&project, Some("sora")), 80);
         assert_eq!(text_rate_of(&project, Some("other")), 100);

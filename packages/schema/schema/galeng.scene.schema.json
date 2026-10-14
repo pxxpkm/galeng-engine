@@ -4,13 +4,32 @@
   "title": "Galeng scene",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "beats"],
+  "required": ["id"],
   "properties": {
     "id": { "$ref": "#/$defs/nonEmptyString" },
     "title": { "type": "string" },
+    "sceneKind": {
+      "type": "string",
+      "enum": ["dialogue", "explore"],
+      "default": "dialogue"
+    },
+    "bg": { "$ref": "#/$defs/bg" },
     "beats": {
       "type": "array",
+      "default": [],
       "items": { "$ref": "#/$defs/beat" }
+    },
+    "hotspots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hotspot" }
+    },
+    "interactions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/interaction" }
+    },
+    "onEnter": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exploreAction" }
     },
     "exit": { "$ref": "#/$defs/exit" }
   },
@@ -205,7 +224,9 @@
       "oneOf": [
         { "$ref": "#/$defs/exitNext" },
         { "$ref": "#/$defs/exitChoices" },
-        { "$ref": "#/$defs/exitBranch" }
+        { "$ref": "#/$defs/exitBranch" },
+        { "$ref": "#/$defs/exitCall" },
+        { "$ref": "#/$defs/exitReturn" }
       ]
     },
     "exitNext": {
@@ -250,6 +271,338 @@
         "goto": { "$ref": "#/$defs/nonEmptyString" },
         "set": { "$ref": "#/$defs/setMap" },
         "if": { "$ref": "#/$defs/condition" }
+      }
+    },
+    "exitCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "scene"],
+      "properties": {
+        "type": { "const": "call" },
+        "scene": { "$ref": "#/$defs/nonEmptyString" },
+        "trans": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "exitReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "return" },
+        "trans": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "effectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ms": { "type": "integer", "minimum": 0 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+      }
+    },
+    "hotspotShape": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "x", "y", "w", "h"],
+          "properties": {
+            "type": { "const": "rect" },
+            "x": { "type": "integer" },
+            "y": { "type": "integer" },
+            "w": { "type": "integer" },
+            "h": { "type": "integer" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "points"],
+          "properties": {
+            "type": { "const": "polygon" },
+            "points": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": { "type": "integer" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "pred": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch", "is"],
+          "properties": {
+            "switch": { "$ref": "#/$defs/nonEmptyString" },
+            "is": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["var", "eq"],
+          "properties": {
+            "var": { "$ref": "#/$defs/nonEmptyString" },
+            "eq": { "type": "integer" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasItem"],
+          "properties": {
+            "hasItem": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ]
+    },
+    "predList": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/pred" } }
+      ]
+    },
+    "hotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "shape"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "shape": { "$ref": "#/$defs/hotspotShape" },
+        "visibleIf": { "$ref": "#/$defs/predList" },
+        "enabledIf": { "$ref": "#/$defs/predList" },
+        "defaultVerb": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "interactionOn": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["verb"],
+          "properties": {
+            "verb": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["item"],
+          "properties": {
+            "item": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ]
+    },
+    "interactionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when", "do"],
+      "properties": {
+        "when": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pred" }
+        },
+        "do": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/exploreAction" }
+        }
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hotspot", "on", "rules"],
+      "properties": {
+        "hotspot": { "$ref": "#/$defs/nonEmptyString" },
+        "on": { "$ref": "#/$defs/interactionOn" },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/interactionRule" }
+        }
+      }
+    },
+    "exploreAction": {
+      "oneOf": [
+        { "$ref": "#/$defs/actionSay" },
+        { "$ref": "#/$defs/actionSetSwitch" },
+        { "$ref": "#/$defs/actionSetVar" },
+        { "$ref": "#/$defs/actionAddVar" },
+        { "$ref": "#/$defs/actionGiveItem" },
+        { "$ref": "#/$defs/actionTakeItem" },
+        { "$ref": "#/$defs/actionGotoScene" },
+        { "$ref": "#/$defs/actionCall" },
+        { "$ref": "#/$defs/actionReturn" },
+        { "$ref": "#/$defs/actionPlaySe" },
+        { "$ref": "#/$defs/actionBgm" },
+        { "$ref": "#/$defs/actionFx" },
+        { "$ref": "#/$defs/actionShowHotspot" },
+        { "$ref": "#/$defs/actionHideHotspot" },
+        { "$ref": "#/$defs/actionEnableHotspot" },
+        { "$ref": "#/$defs/actionDisableHotspot" }
+      ]
+    },
+    "actionSay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "say" },
+        "text": { "$ref": "#/$defs/nonEmptyString" },
+        "speaker": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionSetSwitch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "value"],
+      "properties": {
+        "type": { "const": "setSwitch" },
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "type": "boolean" }
+      }
+    },
+    "actionSetVar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "value"],
+      "properties": {
+        "type": { "const": "setVar" },
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "value": { "type": "integer" }
+      }
+    },
+    "actionAddVar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "delta"],
+      "properties": {
+        "type": { "const": "addVar" },
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "delta": { "type": "integer" }
+      }
+    },
+    "actionGiveItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "giveItem" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionTakeItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "takeItem" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionGotoScene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "scene"],
+      "properties": {
+        "type": { "const": "gotoScene" },
+        "scene": { "$ref": "#/$defs/nonEmptyString" },
+        "trans": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "scene"],
+      "properties": {
+        "type": { "const": "call" },
+        "scene": { "$ref": "#/$defs/nonEmptyString" },
+        "trans": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionReturn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "return" },
+        "trans": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionPlaySe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset"],
+      "properties": {
+        "type": { "const": "playSe" },
+        "asset": { "$ref": "#/$defs/assetPath" }
+      }
+    },
+    "actionBgm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset"],
+      "properties": {
+        "type": { "const": "bgm" },
+        "asset": {
+          "anyOf": [{ "$ref": "#/$defs/assetPath" }, { "type": "null" }]
+        },
+        "fadeMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "actionFx": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref"],
+      "properties": {
+        "type": { "const": "fx" },
+        "ref": { "$ref": "#/$defs/nonEmptyString" },
+        "override": { "$ref": "#/$defs/effectParams" }
+      }
+    },
+    "actionShowHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "showHotspot" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionHideHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "hideHotspot" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionEnableHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "enableHotspot" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "actionDisableHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "disableHotspot" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
       }
     }
   }

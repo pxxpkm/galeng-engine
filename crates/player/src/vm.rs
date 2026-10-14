@@ -544,6 +544,10 @@ impl Runtime {
                     self.goto_scene(&else_goto);
                 }
             }
+            Some(Exit::Call { .. } | Exit::Return { .. }) => {
+                // Explore call stack is a later runtime. Do not crash the dialogue VM.
+                self.phase = Phase::Ended;
+            }
             None => self.phase = Phase::Ended,
         }
     }

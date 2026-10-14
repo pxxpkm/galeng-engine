@@ -1,4 +1,4 @@
-//! Galeng scenario IR: serde types plus JSON Schema validation.
+//! Plane scenario IR (dialogue and explore): serde types plus JSON Schema validation.
 
 pub mod local;
 pub mod types;

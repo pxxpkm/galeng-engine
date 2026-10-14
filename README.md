@@ -1,10 +1,11 @@
-# Galeng
+# Plane
 
 [English](#english) · [繁體中文](#繁體中文)
 
-A low-overhead Japanese-style ADV / galgame engine.
+**Plane** (`plane-engine`) — a planar AVG / gal + point-and-click adventure engine.
+Forked from [Galeng](https://github.com/pxxpkm/galeng-engine); dialogue IR and player lineage remain Galeng-compatible where noted.
 
-低開銷日系 ADV / galgame 引擎。
+以 AVG／Gal 為主嘅平面遊戲引擎（含 point-and-click 探險）。由 Galeng fork；對話 IR／播放器血統相容處見下文。
 
 ---
 
@@ -150,7 +151,7 @@ Settings and saves: `%APPDATA%\Galeng\example-prologue\`.
 
 ## 繁體中文
 
-對齊經典 PC 規格的 Native 播放器，加上 OpenCut 式 Web 編輯器。時間軸的單位是 **beat（格）**，不是秒。
+**Plane**（`plane-engine`）由 Galeng fork。對齊經典 PC 規格的 Native 播放器，加上現代 GUI 編輯器；MVP 以 AVG／Gal＋點擊探險為主。時間軸／對話仍以 **beat（格）** 為單位。
 
 **給誰用。** 第一用戶是中文與英文的作者和玩家。題材是日系 ADV；產品界面是簡中、繁中、英文。劇本裡可以夾日文。這不是日本本土木方工具。
 

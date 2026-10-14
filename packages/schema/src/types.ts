@@ -80,10 +80,59 @@ export type PauseButtonKey =
 
 export type PauseButtons = Partial<Record<PauseButtonKey, TitleButton>>;
 
+export type SceneKind = "dialogue" | "explore";
+
+export type EffectKind = "fade" | "crossfade";
+
+export interface EffectParams {
+  ms?: number;
+  color?: string;
+}
+
+export interface Verb {
+  id: string;
+  label: string;
+  builtin?: boolean;
+}
+
+export interface ItemDef {
+  id: string;
+  name: string;
+  /** Logical asset path, no extension. */
+  icon?: AssetPath;
+  desc?: string;
+  consumeOnUse?: boolean;
+}
+
+export interface SwitchDef {
+  id: string;
+  name?: string;
+  /** Omitted means false. */
+  init?: boolean;
+}
+
+export interface Fallback {
+  perVerb?: Record<string, string>;
+  itemOnHotspot?: string;
+  global?: string;
+}
+
+export interface EffectDef {
+  id: string;
+  kind: EffectKind;
+  params?: EffectParams;
+}
+
+export interface TransitionDefaults {
+  toDialogue?: string;
+  fromDialogue?: string;
+  gotoScene?: string;
+}
+
 export interface Project {
   id: string;
   title: string;
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   resolution: Resolution;
   startScene: string;
   locale: string;
@@ -105,6 +154,12 @@ export interface Project {
   characters?: Character[];
   cg?: GalleryItem[];
   musicGallery?: GalleryItem[];
+  verbs?: Verb[];
+  items?: ItemDef[];
+  switches?: SwitchDef[];
+  fallback?: Fallback;
+  effectLibrary?: EffectDef[];
+  transitionDefaults?: TransitionDefaults;
 }
 
 export interface Bg {
@@ -183,11 +238,71 @@ export interface ChoiceOption {
 export type Exit =
   | { type: "next"; goto: string }
   | { type: "choices"; options: ChoiceOption[] }
-  | { type: "branch"; if: Condition; then: string; else: string };
+  | { type: "branch"; if: Condition; then: string; else: string }
+  | { type: "call"; scene: string; trans?: string }
+  | { type: "return"; trans?: string };
+
+export type HotspotShape =
+  | { type: "rect"; x: number; y: number; w: number; h: number }
+  | { type: "polygon"; points: [number, number][] };
+
+/** AND atom. Untagged object, not a `type` tag. */
+export type Pred =
+  | { switch: string; is: boolean }
+  | { var: string; eq: number }
+  | { hasItem: string };
+
+export type InteractionOn = { verb: string } | { item: string };
+
+export type ExploreAction =
+  | { type: "say"; text: string; speaker?: string }
+  | { type: "setSwitch"; id: string; value: boolean }
+  | { type: "setVar"; id: string; value: number }
+  | { type: "addVar"; id: string; delta: number }
+  | { type: "giveItem"; id: string }
+  | { type: "takeItem"; id: string }
+  | { type: "gotoScene"; scene: string; trans?: string }
+  | { type: "call"; scene: string; trans?: string }
+  | { type: "return"; trans?: string }
+  | { type: "playSe"; asset: AssetPath }
+  | { type: "bgm"; asset: AssetPath | null; fadeMs?: number }
+  | { type: "fx"; ref: string; override?: EffectParams }
+  | { type: "showHotspot"; id: string }
+  | { type: "hideHotspot"; id: string }
+  | { type: "enableHotspot"; id: string }
+  | { type: "disableHotspot"; id: string };
+
+export interface InteractionRule {
+  when: Pred[];
+  do: ExploreAction[];
+}
+
+export interface Interaction {
+  hotspot: string;
+  on: InteractionOn;
+  rules: InteractionRule[];
+}
+
+export interface Hotspot {
+  id: string;
+  name: string;
+  shape: HotspotShape;
+  visibleIf?: Pred[] | null;
+  enabledIf?: Pred[] | null;
+  defaultVerb?: string;
+}
 
 export interface Scene {
   id: string;
   title?: string;
-  beats: Beat[];
+  /** Omitted means dialogue. */
+  sceneKind?: SceneKind;
+  /** Explore plate. Dialogue scenes keep per-beat `bg`. */
+  bg?: Bg;
+  /** Omitted means []. */
+  beats?: Beat[];
+  hotspots?: Hotspot[];
+  interactions?: Interaction[];
+  onEnter?: ExploreAction[];
   exit?: Exit;
 }
