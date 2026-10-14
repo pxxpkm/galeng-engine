@@ -599,6 +599,64 @@ fn dialogue_exit_call_then_return_does_not_loop() {
 }
 
 #[test]
+fn explore_call_nested_dialogue_return_resumes_explore() {
+    // Explore → Call A → Exit::Call B → Return to A(at end) → auto Return → Explore
+    let project = r#"{
+      "id": "nest",
+      "title": "Nest",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "room",
+      "locale": "zh-Hant",
+      "skipTitle": true,
+      "verbs": [{ "id": "talk", "label": "Talk" }]
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "npc", "name": "NPC", "shape": { "type": "rect", "x": 0, "y": 0, "w": 100, "h": 100 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "npc",
+          "on": { "verb": "talk" },
+          "rules": [{ "when": [], "do": [{ "type": "call", "scene": "A" }] }]
+        }
+      ]
+    }"#;
+    let a = r#"{
+      "id": "A",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "A", "text": "go" } }],
+      "exit": { "type": "call", "scene": "B" }
+    }"#;
+    let b = r#"{
+      "id": "B",
+      "sceneKind": "dialogue",
+      "beats": [{ "say": { "speaker": "B", "text": "back" } }],
+      "exit": { "type": "return" }
+    }"#;
+    let mut eng =
+        Engine::from_json(project, &[("room", room), ("A", a), ("B", b)]).unwrap();
+    eng.select_verb(Some("talk"));
+    eng.interact("npc").unwrap();
+    assert_eq!(eng.scene_id(), "A");
+    assert_eq!(eng.phase(), &Phase::Saying);
+    assert_eq!(eng.view().call_depth, 1);
+    eng.dismiss_say().unwrap();
+    // A exit Call → B
+    assert_eq!(eng.scene_id(), "B");
+    assert_eq!(eng.phase(), &Phase::Saying);
+    assert_eq!(eng.view().call_depth, 2);
+    eng.dismiss_say().unwrap();
+    // B Return → A at end → auto Return → Explore room (must not End with stack left)
+    assert_eq!(eng.phase(), &Phase::Explore);
+    assert_eq!(eng.scene_id(), "room");
+    assert_eq!(eng.view().call_depth, 0);
+}
+
+#[test]
 fn try_to_save_rejects_mid_saying() {
     let project = r#"{
       "id": "say",

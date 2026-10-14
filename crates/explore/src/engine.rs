@@ -665,7 +665,15 @@ impl Engine {
                 // Re-entering Exit::Call here would loop forever.
                 let len = self.current_scene()?.beats.len();
                 if self.beat_index >= len {
-                    self.phase = Phase::Ended;
+                    // Finished dialogue frame: if we were ourselves called
+                    // (stack still has Explore/parent), unwind again so
+                    // Explore→Call→A→Call→B→Return resumes Explore.
+                    // Empty stack → true end (no re-enter exit).
+                    if !self.call_stack.is_empty() {
+                        self.return_from_call(None)?;
+                    } else {
+                        self.phase = Phase::Ended;
+                    }
                 } else {
                     // Mid-dialogue Call (ExploreAction): advance past call site.
                     self.beat_index += 1;
