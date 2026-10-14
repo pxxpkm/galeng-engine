@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { mediaUrl } from "../media";
 import {
   clampRect,
   hitTestHandle,
@@ -40,6 +41,13 @@ function stagePoint(
   return { x, y };
 }
 
+/** Host media URL for scene.bg.asset, or null when unset / blank. */
+export function exploreCanvasBgSrc(bg?: { asset: string } | null): string | null {
+  const asset = bg?.asset?.trim() ?? "";
+  if (!asset) return null;
+  return mediaUrl(asset);
+}
+
 /** Minimal Explore room canvas: draw / select / move / resize rect hotspots. */
 export function ExploreCanvas({
   doc,
@@ -51,6 +59,11 @@ export function ExploreCanvas({
 }: ExploreCanvasProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const bgSrc = exploreCanvasBgSrc(doc.scene.bg);
+  const [bgFailed, setBgFailed] = useState(false);
+  useEffect(() => {
+    setBgFailed(false);
+  }, [bgSrc]);
   const selected = doc.ui.selectedHotspotId;
   const tool = doc.ui.canvasTool;
 
@@ -170,6 +183,24 @@ export function ExploreCanvas({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
+      {bgSrc && !bgFailed ? (
+        <img
+          data-testid="explore-canvas-bg"
+          src={bgSrc}
+          alt=""
+          draggable={false}
+          onError={() => setBgFailed(true)}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "fill",
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        />
+      ) : null}
       {doc.scene.hotspots.map((h) => {
         if (!isRect(h.shape)) {
           return (
