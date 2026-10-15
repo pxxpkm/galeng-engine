@@ -118,6 +118,9 @@ export function ExploreCanvas({
     clientY: number;
     target: CtxMenuTarget;
   } | null>(null);
+  // Synced ref so onCtxPick still has the target if close races ahead of pick.
+  const ctxMenuRef = useRef(ctxMenu);
+  ctxMenuRef.current = ctxMenu;
   const bgSrc = exploreCanvasBgSrc(doc.scene.bg);
   const [bgFailed, setBgFailed] = useState(false);
   useEffect(() => {
@@ -278,13 +281,13 @@ export function ExploreCanvas({
 
   const onCtxPick = useCallback(
     (action: CtxMenuActionId) => {
-      if (!ctxMenu) return;
-      const { target } = ctxMenu;
+      const open = ctxMenuRef.current;
       setCtxMenu(null);
+      if (!open) return;
       if (action === "cancel") return;
-      onContextAction?.(action, target);
+      onContextAction?.(action, open.target);
     },
-    [ctxMenu, onContextAction],
+    [onContextAction],
   );
 
   const previewRect = (id: string, shape: Rect): Rect => {

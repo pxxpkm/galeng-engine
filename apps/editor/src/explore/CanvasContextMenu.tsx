@@ -13,30 +13,39 @@ export interface CanvasContextMenuProps {
 /** Fixed-position floating menu for ExploreCanvas right-click. */
 export function CanvasContextMenu({ x, y, items, onPick, onClose }: CanvasContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const pickedRef = useRef(false);
 
   useEffect(() => {
+    pickedRef.current = false;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
       }
     };
-    const onDown = (e: MouseEvent) => {
+    // Outside dismiss on pointerdown (capture). Contains check keeps menu clicks alive.
+    const onDown = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }
     };
     window.addEventListener("keydown", onKey);
-    // capture so we close before canvas handlers; delay mousedown one tick after open
+    // Delay one tick so the opening contextmenu gesture does not immediately dismiss.
     const t = window.setTimeout(() => {
-      window.addEventListener("mousedown", onDown, true);
+      window.addEventListener("pointerdown", onDown, true);
     }, 0);
     return () => {
       window.clearTimeout(t);
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("pointerdown", onDown, true);
     };
   }, [onClose]);
+
+  const pick = (id: CtxMenuItem["id"]) => {
+    if (pickedRef.current) return;
+    pickedRef.current = true;
+    onPick(id);
+  };
 
   // Keep menu on-screen roughly
   const pad = 8;
@@ -71,6 +80,12 @@ export function CanvasContextMenu({ x, y, items, onPick, onClose }: CanvasContex
         fontSize: 13,
       }}
       onContextMenu={(e) => e.preventDefault()}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+      }}
     >
       {items.map((item) => (
         <button
@@ -78,7 +93,18 @@ export function CanvasContextMenu({ x, y, items, onPick, onClose }: CanvasContex
           type="button"
           role="menuitem"
           data-testid={`ctx-menu-${item.id}`}
-          onClick={() => onPick(item.id)}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            pick(item.id);
+          }}
+          onClick={(e) => {
+            // Keyboard activation (Enter/Space) and environments that only fire click.
+            e.preventDefault();
+            e.stopPropagation();
+            pick(item.id);
+          }}
           style={{
             display: "block",
             width: "100%",
