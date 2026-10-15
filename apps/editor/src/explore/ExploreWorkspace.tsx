@@ -287,10 +287,6 @@ export function ExploreWorkspace({
         );
         return;
       }
-      if (action === "editProps" && (target.kind === "rect" || target.kind === "polygon")) {
-        selectHotspot(target.hotspotId);
-        return;
-      }
       if (action === "toPolygon" && target.kind === "rect") {
         applyCmd(convertHotspotToPolygon(target.hotspotId));
         selectHotspot(target.hotspotId);

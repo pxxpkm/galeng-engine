@@ -22,7 +22,6 @@ export type CtxMenuTarget =
 export type CtxMenuActionId =
   | "addRect"
   | "addPolygon"
-  | "editProps"
   | "toPolygon"
   | "toRect"
   | "delete"
@@ -44,14 +43,12 @@ export function canvasContextMenuItems(target: CtxMenuTarget): CtxMenuItem[] {
       ];
     case "rect":
       return [
-        { id: "editProps", label: "編輯屬性" },
         { id: "toPolygon", label: "轉為多邊形" },
         { id: "delete", label: "刪除熱區" },
         { id: "cancel", label: "取消" },
       ];
     case "polygon":
       return [
-        { id: "editProps", label: "編輯屬性" },
         { id: "toRect", label: "轉為矩形" },
         { id: "delete", label: "刪除熱區" },
         { id: "cancel", label: "取消" },

@@ -54,7 +54,7 @@ describe("canvasContextMenu helpers", () => {
     ]);
     expect(
       canvasContextMenuItems({ kind: "rect", hotspotId: "a", stageX: 0, stageY: 0 }).map((i) => i.id),
-    ).toEqual(["editProps", "toPolygon", "delete", "cancel"]);
+    ).toEqual(["toPolygon", "delete", "cancel"]);
     expect(
       canvasContextMenuItems({
         kind: "polygon",
@@ -62,7 +62,7 @@ describe("canvasContextMenu helpers", () => {
         stageX: 0,
         stageY: 0,
       }).map((i) => i.id),
-    ).toEqual(["editProps", "toRect", "delete", "cancel"]);
+    ).toEqual(["toRect", "delete", "cancel"]);
   });
 
   it("target from hit id", () => {
