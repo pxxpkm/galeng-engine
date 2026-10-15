@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
 import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter, updateHotspot, updateProject } from "./commands";
 import { blankExploreDoc } from "./fixture";
-import { collectExploreProblems } from "./problems";
+import {
+  collectExploreProblems,
+  collectExploreProblemsForScenes,
+  countErrorProblemsInGroups,
+  formatPackProblemReport,
+} from "./problems";
 import { buildSceneCatalog } from "./sceneCatalog";
 
 describe("explore problems", () => {
@@ -450,5 +455,74 @@ describe("explore problems L3 badStartScene", () => {
     void bus;
     const probs = collectExploreProblems(doc);
     expect(probs.some((p) => p.key === "explore.badStartScene")).toBe(false);
+  });
+});
+
+
+describe("explore problems L4 multi-scene pack scan", () => {
+  it("flags empty say in sibling scene, not only current", () => {
+    const roomDoc = blankExploreDoc("room");
+    let bus = emptyBus();
+    let room = roomDoc;
+    ({ bus, doc: room } = dispatch(bus, room, addHotspot({ id: "desk" })));
+    void bus;
+
+    const atticBase = blankExploreDoc("attic");
+    let atticBus = emptyBus();
+    let attic = atticBase;
+    ({ bus: atticBus, doc: attic } = dispatch(atticBus, attic, addHotspot({ id: "chest" })));
+    ({ bus: atticBus, doc: attic } = dispatch(
+      atticBus,
+      attic,
+      setInteraction("chest", { verb: "look" }, [
+        { when: [], do: [{ type: "say", text: "" }] },
+      ]),
+    ));
+    void atticBus;
+
+    const catalog = [
+      { id: "room", kind: "explore" as const },
+      { id: "attic", kind: "explore" as const },
+    ];
+    const groups = collectExploreProblemsForScenes(
+      room.project,
+      [room.scene, attic.scene],
+      { sceneCatalog: catalog },
+    );
+    expect(countErrorProblemsInGroups(groups)).toBeGreaterThan(0);
+    const report = formatPackProblemReport(groups);
+    expect(report).toContain("attic");
+    const atticGroup = groups.find((g) => g.sceneId === "attic")!;
+    expect(atticGroup.problems.some((p) => p.key === "explore.emptySay")).toBe(true);
+    expect(atticGroup.problems.every((p) => p.sceneId === "attic")).toBe(true);
+  });
+
+  it("checks startScene only once across scenes", () => {
+    let bus = emptyBus();
+    let docA = blankExploreDoc("room");
+    ({ bus, doc: docA } = dispatch(bus, docA, addHotspot({ id: "a" })));
+    let docB = blankExploreDoc("attic");
+    ({ bus, doc: docB } = dispatch(bus, docB, addHotspot({ id: "b" })));
+    ({ bus, doc: docB } = dispatch(
+      bus,
+      docB,
+      updateProject({ startScene: "missing" }, "project-startScene"),
+    ));
+    void bus;
+    const groups = collectExploreProblemsForScenes(
+      docB.project,
+      [docA.scene, docB.scene],
+      {
+        sceneCatalog: [
+          { id: "room", kind: "explore" },
+          { id: "attic", kind: "explore" },
+        ],
+      },
+    );
+    const startFlags = groups.flatMap((g) =>
+      g.problems.filter((p) => p.key === "explore.badStartScene"),
+    );
+    expect(startFlags).toHaveLength(1);
+    expect(startFlags[0]!.sceneId).toBe("room");
   });
 });

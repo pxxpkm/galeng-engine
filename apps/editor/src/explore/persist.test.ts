@@ -10,6 +10,7 @@ import {
   exploreProjectToApi,
   exploreSceneToApi,
   loadExploreDoc,
+  loadSiblingExploreScenes,
   saveExploreDoc,
 } from "./persist";
 import { createFsPersistApi } from "./persistFs";
@@ -285,5 +286,45 @@ describe("Explore persist (real file path)", () => {
     );
     expect(projMerged.effectLibrary).toBeUndefined();
     expect(projMerged.font).toBe("keep.ttf");
+  });
+});
+
+describe("loadSiblingExploreScenes L4", () => {
+  it("uses in-memory current scene and loads siblings from disk", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-sib-"));
+    const api = createFsPersistApi(root);
+
+    let room = blankExploreDoc("room");
+    let bus = emptyBus();
+    ({ bus, doc: room } = dispatch(bus, room, addHotspot({ id: "desk" })));
+    await saveExploreDoc(api, room);
+
+    let attic = blankExploreDoc("attic");
+    ({ bus, doc: attic } = dispatch(bus, attic, addHotspot({ id: "chest" })));
+    // share project id with room on disk
+    attic = { ...attic, project: room.project, _rawProject: room._rawProject };
+    await saveExploreDoc(api, attic);
+
+    // dirty in-memory: rename hotspot on room without saving
+    ({ bus, doc: room } = dispatch(
+      bus,
+      room,
+      addHotspot({ id: "lamp", name: "燈" }),
+    ));
+    void bus;
+
+    const scenes = await loadSiblingExploreScenes(
+      api,
+      [
+        { id: "room", kind: "explore" },
+        { id: "attic", kind: "explore" },
+      ],
+      room,
+    );
+    expect(scenes.map((s) => s.id).sort()).toEqual(["attic", "room"]);
+    const roomScene = scenes.find((s) => s.id === "room")!;
+    expect(roomScene.hotspots.map((h) => h.id).sort()).toEqual(["desk", "lamp"]);
+    const atticScene = scenes.find((s) => s.id === "attic")!;
+    expect(atticScene.hotspots.map((h) => h.id)).toEqual(["chest"]);
   });
 });

@@ -38,13 +38,21 @@ import { HierarchyPanel } from "./HierarchyPanel";
 import { CellInspector, HotspotInspector, OnEnterInspector } from "./InspectorPanels";
 import {
   loadExploreDoc,
+  loadSiblingExploreScenes,
   saveExploreDoc,
   type ExplorePersistApi,
 } from "./persist";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { TracePanel } from "./TracePanel";
 import { resolveTrace } from "./trace";
-import { collectExploreProblems } from "./problems";
+import {
+  collectExploreProblems,
+  collectExploreProblemsForScenes,
+  countErrorProblemsInGroups,
+  flattenSceneProblemGroups,
+  formatPackProblemReport,
+  type ExploreProblem,
+} from "./problems";
 import { PresetBrowser } from "./PresetBrowser";
 import { applyPreset, setTransitionDefaults } from "./presets";
 import { blankExploreDoc } from "./fixture";
@@ -101,7 +109,9 @@ export function ExploreWorkspace({
     dirty: false,
   }));
   const [saveStatus, setSaveStatus] = useState<string>("");
-  const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
+    const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
+  /** Multi-scene pack gate problems (L4); cleared when doc changes. */
+  const [packScanProblems, setPackScanProblems] = useState<ExploreProblem[] | null>(null);
   const [localCatalog, setLocalCatalog] = useState<SceneCatalogEntry[]>(
     () => sceneCatalog ?? [],
   );
@@ -369,18 +379,44 @@ export function ExploreWorkspace({
       setSaveStatus("未接出包 API（需要 host /api/pack）");
       return;
     }
+    // L4: Problems on all explore scenes in catalog (current in-memory + siblings from disk)
+    setSaveStatus("出包前檢查全部場景…");
+    let scenesToCheck = [state.doc.scene];
+    if (persist) {
+      try {
+        scenesToCheck = await loadSiblingExploreScenes(
+          persist,
+          effectiveCatalog,
+          state.doc,
+        );
+      } catch (e) {
+        setSaveStatus(
+          `無法載入場景做檢查：${e instanceof Error ? e.message : String(e)}`,
+        );
+        return;
+      }
+    }
+    const groups = collectExploreProblemsForScenes(
+      state.doc.project,
+      scenesToCheck,
+      {
+        sceneCatalog: effectiveCatalog,
+        knownSceneIds,
+      },
+    );
+    const errCount = countErrorProblemsInGroups(groups);
+    if (errCount > 0) {
+      setPackScanProblems(flattenSceneProblemGroups(groups));
+      const report = formatPackProblemReport(groups);
+      setSaveStatus(`無法出包：${report || `${errCount} 個錯誤`}`);
+      setBottomTab("problems");
+      return;
+    }
+    setPackScanProblems(null);
+
     if (dirty) {
       if (!persist) {
         setSaveStatus("請先存檔再出包（未接 persist）");
-        return;
-      }
-      const errs = collectExploreProblems(state.doc, {
-        sceneCatalog: effectiveCatalog,
-        knownSceneIds,
-      }).filter((p) => p.severity === "error");
-      if (errs.length > 0) {
-        setSaveStatus(`無法出包：${errs.length} 個錯誤（見 Problems）`);
-        setBottomTab("problems");
         return;
       }
       setSaveStatus("存檔後出包…");
@@ -431,6 +467,10 @@ export function ExploreWorkspace({
       }),
     [doc, effectiveCatalog, knownSceneIds],
   );
+
+  useEffect(() => {
+    setPackScanProblems(null);
+  }, [doc]);
   const problemHs = useMemo(
     () => new Set(problems.filter((p) => p.hotspotId).map((p) => p.hotspotId!)),
     [problems],
@@ -823,7 +863,7 @@ export function ExploreWorkspace({
           </button>
         </div>
         {bottomTab === "problems" ? (
-          <ProblemsPanel problems={problems} />
+          <ProblemsPanel problems={packScanProblems ?? problems} />
         ) : bottomTab === "trace" ? (
           <TracePanel resolution={traceResolution} />
         ) : (

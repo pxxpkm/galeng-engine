@@ -12,6 +12,7 @@ import {
   type ExploreProject,
   type ExploreScene,
   type Fallback,
+  type SceneCatalogEntry,
   type Verb,
 } from "./types";
 
@@ -249,4 +250,37 @@ export async function loadExploreDoc(
     apiToExploreScene(_rawScene),
   );
   return { ...doc, _rawProject, _rawScene };
+}
+
+/**
+ * Load every explore scene in catalog for pack-time Problems (L4).
+ * Current scene uses in-memory doc (may be dirty); siblings load from persist.
+ */
+export async function loadSiblingExploreScenes(
+  api: ExplorePersistApi,
+  catalog: SceneCatalogEntry[],
+  current: ExploreDoc,
+): Promise<ExploreScene[]> {
+  const fromCatalog = catalog.filter((c) => c.kind === "explore").map((c) => c.id);
+  const ids = fromCatalog.length > 0 ? fromCatalog : [current.scene.id];
+  const out: ExploreScene[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (id === current.scene.id) {
+      out.push(structuredClone(current.scene));
+      continue;
+    }
+    try {
+      const raw = await api.loadScene(id);
+      out.push(apiToExploreScene(raw));
+    } catch {
+      // skip missing / non-explore
+    }
+  }
+  if (!seen.has(current.scene.id)) {
+    out.unshift(structuredClone(current.scene));
+  }
+  return out;
 }

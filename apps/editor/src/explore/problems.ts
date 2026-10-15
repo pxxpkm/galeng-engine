@@ -1,7 +1,10 @@
 import { isRect, rectHasNonInteger } from "./canvas";
+import { loadExplore } from "./commands";
 import type {
   ExploreAction,
   ExploreDoc,
+  ExploreProject,
+  ExploreScene,
   Interaction,
   Pred,
   SceneCatalogEntry,
@@ -17,6 +20,8 @@ export interface ExploreProblem {
   message: string;
   hotspotId?: string;
   detail?: string;
+  /** Set when problem comes from a multi-scene pack scan (L4). */
+  sceneId?: string;
 }
 
 export interface CollectProblemsOptions {
@@ -24,6 +29,14 @@ export interface CollectProblemsOptions {
   knownSceneIds?: Set<string>;
   /** Preferred: catalog with kind + hasReturn for dead-end Call checks. */
   sceneCatalog?: SceneCatalogEntry[];
+  /** Skip project-level startScene check (sibling scenes in a pack scan). */
+  skipStartSceneCheck?: boolean;
+}
+
+/** One explore scene's problems (L4 pack gate). */
+export interface SceneProblemGroup {
+  sceneId: string;
+  problems: ExploreProblem[];
 }
 
 function walkActions(inter: Interaction, visit: (a: ExploreAction, actionIndex: number) => void): void {
@@ -337,7 +350,7 @@ export function collectExploreProblems(
   }
 
   // Rule 7: startScene non-empty; unknown id when catalog present (L3)
-  {
+  if (!opts.skipStartSceneCheck) {
     const start = (doc.project.startScene ?? "").trim();
     if (!start) {
       out.push({
@@ -358,4 +371,54 @@ export function collectExploreProblems(
   }
 
   return out;
+}
+
+/**
+ * Pure L4 helper: run Problems on each explore scene sharing one project.
+ * startScene is checked only on the first scene in the list.
+ */
+export function collectExploreProblemsForScenes(
+  project: ExploreProject,
+  scenes: ExploreScene[],
+  opts: CollectProblemsOptions = {},
+): SceneProblemGroup[] {
+  return scenes.map((scene, index) => {
+    const doc = loadExplore(project, scene);
+    const problems = collectExploreProblems(doc, {
+      ...opts,
+      skipStartSceneCheck: index > 0 || opts.skipStartSceneCheck === true,
+    }).map((p) => ({
+      ...p,
+      sceneId: scene.id,
+      id: `${scene.id}:${p.id}`,
+    }));
+    return { sceneId: scene.id, problems };
+  });
+}
+
+export function countErrorProblemsInGroups(groups: SceneProblemGroup[]): number {
+  let n = 0;
+  for (const g of groups) {
+    for (const p of g.problems) {
+      if (p.severity === "error") n += 1;
+    }
+  }
+  return n;
+}
+
+/** Compact status line: `room（2）；attic（1）`. */
+export function formatPackProblemReport(groups: SceneProblemGroup[]): string {
+  const parts: string[] = [];
+  for (const g of groups) {
+    const errs = g.problems.filter((p) => p.severity === "error");
+    if (errs.length === 0) continue;
+    parts.push(`${g.sceneId}（${errs.length}）`);
+  }
+  return parts.join("；");
+}
+
+export function flattenSceneProblemGroups(
+  groups: SceneProblemGroup[],
+): ExploreProblem[] {
+  return groups.flatMap((g) => g.problems);
 }
