@@ -2,7 +2,7 @@
  * E1-min: resolve action-bound transition vs project.transitionDefaults.
  */
 
-import type { ExploreAction, TransitionDefaults } from "./types";
+import type { EffectDef, ExploreAction, TransitionDefaults } from "./types";
 
 export type TransKind = "toDialogue" | "fromDialogue" | "gotoScene";
 
@@ -48,4 +48,40 @@ export function defaultTransitionDefaults(): TransitionDefaults {
     fromDialogue: "fade_black",
     gotoScene: "fade_black",
   };
+}
+
+
+/** Merge effects by id (existing wins over incoming duplicates). */
+export function mergeEffectLibrary(
+  existing: EffectDef[] | undefined,
+  incoming: readonly EffectDef[],
+): EffectDef[] {
+  const byId = new Map<string, EffectDef>();
+  for (const e of existing ?? []) byId.set(e.id, e);
+  for (const e of incoming) {
+    if (!byId.has(e.id)) byId.set(e.id, e);
+  }
+  return [...byId.values()];
+}
+
+/**
+ * Ensure effect ids exist in the library; missing ids that match BUILTIN_EFFECTS
+ * are copied in. Unknown custom ids are left unresolved (Problems can warn).
+ */
+export function ensureEffectsInLibrary(
+  existing: EffectDef[] | undefined,
+  ids: Iterable<string>,
+): EffectDef[] {
+  const needed: EffectDef[] = [];
+  const have = new Set((existing ?? []).map((e) => e.id));
+  for (const id of ids) {
+    if (!id || have.has(id)) continue;
+    const builtin = BUILTIN_EFFECTS.find((e) => e.id === id);
+    if (builtin) {
+      needed.push(builtin);
+      have.add(id);
+    }
+  }
+  if (needed.length === 0) return existing ?? [];
+  return mergeEffectLibrary(existing, needed);
 }

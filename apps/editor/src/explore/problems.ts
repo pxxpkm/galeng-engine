@@ -226,7 +226,6 @@ function checkActions(
     }
 
     if (
-      effects.size > 0 &&
       (a.type === "call" || a.type === "return" || a.type === "gotoScene") &&
       a.trans &&
       !effects.has(a.trans)
@@ -445,6 +444,23 @@ export function collectExploreProblems(
         message: `起始場景未知：${start}`,
         detail: start,
       });
+    }
+  }
+
+  // Rule 7b: transitionDefaults ids must exist in effectLibrary (when set)
+  const defaults = doc.project.transitionDefaults;
+  if (defaults) {
+    for (const key of ["toDialogue", "fromDialogue", "gotoScene"] as const) {
+      const id = defaults[key];
+      if (id && !effects.has(id)) {
+        out.push({
+          id: `bad-trans-default-${key}-${id}`,
+          severity: "warn",
+          key: "explore.unknownTransDefault",
+          message: `轉場預設「${key}」未知特效：${id}`,
+          detail: id,
+        });
+      }
     }
   }
 

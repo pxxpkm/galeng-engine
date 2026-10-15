@@ -4,7 +4,12 @@
 
 import type { Command } from "./commandBus";
 import { setInteraction, uniqueId } from "./commands";
-import { defaultTransitionDefaults } from "./transitions";
+import {
+  BUILTIN_EFFECTS,
+  defaultTransitionDefaults,
+  ensureEffectsInLibrary,
+  mergeEffectLibrary,
+} from "./transitions";
 import type {
   ExploreDoc,
   ExploreAction,
@@ -28,7 +33,7 @@ export const PRESET_CATALOG: ExplorePreset[] = [
     id: "trans.fadeDefaults",
     category: "transition",
     label: "預設淡入黑場",
-    description: "將 transitionDefaults 設為 fade_black（Call／Return／Goto）",
+    description: "將轉場預設設為 fade_black，並同步內建特效至 effectLibrary",
   },
   {
     id: "hotspot.pickup",
@@ -65,9 +70,17 @@ export function setTransitionDefaults(patch: TransitionDefaults): Command {
       for (const k of ["toDialogue", "fromDialogue", "gotoScene"] as const) {
         if (next[k] === "") delete next[k];
       }
+      const needed = [next.toDialogue, next.fromDialogue, next.gotoScene].filter(
+        (id): id is string => !!id,
+      );
+      const effectLibrary = ensureEffectsInLibrary(doc.project.effectLibrary, needed);
       return {
         ...doc,
-        project: { ...doc.project, transitionDefaults: next },
+        project: {
+          ...doc.project,
+          transitionDefaults: next,
+          ...(effectLibrary.length > 0 ? { effectLibrary } : {}),
+        },
       };
     },
   };
@@ -103,8 +116,19 @@ export function applyPresetToDoc(
   catalog?: SceneCatalogEntry[],
 ): ExploreDoc {
   switch (presetId) {
-    case "trans.fadeDefaults":
-      return setTransitionDefaults(defaultTransitionDefaults()).apply(doc);
+    case "trans.fadeDefaults": {
+      const withDefaults = setTransitionDefaults(defaultTransitionDefaults()).apply(doc);
+      return {
+        ...withDefaults,
+        project: {
+          ...withDefaults.project,
+          effectLibrary: mergeEffectLibrary(
+            withDefaults.project.effectLibrary,
+            BUILTIN_EFFECTS,
+          ),
+        },
+      };
+    }
 
     case "hotspot.pickup": {
       const hs = doc.ui.selectedHotspotId ?? doc.ui.selectedCell?.hotspotId;

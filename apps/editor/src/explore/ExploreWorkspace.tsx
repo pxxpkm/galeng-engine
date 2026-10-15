@@ -844,7 +844,7 @@ export function ExploreWorkspace({
               fontSize: 12,
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>轉場預設（E1-min）</div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>轉場預設</div>
             {(
               [
                 ["toDialogue", "呼叫場景至對話"],
@@ -873,6 +873,14 @@ export function ExploreWorkspace({
                       {ef.id}
                     </option>
                   ))}
+                  {doc.project.transitionDefaults?.[key] &&
+                  !(doc.project.effectLibrary ?? []).some(
+                    (ef) => ef.id === doc.project.transitionDefaults?.[key],
+                  ) ? (
+                    <option value={doc.project.transitionDefaults[key]}>
+                      {doc.project.transitionDefaults[key]}（未知）
+                    </option>
+                  ) : null}
                 </select>
               </label>
             ))}
