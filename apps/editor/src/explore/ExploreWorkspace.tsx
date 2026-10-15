@@ -291,6 +291,10 @@ export function ExploreWorkspace({
   }, [copySelected, pasteSelected, doUndo, doRedo, doSave, persist, doc.ui]);
 
   const doCreateScene = useCallback(async () => {
+    if (!persist) {
+      setSaveStatus("未接 persist");
+      return;
+    }
     const raw =
       typeof window !== "undefined"
         ? window.prompt("新探險場景 ID（檔名）", "room_2")
@@ -316,36 +320,27 @@ export function ExploreWorkspace({
       _rawProject: state.doc._rawProject,
       scene: { ...blank.scene, title: id },
     };
-    if (persist) {
-      setSaveStatus("建立中…");
-      try {
-        const saved = await saveExploreDoc(persist, nextDoc);
-        const loaded: ExploreDoc = {
-          ...nextDoc,
-          project: saved.project,
-          scene: saved.scene,
-          _rawProject: saved._rawProject,
-          _rawScene: saved._rawScene,
-          ui: blank.ui,
-        };
-        setLocalCatalog((prev) => {
-          if (prev.some((c) => c.id === id)) return prev;
-          return [...prev, { id, kind: "explore", title: loaded.scene.title }];
-        });
-        setState({ doc: loaded, bus: emptyBus(), dirty: false });
-        setSaveStatus(`已建立並切換：${id}`);
-      } catch (e) {
-        setSaveStatus(
-          `建立失敗：${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    } else {
+    setSaveStatus("建立中…");
+    try {
+      const saved = await saveExploreDoc(persist, nextDoc);
+      const loaded: ExploreDoc = {
+        ...nextDoc,
+        project: saved.project,
+        scene: saved.scene,
+        _rawProject: saved._rawProject,
+        _rawScene: saved._rawScene,
+        ui: blank.ui,
+      };
       setLocalCatalog((prev) => {
         if (prev.some((c) => c.id === id)) return prev;
-        return [...prev, { id, kind: "explore", title: nextDoc.scene.title }];
+        return [...prev, { id, kind: "explore", title: loaded.scene.title }];
       });
-      setState({ doc: nextDoc, bus: emptyBus(), dirty: true });
-      setSaveStatus(`已建立（記憶體）：${id}`);
+      setState({ doc: loaded, bus: emptyBus(), dirty: false });
+      setSaveStatus(`已建立並切換：${id}`);
+    } catch (e) {
+      setSaveStatus(
+        `建立失敗：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }, [persist, dirty, state.doc.project, state.doc._rawProject, effectiveCatalog]);
 
@@ -495,7 +490,8 @@ export function ExploreWorkspace({
           type="button"
           data-testid="scene-create"
           onClick={() => void doCreateScene()}
-          title="新建空白探險場景"
+          disabled={!persist}
+          title={persist ? "新建空白探險場景" : "未接 persist"}
         >
           ＋場景
         </button>

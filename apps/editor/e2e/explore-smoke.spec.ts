@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Smoke: #explore mounts ExploreWorkspace.
- * Needs Vite (playwright webServer). Host API optional — boot error → blank study.
+ * Smoke: #explore without host shows boot error + retry.
+ * Needs Vite (playwright webServer). Host API is not running here — boot failure
+ * must show the error UI and must not mount a blank study workspace.
  * Skip when Chromium missing: PLAYWRIGHT_SKIP=1 or browsers not installed.
  */
 const skipReason = (() => {
@@ -17,12 +18,14 @@ test.describe("explore smoke", () => {
     if (skipReason) testInfo.skip(true, skipReason);
   });
 
-  test("loads Explore shell at #explore", async ({ page }) => {
+  test("boot failure at #explore shows error and retry, not a blank workspace", async ({
+    page,
+  }) => {
     await page.goto("/#explore");
-    await expect(page.getByTestId("explore-workspace")).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(page.getByTestId("explore-topbar")).toBeVisible();
-    await expect(page.getByTestId("explore-pack")).toBeVisible();
+    const err = page.getByTestId("explore-boot-error");
+    await expect(err).toBeVisible({ timeout: 30_000 });
+    await expect(err).toContainText(/載入失敗|重試/);
+    await expect(page.getByTestId("explore-boot-retry")).toBeVisible();
+    await expect(page.getByTestId("explore-workspace")).toHaveCount(0);
   });
 });

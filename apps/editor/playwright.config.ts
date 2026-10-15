@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Minimal Explore E2E. Vite only — host `/api` optional.
- * Without galeng-host, ExploreApp falls back to blank study doc (still mounts workspace).
+ * Without galeng-host, ExploreApp shows a boot error + retry and does not mount the workspace.
  */
 export default defineConfig({
   testDir: "./e2e",
