@@ -1,6 +1,6 @@
 import type { ChoiceOption, Exit } from "./types";
 
-export type ExitKind = "none" | "next" | "choices" | "branch";
+export type ExitKind = "none" | "next" | "choices" | "branch" | "return";
 
 export function exitKind(exit: Exit | undefined): ExitKind {
   if (!exit) return "none";
@@ -19,6 +19,10 @@ export function setExitKind(exit: Exit | undefined, kind: ExitKind): Exit | unde
   if (kind === "choices") {
     if (exit && exit.type === "choices") return exit;
     return { type: "choices", options: [emptyChoice(), emptyChoice()] };
+  }
+  if (kind === "return") {
+    if (exit && exit.type === "return") return exit;
+    return { type: "return" };
   }
   if (exit && exit.type === "branch") return exit;
   return emptyBranch();

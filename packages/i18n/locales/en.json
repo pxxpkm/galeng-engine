@@ -115,6 +115,7 @@
   "editor.exitNext": "Next scene",
   "editor.exitChoices": "Choices",
   "editor.exitBranch": "Branch",
+  "editor.exitReturn": "Return (to caller)",
   "editor.branchVar": "Variable",
   "editor.branchOp": "Compare",
   "editor.branchN": "Number",

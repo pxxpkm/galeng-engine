@@ -63,6 +63,9 @@ function exitGotoSites(exit: Exit | undefined): GotoSite[] {
   if (exit.type === "choices") {
     return exit.options.map((opt, choiceIndex) => ({ goto: opt.goto, choiceIndex }));
   }
+  if (exit.type === "return") {
+    return [];
+  }
   return [{ goto: exit.then }, { goto: exit.else }];
 }
 

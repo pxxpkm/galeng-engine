@@ -10,6 +10,7 @@ import {
   writeBranch,
   writeCond,
 } from "./exit";
+import { exitEdges } from "./route";
 
 describe("setExitKind", () => {
   it("clears exit for ending", () => {
@@ -32,6 +33,13 @@ describe("setExitKind", () => {
   it("creates an empty integer branch", () => {
     const exit = setExitKind(undefined, "branch");
     expect(exit).toEqual({ type: "branch", if: { flag: { gte: 0 } }, then: "", else: "" });
+  });
+
+  it("creates a return exit and keeps trans when already return", () => {
+    expect(setExitKind(undefined, "return")).toEqual({ type: "return" });
+    expect(setExitKind({ type: "next", goto: "x" }, "return")).toEqual({ type: "return" });
+    const cur = { type: "return" as const, trans: "fade_black" };
+    expect(setExitKind(cur, "return")).toEqual(cur);
   });
 });
 
@@ -98,5 +106,17 @@ describe("set parse", () => {
   it("reports none/next/choices", () => {
     expect(exitKind(undefined)).toBe("none");
     expect(exitKind({ type: "next", goto: "home_01" })).toBe("next");
+  });
+
+  it("reports return", () => {
+    expect(exitKind({ type: "return" })).toBe("return");
+    expect(exitKind({ type: "return", trans: "fade_black" })).toBe("return");
+  });
+});
+
+describe("return exit edges", () => {
+  it("has no route edges", () => {
+    expect(exitEdges({ type: "return" })).toEqual([]);
+    expect(exitEdges({ type: "return", trans: "fade_black" })).toEqual([]);
   });
 });

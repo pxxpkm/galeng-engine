@@ -9,6 +9,7 @@ import type {
   ExploreDoc,
   ExploreAction,
   InteractionRule,
+  SceneCatalogEntry,
   TransitionDefaults,
 } from "./types";
 import { sameOn } from "./types";
@@ -90,8 +91,17 @@ function ensureItem(doc: ExploreDoc): { doc: ExploreDoc; itemId: string } {
   };
 }
 
+/** First dialogue scene that exits back to its caller. */
+function returnDialogueId(catalog: SceneCatalogEntry[] | undefined): string | undefined {
+  return catalog?.find((entry) => entry.kind === "dialogue" && entry.hasReturn === true)?.id;
+}
+
 /** Pure apply; wrapped by applyPreset command. */
-export function applyPresetToDoc(doc: ExploreDoc, presetId: string): ExploreDoc {
+export function applyPresetToDoc(
+  doc: ExploreDoc,
+  presetId: string,
+  catalog?: SceneCatalogEntry[],
+): ExploreDoc {
   switch (presetId) {
     case "trans.fadeDefaults":
       return setTransitionDefaults(defaultTransitionDefaults()).apply(doc);
@@ -115,13 +125,15 @@ export function applyPresetToDoc(doc: ExploreDoc, presetId: string): ExploreDoc 
     case "action.callTalk": {
       const cell = doc.ui.selectedCell;
       if (!cell) return doc;
+      const sceneId = returnDialogueId(catalog);
+      if (!sceneId) return doc;
       const existing =
         doc.scene.interactions.find(
           (i) => i.hotspot === cell.hotspotId && sameOn(i.on, cell.on),
         )?.rules ?? [];
       const call: ExploreAction = {
         type: "call",
-        scene: "dlg_butler",
+        scene: sceneId,
         trans: doc.project.transitionDefaults?.toDialogue,
       };
       const rules: InteractionRule[] =
@@ -158,13 +170,13 @@ export function applyPresetToDoc(doc: ExploreDoc, presetId: string): ExploreDoc 
   }
 }
 
-export function applyPreset(presetId: string): Command {
+export function applyPreset(presetId: string, catalog?: SceneCatalogEntry[]): Command {
   const meta = PRESET_CATALOG.find((p) => p.id === presetId);
   return {
     id: `explore.applyPreset.${presetId}`,
     label: meta ? `Preset: ${meta.label}` : `Preset ${presetId}`,
     apply(doc) {
-      return applyPresetToDoc(doc, presetId);
+      return applyPresetToDoc(doc, presetId, catalog);
     },
   };
 }

@@ -1433,6 +1433,7 @@ export function App() {
             <option value="next">{t("editor.exitNext")}</option>
             <option value="choices">{t("editor.exitChoices")}</option>
             <option value="branch">{t("editor.exitBranch")}</option>
+            <option value="return">{t("editor.exitReturn")}</option>
           </select>
           {scene?.exit?.type === "next" ? (
             <GotoSelect

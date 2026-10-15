@@ -129,6 +129,9 @@ function recordsOfExit(scene: Scene, out: SearchRecord[]): void {
     }
     return;
   }
+  if (exit.type === "return") {
+    return;
+  }
   addRecord(out, { ...base, kind: "goto", text: exit.then ?? "" });
   addRecord(out, { ...base, kind: "goto", text: exit.else ?? "" });
 }

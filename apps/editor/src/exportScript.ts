@@ -157,6 +157,9 @@ function exportExit(exit: Exit): string[] {
   if (exit.type === "choices") {
     return ["@choice", ...exit.options.map((opt) => `  ${formatChoice(opt)}`)];
   }
+  if (exit.type === "return") {
+    return [];
+  }
   return [`@if ${summarizeBranchIf(exit.if)} @goto ${exit.then} @else @goto ${exit.else}`];
 }
 

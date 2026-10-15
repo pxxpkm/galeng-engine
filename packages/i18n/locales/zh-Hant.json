@@ -115,6 +115,7 @@
   "editor.exitNext": "下一場景",
   "editor.exitChoices": "選擇肢",
   "editor.exitBranch": "條件分支",
+  "editor.exitReturn": "Return（返回來電）",
   "editor.branchVar": "變數",
   "editor.branchOp": "比較",
   "editor.branchN": "數值",

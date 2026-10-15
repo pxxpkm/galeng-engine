@@ -123,7 +123,8 @@ export interface ChoiceOption {
 export type Exit =
   | { type: "next"; goto: string }
   | { type: "choices"; options: ChoiceOption[] }
-  | { type: "branch"; if: unknown; then: string; else: string };
+  | { type: "branch"; if: unknown; then: string; else: string }
+  | { type: "return"; trans?: string };
 
 export interface SceneMeta {
   id: string;

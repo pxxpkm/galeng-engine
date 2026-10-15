@@ -59,8 +59,13 @@ describe("M3 Call→dialogue→Return editor path", () => {
       selectedCell: { hotspotId: "npc", on: { verb: "talk" } },
     });
     const pastBefore = bus.past.length;
-    ({ bus, doc } = dispatch(bus, doc, applyPreset("action.callTalk")));
+    const catalog = [{ id: "dlg_butler", kind: "dialogue" as const, hasReturn: true }];
+    ({ bus, doc } = dispatch(bus, doc, applyPreset("action.callTalk", catalog)));
     expect(bus.past.length).toBe(pastBefore + 1);
+    const call = doc.scene.interactions
+      .flatMap((i) => i.rules.flatMap((r) => r.do))
+      .find((a) => a.type === "call");
+    expect(call).toMatchObject({ type: "call", scene: "dlg_butler" });
     const u = undo(bus, doc)!;
     expect(u.doc.scene.interactions).toHaveLength(0);
   });

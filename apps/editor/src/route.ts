@@ -99,6 +99,9 @@ export function exitEdges(exit: Exit | undefined): RouteEdge[] {
       return edge;
     });
   }
+  if (exit.type === "return") {
+    return [];
+  }
   const ifNote = formatIfKeys(exit.if);
   const thenEdge: RouteEdge = {
     kind: "branchThen",

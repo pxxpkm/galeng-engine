@@ -675,6 +675,7 @@ function ExitTab({ ed }: { ed: Editor }) {
           <option value="next">{t("editor.exitNext")}</option>
           <option value="choices">{t("editor.exitChoices")}</option>
           <option value="branch">{t("editor.exitBranch")}</option>
+          <option value="return">{t("editor.exitReturn")}</option>
         </select>
       </Field>
       {scene.exit?.type === "next" ? (

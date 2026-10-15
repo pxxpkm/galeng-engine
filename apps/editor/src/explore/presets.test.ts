@@ -42,7 +42,7 @@ describe("presets", () => {
     ).toBeUndefined();
   });
 
-  it("callTalk preset adds call on selected cell", () => {
+  it("callTalk with no catalog does not write a call or dlg_butler", () => {
     let doc = blankExploreDoc();
     let bus = emptyBus();
     ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
@@ -51,10 +51,32 @@ describe("presets", () => {
       selectedHotspotId: "npc",
     });
     ({ bus, doc } = dispatch(bus, doc, applyPreset("action.callTalk")));
+    const actions = doc.scene.interactions.flatMap((i) => i.rules.flatMap((r) => r.do));
+    expect(actions.some((a) => a.type === "call")).toBe(false);
+    expect(JSON.stringify(doc)).not.toContain("dlg_butler");
+  });
+
+  it("callTalk uses the first dialogue catalog entry that has return", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "npc" })));
+    doc = patchUi(doc, {
+      selectedCell: { hotspotId: "npc", on: { verb: "talk" } },
+      selectedHotspotId: "npc",
+    });
+    const catalog = [
+      { id: "study", kind: "explore" as const },
+      { id: "dlg_dead", kind: "dialogue" as const, hasReturn: false },
+      { id: "dlg_guest", kind: "dialogue" as const, hasReturn: true },
+      { id: "dlg_later", kind: "dialogue" as const, hasReturn: true },
+    ];
+    ({ bus, doc } = dispatch(bus, doc, applyPreset("action.callTalk", catalog)));
     const inter = doc.scene.interactions.find(
       (i) => i.hotspot === "npc" && "verb" in i.on && i.on.verb === "talk",
     );
-    expect(inter!.rules[0]!.do.some((a) => a.type === "call")).toBe(true);
+    const call = inter!.rules[0]!.do.find((a) => a.type === "call");
+    expect(call).toMatchObject({ type: "call", scene: "dlg_guest" });
+    expect(JSON.stringify(doc)).not.toContain("dlg_butler");
   });
 
   it("setTransitionDefaults patches fields", () => {

@@ -725,13 +725,18 @@ export function ExploreWorkspace({
           </div>
           <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid #333" }}>
             <PresetBrowser
-              onApply={(id) => applyCmd(applyPreset(id))}
+              onApply={(id) => applyCmd(applyPreset(id, effectiveCatalog))}
               canApply={(p) => {
                 if (p.id === "trans.fadeDefaults") return true;
                 if (p.id === "hotspot.pickup")
                   return !!(doc.ui.selectedHotspotId || doc.ui.selectedCell);
-                if (p.id === "action.callTalk" || p.id === "action.return")
-                  return !!doc.ui.selectedCell;
+                if (p.id === "action.callTalk") {
+                  return (
+                    !!doc.ui.selectedCell &&
+                    effectiveCatalog.some((c) => c.kind === "dialogue" && c.hasReturn === true)
+                  );
+                }
+                if (p.id === "action.return") return !!doc.ui.selectedCell;
                 return true;
               }}
             />
