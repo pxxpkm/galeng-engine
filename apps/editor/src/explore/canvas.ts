@@ -192,6 +192,35 @@ export function moveRect(rect: Rect, dx: number, dy: number): Rect {
   return roundRect({ x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h });
 }
 
+/** Nudge rect by dx/dy stage units, clamped to stage bounds. */
+export function nudgeRect(
+  rect: Rect,
+  dx: number,
+  dy: number,
+  bounds: { width: number; height: number },
+): Rect {
+  return clampRect(moveRect(rect, dx, dy), bounds);
+}
+
+/**
+ * Translate polygon by dx/dy without distorting shape.
+ * Clamps so the axis-aligned bounds stay inside the stage.
+ */
+export function nudgePolygonPoints(
+  points: [number, number][],
+  dx: number,
+  dy: number,
+  bounds: { width: number; height: number },
+): [number, number][] {
+  const b = polygonBounds(points);
+  if (!b) return roundPolygonPoints(points);
+  const moved = clampRect(moveRect(b, dx, dy), bounds);
+  const adx = moved.x - b.x;
+  const ady = moved.y - b.y;
+  if (adx === 0 && ady === 0) return roundPolygonPoints(points);
+  return roundPolygonPoints(points.map(([x, y]) => [x + adx, y + ady]));
+}
+
 /** True if number is a finite integer (schema-aligned). */
 export function isIntCoord(n: number): boolean {
   return Number.isFinite(n) && Number.isInteger(n);

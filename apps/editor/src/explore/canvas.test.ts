@@ -14,6 +14,8 @@ import {
   hitTestVertex,
   insertPolygonVertex,
   moveRect,
+  nudgePolygonPoints,
+  nudgeRect,
   normalizeRect,
   pastDragThreshold,
   pointInPolygon,
@@ -203,5 +205,49 @@ describe("polygon vertex editing helpers", () => {
 
   it("vertexHandleTestId is stable", () => {
     expect(vertexHandleTestId("rug", 2)).toBe("vertex-handle-rug-2");
+  });
+});
+
+describe("nudge helpers", () => {
+  const bounds = { width: 100, height: 80 };
+
+  it("nudgeRect moves and clamps to stage", () => {
+    expect(nudgeRect({ x: 10, y: 10, w: 20, h: 20 }, 5, -3, bounds)).toEqual({
+      x: 15,
+      y: 7,
+      w: 20,
+      h: 20,
+    });
+    expect(nudgeRect({ x: 0, y: 0, w: 20, h: 20 }, -5, -5, bounds)).toEqual({
+      x: 0,
+      y: 0,
+      w: 20,
+      h: 20,
+    });
+    expect(nudgeRect({ x: 90, y: 70, w: 20, h: 20 }, 10, 10, bounds)).toEqual({
+      x: 80,
+      y: 60,
+      w: 20,
+      h: 20,
+    });
+  });
+
+  it("nudgePolygonPoints translates without distorting, clamped by AABB", () => {
+    const pts: [number, number][] = [
+      [10, 10],
+      [30, 10],
+      [20, 30],
+    ];
+    expect(nudgePolygonPoints(pts, 5, 0, bounds)).toEqual([
+      [15, 10],
+      [35, 10],
+      [25, 30],
+    ]);
+    // Against left edge: no move
+    expect(nudgePolygonPoints(pts, -20, 0, bounds)).toEqual([
+      [0, 10],
+      [20, 10],
+      [10, 30],
+    ]);
   });
 });

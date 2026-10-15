@@ -171,6 +171,7 @@ export function ExploreCanvas({
   );
 
   // Delete / Backspace removes selected vertex (≥3 remain).
+  // Capture + stopImmediatePropagation so Workspace hotspot-delete does not also fire.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -183,10 +184,11 @@ export function ExploreCanvas({
       }
       if (!selectedVertex) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       commitRemoveVertex(selectedVertex.id, selectedVertex.index);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [commitRemoveVertex, selectedVertex]);
 
   const onPointerDown = useCallback(
@@ -467,6 +469,7 @@ export function ExploreCanvas({
       ref={ref}
       className="explore-canvas"
       data-testid="explore-canvas"
+      tabIndex={0}
       style={{
         position: "relative",
         width: "100%",
@@ -476,8 +479,12 @@ export function ExploreCanvas({
         overflow: "hidden",
         touchAction: "none",
         cursor: tool === "drawRect" ? "crosshair" : "default",
+        outline: "none",
       }}
-      onPointerDown={onPointerDown}
+      onPointerDown={(e) => {
+        ref.current?.focus({ preventScroll: true });
+        onPointerDown(e);
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}

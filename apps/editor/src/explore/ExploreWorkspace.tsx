@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Rect } from "./canvas";
+import {
+  isPolygon,
+  isRect,
+  nudgePolygonPoints,
+  nudgeRect,
+  type Rect,
+} from "./canvas";
 import {
   canRedo,
   canUndo,
@@ -112,6 +118,39 @@ export function exploreModShortcut(
   if (k === "v") return "paste";
   if (k === "z") return opts.shiftKey ? "redo" : "undo";
   return null;
+}
+
+export type ExploreCanvasKeyAction =
+  | { type: "delete" }
+  | { type: "nudge"; dx: number; dy: number };
+
+/**
+ * Pure routing for canvas Delete / Backspace / Arrow when a hotspot is selected.
+ * Does not steal keys from INPUT / TEXTAREA / contenteditable.
+ */
+export function exploreCanvasKeyAction(
+  key: string,
+  opts: {
+    inEditableField: boolean;
+    hasHotspotSelection: boolean;
+    shiftKey?: boolean;
+  },
+): ExploreCanvasKeyAction | null {
+  if (opts.inEditableField || !opts.hasHotspotSelection) return null;
+  if (key === "Delete" || key === "Backspace") return { type: "delete" };
+  const step = opts.shiftKey ? 10 : 1;
+  switch (key) {
+    case "ArrowLeft":
+      return { type: "nudge", dx: -step, dy: 0 };
+    case "ArrowRight":
+      return { type: "nudge", dx: step, dy: 0 };
+    case "ArrowUp":
+      return { type: "nudge", dx: 0, dy: -step };
+    case "ArrowDown":
+      return { type: "nudge", dx: 0, dy: step };
+    default:
+      return null;
+  }
 }
 
 export interface ExploreWorkspaceProps {
@@ -408,6 +447,35 @@ export function ExploreWorkspace({
     [persist, state.doc.scene.id, dirty, refreshCatalog],
   );
 
+  const deleteSelectedHotspot = useCallback(() => {
+    const id = doc.ui.selectedHotspotId;
+    if (!id) return;
+    const impact = countHotspotDeleteImpact(doc, id);
+    if (!defaultConfirmFn(confirmDeleteHotspotMessage(id, impact))) return;
+    applyCmd(removeHotspot(id));
+  }, [doc, applyCmd]);
+
+  const nudgeSelectedHotspot = useCallback(
+    (dx: number, dy: number) => {
+      const id = doc.ui.selectedHotspotId;
+      if (!id) return;
+      const hs = doc.scene.hotspots.find((h) => h.id === id);
+      if (!hs) return;
+      const bounds = doc.project.resolution;
+      const coalesceKey = `explore.nudge:${id}`;
+      if (isRect(hs.shape)) {
+        const next = nudgeRect(hs.shape, dx, dy, bounds);
+        applyCmd(setHotspotRect(id, next, coalesceKey));
+        return;
+      }
+      if (isPolygon(hs.shape)) {
+        const next = nudgePolygonPoints(hs.shape.points, dx, dy, bounds);
+        applyCmd(setHotspotPolygonPoints(id, next, coalesceKey));
+      }
+    },
+    [doc, applyCmd],
+  );
+
   const copySelected = useCallback(() => {
     const cell = doc.ui.selectedCell;
     if (!cell) return;
@@ -423,51 +491,79 @@ export function ExploreWorkspace({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
       const t = e.target as HTMLElement | null;
       const inEditableField = !!(
         t &&
         (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
       );
-      const action = exploreModShortcut(e.key, {
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod) {
+        const action = exploreModShortcut(e.key, {
+          inEditableField,
+          hasPersist: !!persist,
+          shiftKey: e.shiftKey,
+        });
+        if (!action) return;
+        if (action === "save") {
+          e.preventDefault();
+          void doSave();
+          return;
+        }
+        if (action === "copy") {
+          if (doc.ui.selectedCell) {
+            e.preventDefault();
+            copySelected();
+          }
+          return;
+        }
+        if (action === "paste") {
+          if (doc.ui.selectedCell && doc.ui.clipboardRules) {
+            e.preventDefault();
+            pasteSelected();
+          }
+          return;
+        }
+        if (action === "undo") {
+          e.preventDefault();
+          doUndo();
+          return;
+        }
+        if (action === "redo") {
+          e.preventDefault();
+          doRedo();
+        }
+        return;
+      }
+
+      // Canvas Delete / Arrow nudge (no mod). Vertex Delete uses capture in ExploreCanvas.
+      if (e.defaultPrevented) return;
+      const canvasAction = exploreCanvasKeyAction(e.key, {
         inEditableField,
-        hasPersist: !!persist,
+        hasHotspotSelection: !!doc.ui.selectedHotspotId,
         shiftKey: e.shiftKey,
       });
-      if (!action) return;
-      if (action === "save") {
-        e.preventDefault();
-        void doSave();
+      if (!canvasAction) return;
+      e.preventDefault();
+      if (canvasAction.type === "delete") {
+        deleteSelectedHotspot();
         return;
       }
-      if (action === "copy") {
-        if (doc.ui.selectedCell) {
-          e.preventDefault();
-          copySelected();
-        }
-        return;
-      }
-      if (action === "paste") {
-        if (doc.ui.selectedCell && doc.ui.clipboardRules) {
-          e.preventDefault();
-          pasteSelected();
-        }
-        return;
-      }
-      if (action === "undo") {
-        e.preventDefault();
-        doUndo();
-        return;
-      }
-      if (action === "redo") {
-        e.preventDefault();
-        doRedo();
-      }
+      nudgeSelectedHotspot(canvasAction.dx, canvasAction.dy);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelected, pasteSelected, doUndo, doRedo, doSave, persist, doc.ui]);
+  }, [
+    copySelected,
+    pasteSelected,
+    doUndo,
+    doRedo,
+    doSave,
+    persist,
+    doc.ui,
+    deleteSelectedHotspot,
+    nudgeSelectedHotspot,
+  ]);
 
   const openCreateSceneForm = useCallback(() => {
     setCreatingScene(true);
@@ -897,12 +993,7 @@ export function ExploreWorkspace({
           <button
             type="button"
             data-testid="remove-hotspot"
-            onClick={() => {
-              const id = doc.ui.selectedHotspotId!;
-              const impact = countHotspotDeleteImpact(doc, id);
-              if (!defaultConfirmFn(confirmDeleteHotspotMessage(id, impact))) return;
-              applyCmd(removeHotspot(id));
-            }}
+            onClick={() => deleteSelectedHotspot()}
           >
             刪熱區
           </button>
