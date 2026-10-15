@@ -10,10 +10,13 @@ import {
 import { blankExploreDoc } from "./fixture";
 import {
   EDITABLE_ACTION_TYPES,
+  actionChipLabel,
+  actionTypeLabel,
   addAction,
   addActionToList,
   addRule,
   addWhen,
+  editableActionTypeLabel,
   emptyEditableAction,
   moveRule,
   getCellRules,
@@ -21,6 +24,7 @@ import {
   patchAction,
   patchActionInList,
   patchPred,
+  predChipLabel,
   removeAction,
   removeActionFromList,
   sameProjectScene,
@@ -270,5 +274,49 @@ describe("inspectorModel L5 rule order", () => {
     expect(
       moveRule(rules, 0, "down").map((r) => (r.do[0] as { text: string }).text),
     ).toEqual(["b", "a", "c"]);
+  });
+});
+
+
+describe("inspectorModel Chinese labels", () => {
+  it("editableActionTypeLabel covers all editable types", () => {
+    expect(editableActionTypeLabel("say")).toBe("說話");
+    expect(editableActionTypeLabel("setSwitch")).toBe("設開關");
+    expect(editableActionTypeLabel("giveItem")).toBe("給物品");
+    expect(editableActionTypeLabel("takeItem")).toBe("收物品");
+    expect(editableActionTypeLabel("call")).toBe("通話");
+    expect(editableActionTypeLabel("return")).toBe("返回");
+    expect(editableActionTypeLabel("gotoScene")).toBe("切場景");
+    for (const t of EDITABLE_ACTION_TYPES) {
+      expect(editableActionTypeLabel(t)).not.toBe(t);
+    }
+  });
+
+  it("actionChipLabel uses Chinese verbs", () => {
+    expect(actionChipLabel({ type: "say", text: "你好" })).toBe("說話「你好」");
+    expect(actionChipLabel({ type: "setSwitch", id: "door", value: true })).toBe(
+      "設開關 door=開",
+    );
+    expect(actionChipLabel({ type: "setSwitch", id: "door", value: false })).toBe(
+      "設開關 door=關",
+    );
+    expect(actionChipLabel({ type: "giveItem", id: "key" })).toBe("給物品 key");
+    expect(actionChipLabel({ type: "takeItem", id: "key" })).toBe("收物品 key");
+    expect(actionChipLabel({ type: "call", scene: "dlg" })).toBe("通話 dlg");
+    expect(actionChipLabel({ type: "return" })).toBe("返回");
+    expect(actionChipLabel({ type: "gotoScene", scene: "hall" })).toBe("切場景 hall");
+    expect(actionChipLabel({ type: "showHotspot", id: "door" })).toBe("顯示熱區 door");
+    expect(actionChipLabel({ type: "hideHotspot", id: "door" })).toBe("隱藏熱區 door");
+    expect(actionTypeLabel("enableHotspot")).toBe("啟用熱區");
+    expect(actionTypeLabel("disableHotspot")).toBe("停用熱區");
+    expect(actionTypeLabel("setVar")).toBe("設變數");
+    expect(actionTypeLabel("addVar")).toBe("加變數");
+    expect(actionTypeLabel("playSe")).toBe("音效");
+    expect(actionTypeLabel("fx")).toBe("特效");
+  });
+
+  it("predChipLabel uses 係真／係假", () => {
+    expect(predChipLabel({ switch: "open", is: true })).toBe("開關 open 係真");
+    expect(predChipLabel({ switch: "open", is: false })).toBe("開關 open 係假");
   });
 });

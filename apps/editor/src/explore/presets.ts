@@ -57,7 +57,7 @@ export function presetsByCategory(cat: PresetCategory): ExplorePreset[] {
 export function setTransitionDefaults(patch: TransitionDefaults): Command {
   return {
     id: "explore.setTransitionDefaults",
-    label: "Set transition defaults",
+    label: "設轉場預設",
     apply(doc) {
       const prev = doc.project.transitionDefaults ?? {};
       const next: TransitionDefaults = { ...prev, ...patch };

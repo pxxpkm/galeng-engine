@@ -179,47 +179,81 @@ export function removeWhen(
   });
 }
 
+/** Display-only Chinese labels for editable action types (JSON ids stay English). */
+const EDITABLE_ACTION_TYPE_LABELS: Record<EditableActionType, string> = {
+  say: "說話",
+  setSwitch: "設開關",
+  giveItem: "給物品",
+  takeItem: "收物品",
+  call: "通話",
+  return: "返回",
+  gotoScene: "切場景",
+};
+
+/** Display-only Chinese labels for all ExploreAction types used in chips. */
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  ...EDITABLE_ACTION_TYPE_LABELS,
+  setVar: "設變數",
+  addVar: "加變數",
+  playSe: "音效",
+  bgm: "BGM",
+  fx: "特效",
+  showHotspot: "顯示熱區",
+  hideHotspot: "隱藏熱區",
+  enableHotspot: "啟用熱區",
+  disableHotspot: "停用熱區",
+};
+
+export function editableActionTypeLabel(t: EditableActionType): string {
+  return EDITABLE_ACTION_TYPE_LABELS[t];
+}
+
+export function actionTypeLabel(type: string): string {
+  return ACTION_TYPE_LABELS[type] ?? type;
+}
+
 export function actionChipLabel(a: ExploreAction): string {
+  const verb = actionTypeLabel(a.type);
   switch (a.type) {
     case "say":
-      return `say「${a.text.slice(0, 24)}${a.text.length > 24 ? "…" : ""}」`;
+      return `${verb}「${a.text.slice(0, 24)}${a.text.length > 24 ? "…" : ""}」`;
     case "setSwitch":
-      return `setSwitch ${a.id}=${a.value}`;
+      return `${verb} ${a.id}=${a.value ? "開" : "關"}`;
     case "giveItem":
-      return `giveItem ${a.id}`;
+      return `${verb} ${a.id}`;
     case "takeItem":
-      return `takeItem ${a.id}`;
+      return `${verb} ${a.id}`;
     case "call":
-      return `call ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
+      return `${verb} ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
     case "return":
-      return `return${a.trans ? ` [${a.trans}]` : ""}`;
+      return `${verb}${a.trans ? ` [${a.trans}]` : ""}`;
     case "gotoScene":
-      return `gotoScene ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
+      return `${verb} ${a.scene}${a.trans ? ` [${a.trans}]` : ""}`;
     case "setVar":
-      return `setVar ${a.id}=${a.value}`;
+      return `${verb} ${a.id}=${a.value}`;
     case "addVar":
-      return `addVar ${a.id}${a.delta >= 0 ? "+" : ""}${a.delta}`;
+      return `${verb} ${a.id}${a.delta >= 0 ? "+" : ""}${a.delta}`;
     case "playSe":
-      return `playSe ${a.asset}`;
+      return `${verb} ${a.asset}`;
     case "bgm":
-      return `bgm ${a.asset ?? "null"}`;
+      return `${verb} ${a.asset ?? "無"}`;
     case "fx":
-      return `fx ${a.ref}`;
+      return `${verb} ${a.ref}`;
     case "showHotspot":
-      return `showHotspot ${a.id}`;
+      return `${verb} ${a.id}`;
     case "hideHotspot":
-      return `hideHotspot ${a.id}`;
+      return `${verb} ${a.id}`;
     case "enableHotspot":
-      return `enableHotspot ${a.id}`;
+      return `${verb} ${a.id}`;
     case "disableHotspot":
-      return `disableHotspot ${a.id}`;
+      return `${verb} ${a.id}`;
     default:
-      return (a as ExploreAction).type
+      return (a as ExploreAction).type;
   }
 }
 
 export function predChipLabel(p: Pred): string {
-  if ("switch" in p) return `開關 ${p.switch} = ${p.is}`;
+  if ("switch" in p) return `開關 ${p.switch} 係${p.is ? "真" : "假"}`;
   if ("var" in p) return `變數 ${p.var} = ${p.eq}`;
   if ("hasItem" in p) return `有物品 ${p.hasItem}`;
   return JSON.stringify(p);

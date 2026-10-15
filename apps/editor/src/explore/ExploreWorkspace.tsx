@@ -749,9 +749,9 @@ export function ExploreWorkspace({
             <div style={{ fontWeight: 600, marginBottom: 6 }}>轉場預設（E1-min）</div>
             {(
               [
-                ["toDialogue", "Call→對話"],
-                ["fromDialogue", "Return"],
-                ["gotoScene", "Goto"],
+                ["toDialogue", "通話→對話"],
+                ["fromDialogue", "返回"],
+                ["gotoScene", "切場景"],
               ] as const
             ).map(([key, label]) => (
               <label key={key} style={{ display: "block", marginBottom: 4 }}>

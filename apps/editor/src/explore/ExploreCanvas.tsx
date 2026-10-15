@@ -239,7 +239,7 @@ export function ExploreCanvas({
             <div
               key={h.id}
               data-testid={`hotspot-poly-${h.id}`}
-              title={`${h.name} (polygon — edit later)`}
+              title={`${h.name}（多邊形 — 稍後編輯）`}
               style={{
                 position: "absolute",
                 left: 0,

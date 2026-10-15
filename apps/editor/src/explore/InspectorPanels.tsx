@@ -6,6 +6,7 @@ import {
   addActionToList,
   addRule,
   addWhen,
+  editableActionTypeLabel,
   getCellRules,
   interactionCoalesceKey,
   isEditableAction,
@@ -152,7 +153,7 @@ function RuleCard({
       </div>
 
       <div style={{ marginBottom: 6 }}>
-        <div style={{ opacity: 0.75, marginBottom: 4 }}>When（條件）</div>
+        <div style={{ opacity: 0.75, marginBottom: 4 }}>條件</div>
         {rule.when.map((p, pi) =>
           isEditablePred(p) ? (
             <div
@@ -186,8 +187,8 @@ function RuleCard({
                   onPatch(patchPred(allRules, index, pi, next));
                 }}
               >
-                <option value="true">係 true</option>
-                <option value="false">係 false</option>
+                <option value="true">係真</option>
+                <option value="false">係假</option>
               </select>
               <button
                 type="button"
@@ -228,7 +229,7 @@ function RuleCard({
       </div>
 
       <div>
-        <div style={{ opacity: 0.75, marginBottom: 4 }}>Do（動作）</div>
+        <div style={{ opacity: 0.75, marginBottom: 4 }}>動作</div>
         {rule.do.map((a, ai) =>
           isEditableAction(a) ? (
             <EditableActionRow
@@ -272,7 +273,7 @@ function RuleCard({
               data-testid={`action-add-${index}-${t}`}
               onClick={() => onPatch(addAction(allRules, index, t))}
             >
-              ＋{t}
+              ＋{editableActionTypeLabel(t)}
             </button>
           ))}
         </div>
@@ -351,7 +352,7 @@ function TransSelect({
     <select
       data-testid={testId}
       value={value ?? ""}
-      title="轉場（空＝用專案 transitionDefaults）"
+      title="轉場（空＝用專案轉場預設）"
       onChange={(e) => onChange(e.target.value || undefined)}
     >
       <option value="">（預設）</option>
@@ -389,7 +390,7 @@ function SceneSelect({
         <option key={s.id} value={s.id}>
           {s.title ? `${s.title} (${s.id})` : s.id}
           {s.kind === "dialogue" ? " ·對話" : " ·探險"}
-          {s.kind === "dialogue" && s.hasReturn === false ? " ⚠無Return" : ""}
+          {s.kind === "dialogue" && s.hasReturn === false ? " ⚠無返回" : ""}
         </option>
       ))}
       {value && !sceneCatalog.some((s) => s.id === value) ? (
@@ -436,7 +437,7 @@ function EditableActionRow({
     >
       {EDITABLE_ACTION_TYPES.map((t) => (
         <option key={t} value={t}>
-          {t}
+          {editableActionTypeLabel(t)}
         </option>
       ))}
     </select>
@@ -502,8 +503,8 @@ function EditableActionRow({
               onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
             }}
           >
-            <option value="true">true</option>
-            <option value="false">false</option>
+            <option value="true">開</option>
+            <option value="false">關</option>
           </select>
         </>
       ) : null}
@@ -628,14 +629,14 @@ export function HotspotInspector({ doc, hotspot, onUpdate }: HotspotInspectorPro
         >
           {(
             [
-              ["x", shape.x],
-              ["y", shape.y],
-              ["w", shape.w],
-              ["h", shape.h],
+              ["x", "X", shape.x],
+              ["y", "Y", shape.y],
+              ["w", "寬", shape.w],
+              ["h", "高", shape.h],
             ] as const
-          ).map(([key, val]) => (
+          ).map(([key, label, val]) => (
             <label key={key}>
-              {key}
+              {label}
               <input
                 data-testid={`hotspot-rect-${key}`}
                 type="number"
@@ -701,7 +702,7 @@ export function OnEnterInspector({
 
   return (
     <div data-testid="on-enter-inspector" style={{ fontSize: 12 }}>
-      <div style={{ marginBottom: 6, fontWeight: 600 }}>入場動作（onEnter）</div>
+      <div style={{ marginBottom: 6, fontWeight: 600 }}>入場動作</div>
       {list.length === 0 ? (
         <div style={{ opacity: 0.65, marginBottom: 6 }}>無（進入場景唔跑動作）</div>
       ) : null}
@@ -745,7 +746,7 @@ export function OnEnterInspector({
             data-testid={`onenter-add-${t}`}
             onClick={() => commit(addActionToList(list, t))}
           >
-            ＋{t}
+            ＋{editableActionTypeLabel(t)}
           </button>
         ))}
       </div>
@@ -788,7 +789,7 @@ function OnEnterActionRow({
       >
         {EDITABLE_ACTION_TYPES.map((t) => (
           <option key={t} value={t}>
-            {t}
+            {editableActionTypeLabel(t)}
           </option>
         ))}
       </select>
@@ -846,8 +847,8 @@ function OnEnterActionRow({
               onPatch(patchActionInList(allActions, actionIndex, next));
             }}
           >
-            <option value="true">true</option>
-            <option value="false">false</option>
+            <option value="true">開</option>
+            <option value="false">關</option>
           </select>
         </>
       ) : null}
