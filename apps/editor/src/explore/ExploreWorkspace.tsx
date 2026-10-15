@@ -70,6 +70,22 @@ import type {
 import { VerbMatrix } from "./VerbMatrix";
 import { confirmDiscardIfDirty, shouldWarnUnload } from "../dirty";
 
+
+/** Pure mod-key routing for Explore shortcuts (Ctrl/Cmd). */
+export function exploreModShortcut(
+  key: string,
+  opts: { inEditableField: boolean; hasPersist: boolean; shiftKey?: boolean },
+): "save" | "copy" | "paste" | "undo" | "redo" | null {
+  const k = key.length === 1 ? key.toLowerCase() : key;
+  // Ctrl/Cmd+S always saves — even inside INPUT/TEXTAREA (avoid browser Save Page).
+  if (k === "s") return opts.hasPersist ? "save" : null;
+  if (opts.inEditableField) return null;
+  if (k === "c") return "copy";
+  if (k === "v") return "paste";
+  if (k === "z") return opts.shiftKey ? "redo" : "undo";
+  return null;
+}
+
 export interface ExploreWorkspaceProps {
   initial: ExploreDoc;
   knownSceneIds?: Set<string>;
@@ -287,28 +303,43 @@ export function ExploreWorkspace({
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+      const inEditableField = !!(
+        t &&
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
+      );
+      const action = exploreModShortcut(e.key, {
+        inEditableField,
+        hasPersist: !!persist,
+        shiftKey: e.shiftKey,
+      });
+      if (!action) return;
+      if (action === "save") {
+        e.preventDefault();
+        void doSave();
         return;
       }
-      if (e.key === "c" || e.key === "C") {
+      if (action === "copy") {
         if (doc.ui.selectedCell) {
           e.preventDefault();
           copySelected();
         }
-      } else if (e.key === "v" || e.key === "V") {
+        return;
+      }
+      if (action === "paste") {
         if (doc.ui.selectedCell && doc.ui.clipboardRules) {
           e.preventDefault();
           pasteSelected();
         }
-      } else if (e.key === "z" || e.key === "Z") {
+        return;
+      }
+      if (action === "undo") {
         e.preventDefault();
-        if (e.shiftKey) doRedo();
-        else doUndo();
-      } else if (e.key === "s" || e.key === "S") {
-        if (persist) {
-          e.preventDefault();
-          void doSave();
-        }
+        doUndo();
+        return;
+      }
+      if (action === "redo") {
+        e.preventDefault();
+        doRedo();
       }
     };
     window.addEventListener("keydown", onKey);
