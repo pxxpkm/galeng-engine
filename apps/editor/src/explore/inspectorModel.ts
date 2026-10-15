@@ -184,7 +184,7 @@ const EDITABLE_ACTION_TYPE_LABELS: Record<EditableActionType, string> = {
   say: "對白",
   setSwitch: "設定開關",
   giveItem: "給予物品",
-  takeItem: "收回物品",
+  takeItem: "移除物品",
   call: "呼叫場景",
   return: "返回",
   gotoScene: "切換場景",
@@ -218,7 +218,7 @@ export function actionChipLabel(a: ExploreAction): string {
     case "say":
       return `${verb}「${a.text.slice(0, 24)}${a.text.length > 24 ? "…" : ""}」`;
     case "setSwitch":
-      return `${verb} ${a.id}=${a.value ? "開" : "關"}`;
+      return `${verb} ${a.id}=${a.value ? "開啟" : "關閉"}`;
     case "giveItem":
       return `${verb} ${a.id}`;
     case "takeItem":
@@ -253,7 +253,7 @@ export function actionChipLabel(a: ExploreAction): string {
 }
 
 export function predChipLabel(p: Pred): string {
-  if ("switch" in p) return `開關 ${p.switch} 係${p.is ? "真" : "假"}`;
+  if ("switch" in p) return `開關 ${p.switch} 為${p.is ? "真" : "假"}`;
   if ("var" in p) return `變數 ${p.var} = ${p.eq}`;
   if ("hasItem" in p) return `有物品 ${p.hasItem}`;
   return JSON.stringify(p);

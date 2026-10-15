@@ -43,7 +43,7 @@ export function TracePanel({
 
       {!resolution ? (
         <div data-testid="trace-empty" style={{ opacity: 0.65 }}>
-          選矩陣格（熱區 × 動詞／物）睇邊層會勝出。
+          請選擇矩陣格（熱區 × 動詞／物）以查看哪一層會勝出。
         </div>
       ) : (
         <div data-testid="trace-resolution">
@@ -76,10 +76,10 @@ export function TracePanel({
               data-testid="trace-conditional"
               style={{ marginBottom: 8, color: "#fc6" }}
             >
-              Interaction 全部有 when；實機若條件唔中會落到{" "}
+              Interaction 全部有 when；實機若條件不成立會落到{" "}
               {resolution.fallbackIfMiss
                 ? TRACE_LAYER_LABELS[resolution.fallbackIfMiss]
-                : "下一層 fallback"}
+                : "下一層後備規則"}
               。
             </div>
           ) : null}

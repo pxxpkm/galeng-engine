@@ -64,7 +64,7 @@ export interface TraceResolution {
 }
 
 export const TRACE_LIMITS_NOTE =
-  "靜態 Trace：唔跑 Engine／唔評估 switches／vars／inventory；有 when 嘅規則標為條件命中，實機可能落到下一層。";
+  "靜態 Trace：不執行 Engine／不評估 switches／vars／inventory；有 when 的規則標為條件命中，實機可能落到下一層。";
 
 function findRules(
   doc: ExploreDoc,

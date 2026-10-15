@@ -72,7 +72,7 @@ export function HierarchyPanel({
                 )
               }
             >
-              <option value="">（揀起始場景）</option>
+              <option value="">（選擇起始場景）</option>
               {sceneCatalog.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title ? `${s.title} (${s.id})` : s.id}
@@ -155,7 +155,7 @@ export function HierarchyPanel({
       <div style={{ opacity: 0.7, marginBottom: 4 }}>熱區</div>
       {sel.length === 0 ? (
         <div style={{ opacity: 0.55 }} data-testid="hierarchy-empty">
-          （未有熱區 — 喺畫布畫一個）
+          （尚無熱區 — 請在畫布繪製）
         </div>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>

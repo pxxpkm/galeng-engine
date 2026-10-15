@@ -69,7 +69,7 @@ export function VerbMatrix({ doc, onSelectCell, problemHotspotIds }: VerbMatrixP
   return (
     <div className="verb-matrix" data-testid="verb-matrix">
       <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>
-        覆蓋率（資訊）：{model.coverage.filled}/{model.coverage.total} 動詞格已填（唔要求填滿）
+        覆蓋率（資訊）：{model.coverage.filled}/{model.coverage.total} 動詞格已填（不要求填滿）
       </div>
       <div style={{ overflow: "auto", maxHeight: 280 }}>
         <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>

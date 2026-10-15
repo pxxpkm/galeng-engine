@@ -97,7 +97,7 @@ function checkActions(
           id: `empty-scene-${a.type}-${idx}`,
           severity: "error",
           key: "explore.emptySceneRef",
-          message: `${a.type} 未揀目標場景`,
+          message: `${a.type} 未選擇目標場景`,
           hotspotId: hs,
         });
       } else if (hasCatalog && !scenes.has(scene)) {
@@ -116,7 +116,7 @@ function checkActions(
             id: `dead-call-${scene}-${idx}`,
             severity: "error",
             key: "explore.deadEndCall",
-            message: `死路 Call：場景「${scene}」唔會 Return`,
+            message: `死路呼叫：場景「${scene}」不會返回`,
             hotspotId: hs,
             detail: scene,
           });
@@ -280,7 +280,7 @@ export function collectExploreProblems(
         id: `orphan-inter-${inter.hotspot}-${onKey}`,
         severity: "error",
         key: "explore.orphanInteraction",
-        message: `互動指向不存在嘅熱區：${inter.hotspot}`,
+        message: `互動指向不存在的熱區：${inter.hotspot}`,
         hotspotId: inter.hotspot,
       });
     }
@@ -304,7 +304,7 @@ export function collectExploreProblems(
       id: "no-hotspots",
       severity: "warn",
       key: "explore.noHotspots",
-      message: "探險場景未有熱區",
+      message: "探險場景尚無熱區",
     });
   }
 
@@ -315,7 +315,7 @@ export function collectExploreProblems(
         id: `float-hotspot-${h.id}`,
         severity: "error",
         key: "explore.nonIntegerHotspot",
-        message: `熱區「${h.id}」座標必須係整數`,
+        message: `熱區「${h.id}」座標必須為整數`,
         hotspotId: h.id,
       });
     }
@@ -380,7 +380,7 @@ export function collectExploreProblems(
           id: `shadowed-rule-${inter.hotspot}-${onKey}-r${ri}`,
           severity: "warn",
           key: "explore.shadowedRule",
-          message: `規則 ${ri + 1} 被前面無條件規則遮蔽（唔會執行）`,
+          message: `規則 ${ri + 1} 被前面無條件規則遮蔽（不會執行）`,
           hotspotId: inter.hotspot,
           detail: `${inter.hotspot}/${onKey}#${ri}`,
         });

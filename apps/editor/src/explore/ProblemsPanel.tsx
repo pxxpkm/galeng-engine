@@ -18,7 +18,7 @@ export function ProblemsPanel({ problems }: { problems: ExploreProblem[] }) {
   if (problems.length === 0) {
     return (
       <div className="problems-panel" data-testid="problems-panel">
-        <div style={{ opacity: 0.6, fontSize: 12 }}>冇問題</div>
+        <div style={{ opacity: 0.6, fontSize: 12 }}>無問題</div>
       </div>
     );
   }

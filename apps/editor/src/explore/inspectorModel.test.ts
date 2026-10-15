@@ -283,7 +283,7 @@ describe("inspectorModel Chinese labels", () => {
     expect(editableActionTypeLabel("say")).toBe("對白");
     expect(editableActionTypeLabel("setSwitch")).toBe("設定開關");
     expect(editableActionTypeLabel("giveItem")).toBe("給予物品");
-    expect(editableActionTypeLabel("takeItem")).toBe("收回物品");
+    expect(editableActionTypeLabel("takeItem")).toBe("移除物品");
     expect(editableActionTypeLabel("call")).toBe("呼叫場景");
     expect(editableActionTypeLabel("return")).toBe("返回");
     expect(editableActionTypeLabel("gotoScene")).toBe("切換場景");
@@ -295,13 +295,13 @@ describe("inspectorModel Chinese labels", () => {
   it("actionChipLabel uses Chinese verbs", () => {
     expect(actionChipLabel({ type: "say", text: "你好" })).toBe("對白「你好」");
     expect(actionChipLabel({ type: "setSwitch", id: "door", value: true })).toBe(
-      "設定開關 door=開",
+      "設定開關 door=開啟",
     );
     expect(actionChipLabel({ type: "setSwitch", id: "door", value: false })).toBe(
-      "設定開關 door=關",
+      "設定開關 door=關閉",
     );
     expect(actionChipLabel({ type: "giveItem", id: "key" })).toBe("給予物品 key");
-    expect(actionChipLabel({ type: "takeItem", id: "key" })).toBe("收回物品 key");
+    expect(actionChipLabel({ type: "takeItem", id: "key" })).toBe("移除物品 key");
     expect(actionChipLabel({ type: "call", scene: "dlg" })).toBe("呼叫場景 dlg");
     expect(actionChipLabel({ type: "return" })).toBe("返回");
     expect(actionChipLabel({ type: "gotoScene", scene: "hall" })).toBe("切換場景 hall");
@@ -315,8 +315,8 @@ describe("inspectorModel Chinese labels", () => {
     expect(actionTypeLabel("fx")).toBe("特效");
   });
 
-  it("predChipLabel uses 係真／係假", () => {
-    expect(predChipLabel({ switch: "open", is: true })).toBe("開關 open 係真");
-    expect(predChipLabel({ switch: "open", is: false })).toBe("開關 open 係假");
+  it("predChipLabel uses 為真／為假", () => {
+    expect(predChipLabel({ switch: "open", is: true })).toBe("開關 open 為真");
+    expect(predChipLabel({ switch: "open", is: false })).toBe("開關 open 為假");
   });
 });

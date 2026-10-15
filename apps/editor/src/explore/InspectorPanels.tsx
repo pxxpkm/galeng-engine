@@ -59,7 +59,7 @@ export function CellInspector({ doc, onChangeRules, sceneCatalog = [] }: CellIns
         {cell.hotspotId} × {onLabel}
       </div>
       {rules.length === 0 ? (
-        <div style={{ opacity: 0.65, marginBottom: 8 }}>無規則（靠 fallback）</div>
+        <div style={{ opacity: 0.65, marginBottom: 8 }}>無規則（使用後備規則）</div>
       ) : null}
       {rules.map((rule, ri) => (
         <RuleCard
@@ -169,7 +169,7 @@ function RuleCard({
                   onPatch(patchPred(allRules, index, pi, next));
                 }}
               >
-                <option value="">（揀開關）</option>
+                <option value="">（選擇開關）</option>
                 {switches.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name ? `${s.name} (${s.id})` : s.id}
@@ -187,8 +187,8 @@ function RuleCard({
                   onPatch(patchPred(allRules, index, pi, next));
                 }}
               >
-                <option value="true">係真</option>
-                <option value="false">係假</option>
+                <option value="true">為真</option>
+                <option value="false">為假</option>
               </select>
               <button
                 type="button"
@@ -211,7 +211,7 @@ function RuleCard({
                 borderRadius: 4,
                 opacity: 0.85,
               }}
-              title="未支援嘅條件（只讀保留）"
+              title="未支援的條件（只讀保留）"
             >
               {predChipLabel(p)}
             </div>
@@ -259,7 +259,7 @@ function RuleCard({
                 borderRadius: 4,
                 opacity: 0.85,
               }}
-              title="未支援嘅動作（只讀保留）"
+              title="未支援的動作（只讀保留）"
             >
               {actionChipLabel(a)}
             </div>
@@ -385,7 +385,7 @@ function SceneSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">（揀場景）</option>
+      <option value="">（選擇場景）</option>
       {sceneCatalog.map((s) => (
         <option key={s.id} value={s.id}>
           {s.title ? `${s.title} (${s.id})` : s.id}
@@ -481,7 +481,7 @@ function EditableActionRow({
               onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
             }}
           >
-            <option value="">（揀開關）</option>
+            <option value="">（選擇開關）</option>
             {switches.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name ? `${s.name} (${s.id})` : s.id}
@@ -503,8 +503,8 @@ function EditableActionRow({
               onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
             }}
           >
-            <option value="true">開</option>
-            <option value="false">關</option>
+            <option value="true">開啟</option>
+            <option value="false">關閉</option>
           </select>
         </>
       ) : null}
@@ -520,7 +520,7 @@ function EditableActionRow({
             onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
           }}
         >
-          <option value="">（揀物品）</option>
+          <option value="">（選擇物品）</option>
           {items.map((it) => (
             <option key={it.id} value={it.id}>
               {it.name} ({it.id})
@@ -704,7 +704,7 @@ export function OnEnterInspector({
     <div data-testid="on-enter-inspector" style={{ fontSize: 12 }}>
       <div style={{ marginBottom: 6, fontWeight: 600 }}>入場動作</div>
       {list.length === 0 ? (
-        <div style={{ opacity: 0.65, marginBottom: 6 }}>無（進入場景唔跑動作）</div>
+        <div style={{ opacity: 0.65, marginBottom: 6 }}>無（進入場景時不執行動作）</div>
       ) : null}
       {list.map((a, ai) =>
         isEditableAction(a) ? (
@@ -732,7 +732,7 @@ export function OnEnterInspector({
               borderRadius: 4,
               opacity: 0.85,
             }}
-            title="未支援嘅動作（只讀保留）"
+            title="未支援的動作（只讀保留）"
           >
             {actionChipLabel(a)}
           </div>
@@ -825,7 +825,7 @@ function OnEnterActionRow({
               onPatch(patchActionInList(allActions, actionIndex, next));
             }}
           >
-            <option value="">（揀開關）</option>
+            <option value="">（選擇開關）</option>
             {switches.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name ? `${s.name} (${s.id})` : s.id}
@@ -847,8 +847,8 @@ function OnEnterActionRow({
               onPatch(patchActionInList(allActions, actionIndex, next));
             }}
           >
-            <option value="true">開</option>
-            <option value="false">關</option>
+            <option value="true">開啟</option>
+            <option value="false">關閉</option>
           </select>
         </>
       ) : null}
@@ -864,7 +864,7 @@ function OnEnterActionRow({
             onPatch(patchActionInList(allActions, actionIndex, next));
           }}
         >
-          <option value="">（揀物品）</option>
+          <option value="">（選擇物品）</option>
           {items.map((it) => (
             <option key={it.id} value={it.id}>
               {it.name} ({it.id})

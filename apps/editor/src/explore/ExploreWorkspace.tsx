@@ -749,7 +749,7 @@ export function ExploreWorkspace({
             <div style={{ fontWeight: 600, marginBottom: 6 }}>轉場預設（E1-min）</div>
             {(
               [
-                ["toDialogue", "呼叫場景→對話"],
+                ["toDialogue", "呼叫場景至對話"],
                 ["fromDialogue", "返回"],
                 ["gotoScene", "切換場景"],
               ] as const

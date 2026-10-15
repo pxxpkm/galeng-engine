@@ -46,7 +46,7 @@ export const PRESET_CATALOG: ExplorePreset[] = [
     id: "action.return",
     category: "action",
     label: "返回動作",
-    description: "選中格：加入 return（通常用喺對話後；探險格少用）",
+    description: "選中格：加入 return（通常用於對話之後；探險格較少使用）",
   },
 ];
 
