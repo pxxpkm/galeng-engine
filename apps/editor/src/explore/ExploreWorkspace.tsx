@@ -24,6 +24,7 @@ import {
   removeHotspot,
   removeItem,
   removeSwitch,
+  setHotspotPolygonPoints,
   setHotspotRect,
   setInteraction,
   setOnEnter,
@@ -950,6 +951,9 @@ export function ExploreWorkspace({
             doc={doc}
             onSelectHotspot={selectHotspot}
             onCommitRect={(id, rect) => applyCmd(setHotspotRect(id, rect))}
+            onCommitPolygonPoints={(id, points) =>
+              applyCmd(setHotspotPolygonPoints(id, points))
+            }
             onCreateRect={(rect: Rect, opts) => {
               applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
               if (!opts?.keepDrawTool) setUi({ canvasTool: "select" });

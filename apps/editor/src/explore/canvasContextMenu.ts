@@ -1,5 +1,5 @@
 /**
- * Phase A canvas context-menu: blank / rect / polygon basics (no vertex edit).
+ * Phase A canvas context-menu: blank / rect / polygon basics.
  */
 
 import {

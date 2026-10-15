@@ -1,4 +1,4 @@
-import { defaultHotspotPlacement, roundRect } from "./canvas";
+import { defaultHotspotPlacement, roundPolygonPoints, roundRect } from "./canvas";
 import { convertHotspotShape } from "./canvasContextMenu";
 import type { Command } from "./commandBus";
 import {
@@ -103,6 +103,28 @@ export function setHotspotRect(
   const r = roundRect(rect);
   const shape = { type: "rect" as const, ...r };
   return updateHotspot(hotspotId, { shape }, coalesceKey);
+}
+
+/** Set polygon hotspot vertices (integer coords; no-op if fewer than 3 points). */
+export function setHotspotPolygonPoints(
+  hotspotId: string,
+  points: [number, number][],
+  coalesceKey?: string,
+): Command {
+  const pts = roundPolygonPoints(points);
+  if (pts.length < 3) {
+    return {
+      id: "explore.setHotspotPolygonPoints",
+      label: `Set polygon points ${hotspotId}`,
+      coalesceKey,
+      apply: (doc) => doc,
+    };
+  }
+  return updateHotspot(
+    hotspotId,
+    { shape: { type: "polygon", points: pts } },
+    coalesceKey,
+  );
 }
 
 /** Rect corners → polygon shape (no-op if not rect). */

@@ -265,3 +265,131 @@ export function defaultHotspotPlacement(
   return centered();
 }
 
+
+/** Clamp a stage point into [0,width]×[0,height] (integer). */
+export function clampPoint(
+  x: number,
+  y: number,
+  bounds: { width: number; height: number },
+): [number, number] {
+  return [
+    Math.max(0, Math.min(intCoord(x), bounds.width)),
+    Math.max(0, Math.min(intCoord(y), bounds.height)),
+  ];
+}
+
+/** Round all polygon vertices to integer stage coords. */
+export function roundPolygonPoints(points: [number, number][]): [number, number][] {
+  return points.map(([x, y]) => [intCoord(x), intCoord(y)]);
+}
+
+export function pointsEqual(a: [number, number][], b: [number, number][]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i]![0] !== b[i]![0] || a[i]![1] !== b[i]![1]) return false;
+  }
+  return true;
+}
+
+/** Hit-test polygon vertices (first match wins). */
+export function hitTestVertex(
+  points: [number, number][],
+  px: number,
+  py: number,
+  pad: number = HANDLE_PAD,
+): number | null {
+  for (let i = 0; i < points.length; i += 1) {
+    const [x, y] = points[i]!;
+    if (Math.abs(px - x) <= pad && Math.abs(py - y) <= pad) return i;
+  }
+  return null;
+}
+
+/** Closest point on segment AB and distance (for edge insert). */
+export function distPointToSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): { dist: number; t: number; qx: number; qy: number } {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t =
+    len2 === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  const qx = ax + t * dx;
+  const qy = ay + t * dy;
+  return { dist: Math.hypot(px - qx, py - qy), t, qx, qy };
+}
+
+/**
+ * Nearest polygon edge within pad (skips near-vertex ends so vertex handles win).
+ * edgeIndex is the start vertex of the edge (insert after it).
+ */
+export function hitTestPolygonEdge(
+  points: [number, number][],
+  px: number,
+  py: number,
+  pad: number = HANDLE_PAD,
+): { edgeIndex: number; qx: number; qy: number } | null {
+  if (points.length < 2) return null;
+  let best: { edgeIndex: number; qx: number; qy: number; dist: number } | null = null;
+  for (let i = 0; i < points.length; i += 1) {
+    const [ax, ay] = points[i]!;
+    const [bx, by] = points[(i + 1) % points.length]!;
+    const { dist, t, qx, qy } = distPointToSegment(px, py, ax, ay, bx, by);
+    if (t < 0.05 || t > 0.95) continue;
+    if (dist <= pad && (!best || dist < best.dist)) {
+      best = { edgeIndex: i, qx, qy, dist };
+    }
+  }
+  return best ? { edgeIndex: best.edgeIndex, qx: best.qx, qy: best.qy } : null;
+}
+
+/** Replace one vertex (copies array). */
+export function setPolygonVertex(
+  points: [number, number][],
+  index: number,
+  x: number,
+  y: number,
+): [number, number][] {
+  return points.map((p, i) =>
+    i === index ? ([intCoord(x), intCoord(y)] as [number, number]) : ([p[0], p[1]] as [number, number]),
+  );
+}
+
+/** Insert a vertex after edge starting at afterIndex (between i and i+1). */
+export function insertPolygonVertex(
+  points: [number, number][],
+  afterIndex: number,
+  x: number,
+  y: number,
+): [number, number][] {
+  const next = points.map((p) => [p[0], p[1]] as [number, number]);
+  const insertAt = Math.max(0, Math.min(afterIndex + 1, next.length));
+  next.splice(insertAt, 0, [intCoord(x), intCoord(y)]);
+  return next;
+}
+
+/**
+ * Remove a vertex; returns null if fewer than 3 would remain or index invalid.
+ */
+export function removePolygonVertex(
+  points: [number, number][],
+  index: number,
+): [number, number][] | null {
+  if (points.length <= 3) return null;
+  if (index < 0 || index >= points.length) return null;
+  return points
+    .filter((_, i) => i !== index)
+    .map((p) => [p[0], p[1]] as [number, number]);
+}
+
+/** data-testid for a visible vertex handle on the selected polygon. */
+export function vertexHandleTestId(hotspotId: string, index: number): string {
+  return `vertex-handle-${hotspotId}-${index}`;
+}

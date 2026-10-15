@@ -1,21 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { mediaUrl } from "../media";
 import {
   HANDLES,
   HANDLE_SCREEN_PX,
+  clampPoint,
   clampRect,
   handlePadStage,
   hitTestHandle,
   hitTestHotspots,
+  hitTestPolygonEdge,
+  hitTestVertex,
+  insertPolygonVertex,
   isPolygon,
   isRect,
   moveRect,
   normalizeRect,
   pastDragThreshold,
+  pointsEqual,
   polygonBounds,
   polygonSvgPoints,
+  removePolygonVertex,
   resizeHandleTestId,
   resizeRect,
+  setPolygonVertex,
+  vertexHandleTestId,
   type Handle,
   type Rect,
 } from "./canvas";
@@ -32,6 +40,8 @@ export interface ExploreCanvasProps {
   doc: ExploreDoc;
   onSelectHotspot: (id: string | null) => void;
   onCommitRect: (hotspotId: string, rect: Rect) => void;
+  /** Commit polygon vertex edits (drag / insert / remove). */
+  onCommitPolygonPoints: (hotspotId: string, points: [number, number][]) => void;
   onCreateRect: (rect: Rect, opts?: { keepDrawTool?: boolean }) => void;
   /** Phase A context-menu actions (blank / rect / polygon). */
   onContextAction?: (action: CtxMenuActionId, target: CtxMenuTarget) => void;
@@ -55,6 +65,15 @@ type Drag =
       id: string;
       handle: Handle;
       origin: Rect;
+      pointerStart: { clientX: number; clientY: number };
+      active: boolean;
+    }
+  | {
+      kind: "vertex";
+      id: string;
+      index: number;
+      /** Live preview points (mutated vertex at index). */
+      points: [number, number][];
       pointerStart: { clientX: number; clientY: number };
       active: boolean;
     };
@@ -101,11 +120,12 @@ function handleInset(handle: Handle): { left: string; top: string } {
   }
 }
 
-/** Minimal Explore room canvas: draw / select / move / resize rect hotspots. */
+/** Explore room canvas: draw / select / move / resize rects; edit polygon vertices. */
 export function ExploreCanvas({
   doc,
   onSelectHotspot,
   onCommitRect,
+  onCommitPolygonPoints,
   onCreateRect,
   onContextAction,
   width = doc.project.resolution.width,
@@ -113,6 +133,10 @@ export function ExploreCanvas({
 }: ExploreCanvasProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [selectedVertex, setSelectedVertex] = useState<{
+    id: string;
+    index: number;
+  } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
     clientX: number;
     clientY: number;
@@ -129,6 +153,42 @@ export function ExploreCanvas({
   const selected = doc.ui.selectedHotspotId;
   const tool = doc.ui.canvasTool;
 
+  // Clear vertex selection when hotspot selection changes.
+  useEffect(() => {
+    setSelectedVertex((v) => (v && v.id === selected ? v : null));
+  }, [selected]);
+
+  const commitRemoveVertex = useCallback(
+    (hotspotId: string, index: number) => {
+      const hs = doc.scene.hotspots.find((h) => h.id === hotspotId);
+      if (!hs || !isPolygon(hs.shape)) return;
+      const next = removePolygonVertex(hs.shape.points, index);
+      if (!next) return;
+      onCommitPolygonPoints(hotspotId, next);
+      setSelectedVertex(null);
+    },
+    [doc.scene.hotspots, onCommitPolygonPoints],
+  );
+
+  // Delete / Backspace removes selected vertex (≥3 remain).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
+      ) {
+        return;
+      }
+      if (!selectedVertex) return;
+      e.preventDefault();
+      commitRemoveVertex(selectedVertex.id, selectedVertex.index);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [commitRemoveVertex, selectedVertex]);
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Primary button only — ignore right / middle / pen eraser.
@@ -144,14 +204,40 @@ export function ExploreCanvas({
         const rect = normalizeRect(p, p);
         setDrag({ kind: "draw", start: p, current: rect });
         onSelectHotspot(null);
+        setSelectedVertex(null);
         return;
       }
 
       if (selected) {
         const hs = doc.scene.hotspots.find((h) => h.id === selected);
+        if (hs && isPolygon(hs.shape)) {
+          const vi = hitTestVertex(hs.shape.points, p.x, p.y, pad);
+          if (vi !== null) {
+            setSelectedVertex({ id: selected, index: vi });
+            // Alt-click removes vertex when ≥4 points.
+            if (e.altKey) {
+              commitRemoveVertex(selected, vi);
+              return;
+            }
+            setDrag({
+              kind: "vertex",
+              id: selected,
+              index: vi,
+              points: hs.shape.points.map(([x, y]) => [x, y] as [number, number]),
+              pointerStart: { clientX: e.clientX, clientY: e.clientY },
+              active: false,
+            });
+            return;
+          }
+          if (hitTestHotspots([hs], p.x, p.y) === selected) {
+            setSelectedVertex(null);
+            return;
+          }
+        }
         if (hs && isRect(hs.shape)) {
           const handle = hitTestHandle(hs.shape, p.x, p.y, pad);
           if (handle) {
+            setSelectedVertex(null);
             setDrag({
               kind: "resize",
               id: selected,
@@ -163,6 +249,7 @@ export function ExploreCanvas({
             return;
           }
           if (hitTestHotspots([hs], p.x, p.y) === selected) {
+            setSelectedVertex(null);
             setDrag({
               kind: "move",
               id: selected,
@@ -178,6 +265,7 @@ export function ExploreCanvas({
 
       const hit = hitTestHotspots(doc.scene.hotspots, p.x, p.y);
       onSelectHotspot(hit);
+      setSelectedVertex(null);
       if (hit) {
         const hs = doc.scene.hotspots.find((h) => h.id === hit);
         if (hs && isRect(hs.shape)) {
@@ -192,7 +280,15 @@ export function ExploreCanvas({
         }
       }
     },
-    [doc.scene.hotspots, height, onSelectHotspot, selected, tool, width],
+    [
+      commitRemoveVertex,
+      doc.scene.hotspots,
+      height,
+      onSelectHotspot,
+      selected,
+      tool,
+      width,
+    ],
   );
 
   const onPointerMove = useCallback(
@@ -226,6 +322,15 @@ export function ExploreCanvas({
             height,
           }),
         });
+      } else if (drag.kind === "vertex") {
+        const client = { clientX: e.clientX, clientY: e.clientY };
+        if (!drag.active && !pastDragThreshold(drag.pointerStart, client)) return;
+        const [cx, cy] = clampPoint(p.x, p.y, { width, height });
+        setDrag({
+          ...drag,
+          active: true,
+          points: setPolygonVertex(drag.points, drag.index, cx, cy),
+        });
       }
     },
     [drag, height, width],
@@ -253,12 +358,20 @@ export function ExploreCanvas({
           hs.shape.w === drag.origin.w &&
           hs.shape.h === drag.origin.h;
         if (!same) onCommitRect(drag.id, drag.origin);
+      } else if (drag.kind === "vertex") {
+        if (!drag.active) {
+          setDrag(null);
+          return;
+        }
+        const hs = doc.scene.hotspots.find((h) => h.id === drag.id);
+        const same =
+          hs && isPolygon(hs.shape) && pointsEqual(hs.shape.points, drag.points);
+        if (!same) onCommitPolygonPoints(drag.id, drag.points);
       }
       setDrag(null);
     },
-    [drag, doc.scene.hotspots, onCommitRect, onCreateRect],
+    [drag, doc.scene.hotspots, onCommitPolygonPoints, onCommitRect, onCreateRect],
   );
-
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -274,6 +387,7 @@ export function ExploreCanvas({
       if (target.kind !== "blank") {
         onSelectHotspot(target.hotspotId);
       }
+      setSelectedVertex(null);
       setCtxMenu({ clientX: e.clientX, clientY: e.clientY, target });
     },
     [doc.scene.hotspots, height, onSelectHotspot, width],
@@ -290,6 +404,40 @@ export function ExploreCanvas({
     [onContextAction],
   );
 
+  /** Double-click near a polygon edge inserts a vertex. */
+  const onDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      const el = ref.current;
+      if (!el || tool === "drawRect") return;
+      const p = stagePoint(el, e.clientX, e.clientY, width, height);
+      const displayW = el.getBoundingClientRect().width;
+      const pad = handlePadStage(width, displayW);
+      const id = selected ?? hitTestHotspots(doc.scene.hotspots, p.x, p.y);
+      if (!id) return;
+      const hs = doc.scene.hotspots.find((h) => h.id === id);
+      if (!hs || !isPolygon(hs.shape)) return;
+      // Prefer selected polygon; still require near an edge.
+      const edge = hitTestPolygonEdge(hs.shape.points, p.x, p.y, pad * 1.5);
+      if (!edge) return;
+      e.preventDefault();
+      const [qx, qy] = clampPoint(edge.qx, edge.qy, { width, height });
+      const next = insertPolygonVertex(hs.shape.points, edge.edgeIndex, qx, qy);
+      onSelectHotspot(id);
+      onCommitPolygonPoints(id, next);
+      setSelectedVertex({ id, index: edge.edgeIndex + 1 });
+    },
+    [
+      doc.scene.hotspots,
+      height,
+      onCommitPolygonPoints,
+      onSelectHotspot,
+      selected,
+      tool,
+      width,
+    ],
+  );
+
   const previewRect = (id: string, shape: Rect): Rect => {
     if (
       drag &&
@@ -300,6 +448,16 @@ export function ExploreCanvas({
       return drag.origin;
     }
     return shape;
+  };
+
+  const previewPolyPoints = (
+    id: string,
+    points: [number, number][],
+  ): [number, number][] => {
+    if (drag && drag.kind === "vertex" && drag.active && drag.id === id) {
+      return drag.points;
+    }
+    return points;
   };
 
   const handlePx = HANDLE_SCREEN_PX;
@@ -324,6 +482,7 @@ export function ExploreCanvas({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onContextMenu={onContextMenu}
+      onDoubleClick={onDoubleClick}
     >
       {bgSrc && !bgFailed ? (
         <img
@@ -366,43 +525,75 @@ export function ExploreCanvas({
       {doc.scene.hotspots.map((h) => {
         if (isPolygon(h.shape)) {
           const sel = selected === h.id;
-          const bounds = polygonBounds(h.shape.points);
+          const pts = previewPolyPoints(h.id, h.shape.points);
+          const bounds = polygonBounds(pts);
           return (
-            <svg
-              key={h.id}
-              data-testid={`hotspot-poly-${h.id}`}
-              data-selected={sel ? "1" : "0"}
-              viewBox={`0 0 ${width} ${height}`}
-              preserveAspectRatio="none"
-              title={`${h.name}（多邊形）`}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                pointerEvents: "none",
-                overflow: "visible",
-              }}
-            >
-              <polygon
-                points={polygonSvgPoints(h.shape.points)}
-                fill={sel ? "rgba(80,180,255,0.25)" : "rgba(60,160,120,0.18)"}
-                stroke={sel ? "#6cf" : "#4a8"}
-                strokeWidth={sel ? Math.max(2, width / 400) : Math.max(1, width / 600)}
-                vectorEffect="non-scaling-stroke"
-              />
-              {bounds ? (
-                <text
-                  x={bounds.x + 4}
-                  y={bounds.y + 14}
-                  fill="#dff"
-                  fontSize={Math.max(12, width / 100)}
-                  style={{ textShadow: "0 1px 2px #000" }}
-                >
-                  {h.name}
-                </text>
-              ) : null}
-            </svg>
+            <Fragment key={h.id}>
+              <svg
+                data-testid={`hotspot-poly-${h.id}`}
+                data-selected={sel ? "1" : "0"}
+                viewBox={`0 0 ${width} ${height}`}
+                preserveAspectRatio="none"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  pointerEvents: "none",
+                  overflow: "visible",
+                }}
+              >
+                <title>{`${h.name}（多邊形）`}</title>
+                <polygon
+                  points={polygonSvgPoints(pts)}
+                  fill={sel ? "rgba(80,180,255,0.25)" : "rgba(60,160,120,0.18)"}
+                  stroke={sel ? "#6cf" : "#4a8"}
+                  strokeWidth={sel ? Math.max(2, width / 400) : Math.max(1, width / 600)}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {bounds ? (
+                  <text
+                    x={bounds.x + 4}
+                    y={bounds.y + 14}
+                    fill="#dff"
+                    fontSize={Math.max(12, width / 100)}
+                    style={{ textShadow: "0 1px 2px #000" }}
+                  >
+                    {h.name}
+                  </text>
+                ) : null}
+              </svg>
+              {sel
+                ? pts.map(([vx, vy], i) => {
+                    const vertSel =
+                      selectedVertex?.id === h.id && selectedVertex.index === i;
+                    return (
+                      <div
+                        key={i}
+                        data-testid={vertexHandleTestId(h.id, i)}
+                        data-vertex={i}
+                        data-selected={vertSel ? "1" : "0"}
+                        style={{
+                          position: "absolute",
+                          left: `${(vx / width) * 100}%`,
+                          top: `${(vy / height) * 100}%`,
+                          width: handlePx,
+                          height: handlePx,
+                          marginLeft: -handlePx / 2,
+                          marginTop: -handlePx / 2,
+                          background: vertSel ? "#fc6" : "#6cf",
+                          border: "1px solid #fff",
+                          boxSizing: "border-box",
+                          boxShadow: "0 0 2px #000",
+                          borderRadius: 1,
+                          pointerEvents: "none",
+                          zIndex: 2,
+                        }}
+                      />
+                    );
+                  })
+                : null}
+            </Fragment>
           );
         }
         if (!isRect(h.shape)) {

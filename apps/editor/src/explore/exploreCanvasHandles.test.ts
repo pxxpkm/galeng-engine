@@ -4,6 +4,7 @@ import {
   HANDLE_SCREEN_PX,
   handlePadStage,
   resizeHandleTestId,
+  vertexHandleTestId,
 } from "./canvas";
 
 /**
@@ -26,5 +27,12 @@ describe("explore canvas resize handles", () => {
     // pad (stage) * (display/stage) ≈ HANDLE_SCREEN_PX
     expect((pad * displayW) / stageW).toBeCloseTo(HANDLE_SCREEN_PX, 5);
     expect(pad).toBeGreaterThan(HANDLE_SCREEN_PX);
+  });
+});
+
+describe("explore canvas vertex handles", () => {
+  it("exposes stable vertex handle test ids", () => {
+    expect(vertexHandleTestId("rug", 0)).toBe("vertex-handle-rug-0");
+    expect(vertexHandleTestId("rug", 3)).toBe("vertex-handle-rug-3");
   });
 });

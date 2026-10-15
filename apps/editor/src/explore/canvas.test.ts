@@ -3,20 +3,28 @@ import {
   HANDLES,
   HANDLE_PAD,
   HANDLE_SCREEN_PX,
+  clampPoint,
   clampRect,
   defaultHotspotPlacement,
   handleCenters,
   handlePadStage,
   hitTestHandle,
   hitTestHotspots,
+  hitTestPolygonEdge,
+  hitTestVertex,
+  insertPolygonVertex,
   moveRect,
   normalizeRect,
   pastDragThreshold,
   pointInPolygon,
+  pointsEqual,
   polygonBounds,
   polygonSvgPoints,
+  removePolygonVertex,
   resizeHandleTestId,
   resizeRect,
+  setPolygonVertex,
+  vertexHandleTestId,
 } from "./canvas";
 import type { Hotspot } from "./types";
 
@@ -150,5 +158,50 @@ describe("drag threshold + hotspot placement", () => {
     ];
     const second = defaultHotspotPlacement(hs, res);
     expect(second).toEqual({ x: 124, y: 104, w: 200, h: 160 });
+  });
+});
+
+describe("polygon vertex editing helpers", () => {
+  const quad: [number, number][] = [
+    [100, 100],
+    [300, 100],
+    [300, 250],
+    [100, 250],
+  ];
+
+  it("hitTestVertex finds corners within pad", () => {
+    expect(hitTestVertex(quad, 100, 100, 8)).toBe(0);
+    expect(hitTestVertex(quad, 305, 100, 8)).toBe(1);
+    expect(hitTestVertex(quad, 200, 180, 8)).toBeNull();
+  });
+
+  it("setPolygonVertex / clampPoint / pointsEqual", () => {
+    const moved = setPolygonVertex(quad, 1, 350.4, 90.6);
+    expect(moved[1]).toEqual([350, 91]);
+    expect(pointsEqual(quad, moved)).toBe(false);
+    expect(pointsEqual(quad, [...quad])).toBe(true);
+    expect(clampPoint(-10, 2000, { width: 1920, height: 1080 })).toEqual([0, 1080]);
+  });
+
+  it("hitTestPolygonEdge prefers mid-edge and skips near vertices", () => {
+    const edge = hitTestPolygonEdge(quad, 200, 100, 10);
+    expect(edge).not.toBeNull();
+    expect(edge!.edgeIndex).toBe(0);
+    expect(edge!.qy).toBeCloseTo(100, 0);
+    // Near a vertex: skipped so vertex handle wins
+    expect(hitTestPolygonEdge(quad, 102, 100, 10)).toBeNull();
+  });
+
+  it("insertPolygonVertex after edge; remove keeps ≥3", () => {
+    const withMid = insertPolygonVertex(quad, 0, 200, 100);
+    expect(withMid).toHaveLength(5);
+    expect(withMid[1]).toEqual([200, 100]);
+    expect(removePolygonVertex(quad, 0)).toHaveLength(3);
+    expect(removePolygonVertex(quad.slice(0, 3), 0)).toBeNull();
+    expect(removePolygonVertex(quad, 99)).toBeNull();
+  });
+
+  it("vertexHandleTestId is stable", () => {
+    expect(vertexHandleTestId("rug", 2)).toBe("vertex-handle-rug-2");
   });
 });

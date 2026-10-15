@@ -25,7 +25,7 @@ describe("commandBus", () => {
     bus = u.bus;
     doc = u.doc;
     const shape2 = doc.scene.hotspots[0]!.shape;
-    expect(shape2.type === "rect" && shape2.x).toBe(100); // default from addHotspot
+    expect(shape2.type === "rect" && shape2.x).toBe(860); // defaultHotspotPlacement centre
 
     const r = redo(bus, doc)!;
     bus = r.bus;
