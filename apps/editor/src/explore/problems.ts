@@ -370,6 +370,27 @@ export function collectExploreProblems(
     }
   }
 
+  // Rule 8: rules after an unconditional earlier rule are unreachable (L5)
+  for (const inter of doc.scene.interactions) {
+    const onKey = "verb" in inter.on ? inter.on.verb : inter.on.item;
+    let blocked = false;
+    for (let ri = 0; ri < inter.rules.length; ri++) {
+      if (blocked) {
+        out.push({
+          id: `shadowed-rule-${inter.hotspot}-${onKey}-r${ri}`,
+          severity: "warn",
+          key: "explore.shadowedRule",
+          message: `規則 ${ri + 1} 被前面無條件規則遮蔽（唔會執行）`,
+          hotspotId: inter.hotspot,
+          detail: `${inter.hotspot}/${onKey}#${ri}`,
+        });
+      }
+      if (inter.rules[ri]!.when.length === 0) {
+        blocked = true;
+      }
+    }
+  }
+
   return out;
 }
 

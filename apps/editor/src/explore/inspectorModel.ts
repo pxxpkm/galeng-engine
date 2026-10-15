@@ -105,12 +105,33 @@ export function patchPred(
   });
 }
 
+/** Append a rule; if the last rule is unconditional (fallback), insert before it (L5). */
 export function addRule(rules: InteractionRule[]): InteractionRule[] {
-  return [...rules, emptyRule()];
+  const neu = emptyRule();
+  if (rules.length > 0 && rules[rules.length - 1]!.when.length === 0) {
+    return [...rules.slice(0, -1), neu, rules[rules.length - 1]!];
+  }
+  return [...rules, neu];
 }
 
 export function removeRule(rules: InteractionRule[], ruleIndex: number): InteractionRule[] {
   return rules.filter((_, i) => i !== ruleIndex);
+}
+
+/** Swap rule with neighbour; no-op at ends (L5). */
+export function moveRule(
+  rules: InteractionRule[],
+  ruleIndex: number,
+  direction: "up" | "down",
+): InteractionRule[] {
+  const target = direction === "up" ? ruleIndex - 1 : ruleIndex + 1;
+  if (ruleIndex < 0 || ruleIndex >= rules.length) return rules;
+  if (target < 0 || target >= rules.length) return rules;
+  const next = rules.slice();
+  const tmp = next[ruleIndex]!;
+  next[ruleIndex] = next[target]!;
+  next[target] = tmp;
+  return next;
 }
 
 export function addAction(

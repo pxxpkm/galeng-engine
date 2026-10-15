@@ -526,3 +526,45 @@ describe("explore problems L4 multi-scene pack scan", () => {
     expect(startFlags[0]!.sceneId).toBe("room");
   });
 });
+
+describe("explore problems L5 shadowedRule", () => {
+  it("warns when rules follow an unconditional rule", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("door", { verb: "open" }, [
+        { when: [], do: [{ type: "say", text: "先到" }] },
+        { when: [{ switch: "x", is: true }], do: [{ type: "say", text: "唔會到" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.shadowedRule")).toBe(true);
+    expect(
+      probs.some(
+        (p) => p.key === "explore.shadowedRule" && p.message.includes("規則 2"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not warn when unconditional is last", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
+    ({ bus, doc } = dispatch(bus, doc, addSwitch({ id: "open", init: false })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("door", { verb: "open" }, [
+        { when: [{ switch: "open", is: true }], do: [{ type: "say", text: "開" }] },
+        { when: [], do: [{ type: "say", text: "鎖" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.shadowedRule")).toBe(false);
+  });
+});

@@ -10,6 +10,7 @@ import {
   interactionCoalesceKey,
   isEditableAction,
   isEditablePred,
+  moveRule,
   onEnterCoalesceKey,
   patchAction,
   patchActionInList,
@@ -123,11 +124,31 @@ function RuleCard({
         background: "#1a1e28",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
         <strong>規則 {index + 1}</strong>
-        <button type="button" data-testid={`rule-remove-${index}`} onClick={onRemove}>
-          刪規則
-        </button>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            data-testid={`rule-up-${index}`}
+            disabled={index === 0}
+            title="上移"
+            onClick={() => onPatch(moveRule(allRules, index, "up"))}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            data-testid={`rule-down-${index}`}
+            disabled={index >= allRules.length - 1}
+            title="下移"
+            onClick={() => onPatch(moveRule(allRules, index, "down"))}
+          >
+            ↓
+          </button>
+          <button type="button" data-testid={`rule-remove-${index}`} onClick={onRemove}>
+            刪規則
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: 6 }}>

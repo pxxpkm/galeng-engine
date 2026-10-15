@@ -15,6 +15,7 @@ import {
   addRule,
   addWhen,
   emptyEditableAction,
+  moveRule,
   getCellRules,
   isEditableAction,
   patchAction,
@@ -225,5 +226,49 @@ describe("commandBus no-op + coalesce", () => {
     const patched = patchActionInList(list, 1, { type: "takeItem", id: "key" });
     expect(patched[1]).toEqual({ type: "takeItem", id: "key" });
     expect(removeActionFromList(patched, 1)).toHaveLength(1);
+  });
+});
+
+describe("inspectorModel L5 rule order", () => {
+  it("addRule inserts before trailing unconditional fallback", () => {
+    const rules = [
+      {
+        when: [{ switch: "open", is: true } as const],
+        do: [{ type: "say" as const, text: "開" }],
+      },
+      { when: [], do: [{ type: "say" as const, text: "鎖住" }] },
+    ];
+    const next = addRule(rules);
+    expect(next).toHaveLength(3);
+    expect(next[1]!.do[0]).toEqual({ type: "say", text: "" });
+    expect(next[2]!.do[0]).toEqual({ type: "say", text: "鎖住" });
+  });
+
+  it("addRule appends when no trailing unconditional", () => {
+    const rules = [
+      {
+        when: [{ switch: "open", is: true } as const],
+        do: [{ type: "say" as const, text: "開" }],
+      },
+    ];
+    const next = addRule(rules);
+    expect(next).toHaveLength(2);
+    expect(next[1]!.do[0]).toEqual({ type: "say", text: "" });
+  });
+
+  it("moveRule swaps with neighbour and no-ops at ends", () => {
+    const rules = [
+      { when: [], do: [{ type: "say" as const, text: "a" }] },
+      { when: [], do: [{ type: "say" as const, text: "b" }] },
+      { when: [], do: [{ type: "say" as const, text: "c" }] },
+    ];
+    expect(moveRule(rules, 0, "up")[0]!.do[0]).toEqual({ type: "say", text: "a" });
+    expect(moveRule(rules, 2, "down")[2]!.do[0]).toEqual({ type: "say", text: "c" });
+    expect(
+      moveRule(rules, 1, "up").map((r) => (r.do[0] as { text: string }).text),
+    ).toEqual(["b", "a", "c"]);
+    expect(
+      moveRule(rules, 0, "down").map((r) => (r.do[0] as { text: string }).text),
+    ).toEqual(["b", "a", "c"]);
   });
 });
