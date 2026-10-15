@@ -72,6 +72,11 @@ import type {
   SceneCatalogEntry,
 } from "./types";
 import {
+  confirmDeleteHotspotMessage,
+  countHotspotDeleteImpact,
+  defaultConfirmFn,
+} from "./refCounts";
+import {
   selectionAfterCellPick,
   selectionAfterHotspotPick,
 } from "./selection";
@@ -709,7 +714,12 @@ export function ExploreWorkspace({
           <button
             type="button"
             data-testid="remove-hotspot"
-            onClick={() => applyCmd(removeHotspot(doc.ui.selectedHotspotId!))}
+            onClick={() => {
+              const id = doc.ui.selectedHotspotId!;
+              const impact = countHotspotDeleteImpact(doc, id);
+              if (!defaultConfirmFn(confirmDeleteHotspotMessage(id, impact))) return;
+              applyCmd(removeHotspot(id));
+            }}
           >
             刪熱區
           </button>

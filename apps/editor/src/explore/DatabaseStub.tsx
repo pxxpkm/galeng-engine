@@ -1,5 +1,15 @@
 import { useState } from "react";
 import { uniqueId } from "./commands";
+import {
+  confirmDeleteCharacterMessage,
+  confirmDeleteItemMessage,
+  confirmDeleteSwitchMessage,
+  countCharacterRefs,
+  countItemRefs,
+  countSwitchRefs,
+  defaultConfirmFn,
+  type ConfirmFn,
+} from "./refCounts";
 import type { ExploreDoc, ItemDef } from "./types";
 
 export interface DatabaseStubProps {
@@ -13,10 +23,26 @@ export interface DatabaseStubProps {
   onUpdateCharacter?: (id: string, name: string) => void;
   onUpdateSwitch?: (id: string, name: string) => void;
   onUpdateItem?: (id: string, patch: Partial<ItemDef>) => void;
+  /** Inject for tests; defaults to window.confirm. */
+  confirmFn?: ConfirmFn;
 }
 
 function charDisplayName(c: ExploreDoc["project"]["characters"][number], locale: string): string {
   return c.display?.[locale] ?? c.display?.["zh-Hant"] ?? c.display?.["en"] ?? "";
+}
+
+
+function RefBadge({ count, testId }: { count: number; testId: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      data-testid={testId}
+      style={{ opacity: 0.65, fontSize: 11, whiteSpace: "nowrap" }}
+      title="目前場景引用次數"
+    >
+      引用 {count}
+    </span>
+  );
 }
 
 /** Minimal CRUD stub for characters / switches / items (M2 + D0-A fields). */
@@ -31,6 +57,7 @@ export function DatabaseStub({
   onUpdateCharacter,
   onUpdateSwitch,
   onUpdateItem,
+  confirmFn = defaultConfirmFn,
 }: DatabaseStubProps) {
   const locale = doc.project.locale || "zh-Hant";
   const [charId, setCharId] = useState("");
@@ -52,26 +79,37 @@ export function DatabaseStub({
       <section>
         <h4>角色</h4>
         <ul style={{ listStyle: "none", padding: 0 }}>
-          {doc.project.characters.map((c) => (
-            <li
-              key={c.id}
-              data-testid={`db-char-row-${c.id}`}
-              style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}
-            >
-              <code style={{ opacity: 0.75 }}>{c.id}</code>
-              <input
-                data-testid={`db-char-name-${c.id}`}
-                style={{ flex: 1, minWidth: 60 }}
-                value={charDisplayName(c, locale)}
-                placeholder="名稱"
-                onChange={(e) => onUpdateCharacter?.(c.id, e.target.value)}
-                disabled={!onUpdateCharacter}
-              />
-              <button type="button" onClick={() => onRemoveCharacter(c.id)}>
-                刪
-              </button>
-            </li>
-          ))}
+          {doc.project.characters.map((c) => {
+            const refs = countCharacterRefs(doc, c.id);
+            return (
+              <li
+                key={c.id}
+                data-testid={`db-char-row-${c.id}`}
+                style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}
+              >
+                <code style={{ opacity: 0.75 }}>{c.id}</code>
+                <input
+                  data-testid={`db-char-name-${c.id}`}
+                  style={{ flex: 1, minWidth: 60 }}
+                  value={charDisplayName(c, locale)}
+                  placeholder="名稱"
+                  onChange={(e) => onUpdateCharacter?.(c.id, e.target.value)}
+                  disabled={!onUpdateCharacter}
+                />
+                <RefBadge count={refs} testId={`db-char-refs-${c.id}`} />
+                <button
+                  type="button"
+                  data-testid={`db-char-remove-${c.id}`}
+                  onClick={() => {
+                    if (!confirmFn(confirmDeleteCharacterMessage(c.id, refs))) return;
+                    onRemoveCharacter(c.id);
+                  }}
+                >
+                  刪
+                </button>
+              </li>
+            );
+          })}
         </ul>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
           <input
@@ -114,26 +152,37 @@ export function DatabaseStub({
       <section>
         <h4>開關</h4>
         <ul style={{ listStyle: "none", padding: 0 }}>
-          {doc.project.switches.map((s) => (
-            <li
-              key={s.id}
-              data-testid={`db-switch-row-${s.id}`}
-              style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}
-            >
-              <code style={{ opacity: 0.75 }}>{s.id}</code>
-              <input
-                data-testid={`db-switch-name-${s.id}`}
-                style={{ flex: 1, minWidth: 60 }}
-                value={s.name ?? ""}
-                placeholder="名稱"
-                onChange={(e) => onUpdateSwitch?.(s.id, e.target.value)}
-                disabled={!onUpdateSwitch}
-              />
-              <button type="button" onClick={() => onRemoveSwitch(s.id)}>
-                刪
-              </button>
-            </li>
-          ))}
+          {doc.project.switches.map((s) => {
+            const refs = countSwitchRefs(doc, s.id);
+            return (
+              <li
+                key={s.id}
+                data-testid={`db-switch-row-${s.id}`}
+                style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}
+              >
+                <code style={{ opacity: 0.75 }}>{s.id}</code>
+                <input
+                  data-testid={`db-switch-name-${s.id}`}
+                  style={{ flex: 1, minWidth: 60 }}
+                  value={s.name ?? ""}
+                  placeholder="名稱"
+                  onChange={(e) => onUpdateSwitch?.(s.id, e.target.value)}
+                  disabled={!onUpdateSwitch}
+                />
+                <RefBadge count={refs} testId={`db-switch-refs-${s.id}`} />
+                <button
+                  type="button"
+                  data-testid={`db-switch-remove-${s.id}`}
+                  onClick={() => {
+                    if (!confirmFn(confirmDeleteSwitchMessage(s.id, refs))) return;
+                    onRemoveSwitch(s.id);
+                  }}
+                >
+                  刪
+                </button>
+              </li>
+            );
+          })}
         </ul>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
           <input
@@ -176,7 +225,9 @@ export function DatabaseStub({
       <section>
         <h4>物品</h4>
         <ul style={{ listStyle: "none", padding: 0 }}>
-          {doc.project.items.map((i) => (
+          {doc.project.items.map((i) => {
+            const refs = countItemRefs(doc, i.id);
+            return (
             <li
               key={i.id}
               data-testid={`db-item-row-${i.id}`}
@@ -219,11 +270,20 @@ export function DatabaseStub({
                   onUpdateItem?.(i.id, { icon: e.target.value || undefined })
                 }
               />
-              <button type="button" onClick={() => onRemoveItem(i.id)}>
+              <RefBadge count={refs} testId={`db-item-refs-${i.id}`} />
+              <button
+                type="button"
+                data-testid={`db-item-remove-${i.id}`}
+                onClick={() => {
+                  if (!confirmFn(confirmDeleteItemMessage(i.id, refs))) return;
+                  onRemoveItem(i.id);
+                }}
+              >
                 刪
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
           <input
