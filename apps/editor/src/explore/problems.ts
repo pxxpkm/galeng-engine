@@ -3,6 +3,7 @@ import type {
   ExploreAction,
   ExploreDoc,
   Interaction,
+  Pred,
   SceneCatalogEntry,
 } from "./types";
 
@@ -157,6 +158,73 @@ function checkActions(
   }
 }
 
+
+/** Validate Pred[] for switch / hasItem (empty or unknown → error). Skips var. */
+function checkPreds(
+  preds: Pred[] | null | undefined,
+  loc: ActionLoc & { kind: "when" | "visibleIf" | "enabledIf"; ruleIndex?: number },
+  ctx: {
+    out: ExploreProblem[];
+    switchIds: Set<string>;
+    itemIds: Set<string>;
+  },
+): void {
+  if (!preds || preds.length === 0) return;
+  const { out, switchIds, itemIds } = ctx;
+  const hs = loc.hotspotId;
+  const ruleBit = loc.ruleIndex !== undefined ? `r${loc.ruleIndex}` : "x";
+
+  for (let i = 0; i < preds.length; i++) {
+    const p = preds[i]!;
+    const idx = `${loc.loc}-${loc.kind}-${ruleBit}-${i}`;
+
+    if ("switch" in p) {
+      const id = (p.switch ?? "").trim();
+      if (!id) {
+        out.push({
+          id: `empty-pred-switch-${idx}`,
+          severity: "error",
+          key: "explore.emptyPredSwitch",
+          message: `${loc.kind} 條件空開關 id`,
+          hotspotId: hs,
+        });
+      } else if (!switchIds.has(id)) {
+        out.push({
+          id: `bad-pred-switch-${id}-${idx}`,
+          severity: "error",
+          key: "explore.unknownPredSwitch",
+          message: `${loc.kind} 未知開關：${id}`,
+          hotspotId: hs,
+          detail: id,
+        });
+      }
+      continue;
+    }
+
+    if ("hasItem" in p) {
+      const id = (p.hasItem ?? "").trim();
+      if (!id) {
+        out.push({
+          id: `empty-pred-item-${idx}`,
+          severity: "error",
+          key: "explore.emptyPredHasItem",
+          message: `${loc.kind} 條件空物品 id`,
+          hotspotId: hs,
+        });
+      } else if (!itemIds.has(id)) {
+        out.push({
+          id: `bad-pred-item-${id}-${idx}`,
+          severity: "error",
+          key: "explore.unknownPredHasItem",
+          message: `${loc.kind} 未知物品：${id}`,
+          hotspotId: hs,
+          detail: id,
+        });
+      }
+    }
+  }
+}
+
 /** Problems rules for Explore editor (M2 + M3 dead-end Call + onEnter). */
 export function collectExploreProblems(
   doc: ExploreDoc,
@@ -253,5 +321,19 @@ export function collectExploreProblems(
     }
   }
 
+  // Rule 6: when / visibleIf / enabledIf — switch & hasItem only (L2)
+  for (const inter of doc.scene.interactions) {
+    inter.rules.forEach((rule, ruleIndex) => {
+      checkPreds(
+        rule.when,
+        { loc: inter.hotspot, hotspotId: inter.hotspot, kind: "when", ruleIndex },
+        ctx,
+      );
+    });
+  }
+  for (const h of doc.scene.hotspots) {
+    checkPreds(h.visibleIf, { loc: h.id, hotspotId: h.id, kind: "visibleIf" }, ctx);
+    checkPreds(h.enabledIf, { loc: h.id, hotspotId: h.id, kind: "enabledIf" }, ctx);
+  }
   return out;
 }

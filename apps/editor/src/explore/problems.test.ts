@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter } from "./commands";
+import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter, updateHotspot } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import { collectExploreProblems } from "./problems";
 import { buildSceneCatalog } from "./sceneCatalog";
@@ -280,5 +280,112 @@ describe("explore problems onEnter", () => {
     const empties = collectExploreProblems(doc).filter((p) => p.key === "explore.emptySay");
     expect(empties.length).toBe(2);
     expect(new Set(empties.map((p) => p.id)).size).toBe(2);
+  });
+});
+
+describe("explore problems L2 when / visibleIf / enabledIf", () => {
+  it("errors on unknown switch in rule.when", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("door", { verb: "open" }, [
+        { when: [{ switch: "missing_sw", is: true }], do: [{ type: "say", text: "開" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.unknownPredSwitch")).toBe(true);
+  });
+
+  it("errors on empty switch id in rule.when", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("door", { verb: "open" }, [
+        { when: [{ switch: "  ", is: true }], do: [{ type: "say", text: "開" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.emptyPredSwitch")).toBe(true);
+  });
+
+  it("errors on unknown hasItem in rule.when", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "chest" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("chest", { verb: "use" }, [
+        { when: [{ hasItem: "ghost_key" }], do: [{ type: "say", text: "開" }] },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.unknownPredHasItem")).toBe(true);
+  });
+
+  it("errors on empty hasItem in visibleIf", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      addHotspot({ id: "secret", visibleIf: [{ hasItem: "" }] }),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(
+      probs.some((p) => p.key === "explore.emptyPredHasItem" && p.hotspotId === "secret"),
+    ).toBe(true);
+  });
+
+  it("errors on unknown switch in enabledIf", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "lever" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateHotspot("lever", { enabledIf: [{ switch: "nope", is: false }] }),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(
+      probs.some((p) => p.key === "explore.unknownPredSwitch" && p.hotspotId === "lever"),
+    ).toBe(true);
+  });
+
+  it("accepts known switch/hasItem in when and visibleIf; ignores var", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
+    ({ bus, doc } = dispatch(bus, doc, addSwitch({ id: "open", init: false })));
+    ({ bus, doc } = dispatch(bus, doc, addItem({ id: "key", name: "key" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateHotspot("door", { visibleIf: [{ hasItem: "key" }] }),
+    ));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setInteraction("door", { verb: "open" }, [
+        {
+          when: [{ switch: "open", is: true }, { var: "n", eq: 1 }],
+          do: [{ type: "say", text: "開咗" }],
+        },
+      ]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc, new Set(["room"]));
+    expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
   });
 });
