@@ -622,6 +622,7 @@ export function ExploreWorkspace({
       >
         <HierarchyPanel
           doc={doc}
+          sceneCatalog={effectiveCatalog}
           onSelectHotspot={selectHotspotOnly}
           onUpdateScene={(patch, coalesceKey) =>
             applyCmd(updateScene(patch, coalesceKey))

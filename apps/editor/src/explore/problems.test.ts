@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter, updateHotspot } from "./commands";
+import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter, updateHotspot, updateProject } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import { collectExploreProblems } from "./problems";
 import { buildSceneCatalog } from "./sceneCatalog";
@@ -387,5 +387,68 @@ describe("explore problems L2 when / visibleIf / enabledIf", () => {
     void bus;
     const probs = collectExploreProblems(doc, new Set(["room"]));
     expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
+  });
+});
+
+describe("explore problems L3 badStartScene", () => {
+  it("errors when startScene is empty", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateProject({ startScene: "" }, "project-startScene"),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.badStartScene")).toBe(true);
+  });
+
+  it("errors when startScene not in catalog", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateProject({ startScene: "no_such_scene" }, "project-startScene"),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [
+        { id: "room", kind: "explore" },
+        { id: "study", kind: "explore" },
+      ],
+    });
+    expect(probs.some((p) => p.key === "explore.badStartScene" && p.detail === "no_such_scene")).toBe(
+      true,
+    );
+  });
+
+  it("accepts startScene present in catalog", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    void bus;
+    const probs = collectExploreProblems(doc, {
+      sceneCatalog: [{ id: "room", kind: "explore" }],
+    });
+    expect(probs.some((p) => p.key === "explore.badStartScene")).toBe(false);
+    expect(probs.filter((p) => p.severity === "error")).toHaveLength(0);
+  });
+
+  it("does not flag unknown startScene when no catalog provided", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      updateProject({ startScene: "orphan_ok" }, "project-startScene"),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(probs.some((p) => p.key === "explore.badStartScene")).toBe(false);
   });
 });

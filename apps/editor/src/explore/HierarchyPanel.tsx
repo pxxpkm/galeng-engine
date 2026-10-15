@@ -1,8 +1,10 @@
-import type { ExploreDoc } from "./types";
+import type { ExploreDoc, SceneCatalogEntry } from "./types";
 
 export interface HierarchyPanelProps {
   doc: ExploreDoc;
   onSelectHotspot: (id: string | null) => void;
+  /** Project scene catalog for startScene dropdown (L3). */
+  sceneCatalog?: SceneCatalogEntry[];
   /** Patch scene title / bg via updateScene. */
   onUpdateScene?: (
     patch: { title?: string; bg?: ExploreDoc["scene"]["bg"] },
@@ -19,6 +21,7 @@ export interface HierarchyPanelProps {
 export function HierarchyPanel({
   doc,
   onSelectHotspot,
+  sceneCatalog = [],
   onUpdateScene,
   onUpdateProject,
 }: HierarchyPanelProps) {
@@ -27,6 +30,9 @@ export function HierarchyPanel({
   const bgAsset = doc.scene.bg?.asset ?? "";
   const canEditScene = !!onUpdateScene;
   const canEditProject = !!onUpdateProject;
+  const startScene = doc.project.startScene;
+  const useStartSelect = sceneCatalog.length > 0;
+  const startKnown = sceneCatalog.some((s) => s.id === startScene);
 
   return (
     <div
@@ -53,15 +59,44 @@ export function HierarchyPanel({
         </label>
         <label style={{ display: "block", marginBottom: 4 }}>
           起始場景
-          <input
-            data-testid="hierarchy-start-scene"
-            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
-            value={doc.project.startScene}
-            disabled={!canEditProject}
-            onChange={(e) =>
-              onUpdateProject?.({ startScene: e.target.value }, "project-startScene")
-            }
-          />
+          {useStartSelect ? (
+            <select
+              data-testid="hierarchy-start-scene"
+              style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+              value={startScene}
+              disabled={!canEditProject}
+              onChange={(e) =>
+                onUpdateProject?.(
+                  { startScene: e.target.value },
+                  "project-startScene",
+                )
+              }
+            >
+              <option value="">（揀起始場景）</option>
+              {sceneCatalog.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title ? `${s.title} (${s.id})` : s.id}
+                  {s.kind === "dialogue" ? " ·對話" : " ·探險"}
+                </option>
+              ))}
+              {startScene && !startKnown ? (
+                <option value={startScene}>{startScene}（未知）</option>
+              ) : null}
+            </select>
+          ) : (
+            <input
+              data-testid="hierarchy-start-scene"
+              style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+              value={startScene}
+              disabled={!canEditProject}
+              onChange={(e) =>
+                onUpdateProject?.(
+                  { startScene: e.target.value },
+                  "project-startScene",
+                )
+              }
+            />
+          )}
         </label>
       </div>
 

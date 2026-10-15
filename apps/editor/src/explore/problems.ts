@@ -335,5 +335,27 @@ export function collectExploreProblems(
     checkPreds(h.visibleIf, { loc: h.id, hotspotId: h.id, kind: "visibleIf" }, ctx);
     checkPreds(h.enabledIf, { loc: h.id, hotspotId: h.id, kind: "enabledIf" }, ctx);
   }
+
+  // Rule 7: startScene non-empty; unknown id when catalog present (L3)
+  {
+    const start = (doc.project.startScene ?? "").trim();
+    if (!start) {
+      out.push({
+        id: "bad-start-scene-empty",
+        severity: "error",
+        key: "explore.badStartScene",
+        message: "起始場景未設定",
+      });
+    } else if (hasCatalog && !scenes.has(start)) {
+      out.push({
+        id: `bad-start-scene-${start}`,
+        severity: "error",
+        key: "explore.badStartScene",
+        message: `起始場景未知：${start}`,
+        detail: start,
+      });
+    }
+  }
+
   return out;
 }
