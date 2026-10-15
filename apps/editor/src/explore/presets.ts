@@ -39,13 +39,13 @@ export const PRESET_CATALOG: ExplorePreset[] = [
   {
     id: "action.callTalk",
     category: "action",
-    label: "通話短場",
+    label: "呼叫場景短場",
     description: "選中格：加入 call（目標可再改）＋可選 trans",
   },
   {
     id: "action.return",
     category: "action",
-    label: "Return 動作",
+    label: "返回動作",
     description: "選中格：加入 return（通常用喺對話後；探險格少用）",
   },
 ];

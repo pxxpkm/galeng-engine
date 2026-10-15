@@ -280,31 +280,31 @@ describe("inspectorModel L5 rule order", () => {
 
 describe("inspectorModel Chinese labels", () => {
   it("editableActionTypeLabel covers all editable types", () => {
-    expect(editableActionTypeLabel("say")).toBe("說話");
-    expect(editableActionTypeLabel("setSwitch")).toBe("設開關");
-    expect(editableActionTypeLabel("giveItem")).toBe("給物品");
-    expect(editableActionTypeLabel("takeItem")).toBe("收物品");
-    expect(editableActionTypeLabel("call")).toBe("通話");
+    expect(editableActionTypeLabel("say")).toBe("對白");
+    expect(editableActionTypeLabel("setSwitch")).toBe("設定開關");
+    expect(editableActionTypeLabel("giveItem")).toBe("給予物品");
+    expect(editableActionTypeLabel("takeItem")).toBe("收回物品");
+    expect(editableActionTypeLabel("call")).toBe("呼叫場景");
     expect(editableActionTypeLabel("return")).toBe("返回");
-    expect(editableActionTypeLabel("gotoScene")).toBe("切場景");
+    expect(editableActionTypeLabel("gotoScene")).toBe("切換場景");
     for (const t of EDITABLE_ACTION_TYPES) {
       expect(editableActionTypeLabel(t)).not.toBe(t);
     }
   });
 
   it("actionChipLabel uses Chinese verbs", () => {
-    expect(actionChipLabel({ type: "say", text: "你好" })).toBe("說話「你好」");
+    expect(actionChipLabel({ type: "say", text: "你好" })).toBe("對白「你好」");
     expect(actionChipLabel({ type: "setSwitch", id: "door", value: true })).toBe(
-      "設開關 door=開",
+      "設定開關 door=開",
     );
     expect(actionChipLabel({ type: "setSwitch", id: "door", value: false })).toBe(
-      "設開關 door=關",
+      "設定開關 door=關",
     );
-    expect(actionChipLabel({ type: "giveItem", id: "key" })).toBe("給物品 key");
-    expect(actionChipLabel({ type: "takeItem", id: "key" })).toBe("收物品 key");
-    expect(actionChipLabel({ type: "call", scene: "dlg" })).toBe("通話 dlg");
+    expect(actionChipLabel({ type: "giveItem", id: "key" })).toBe("給予物品 key");
+    expect(actionChipLabel({ type: "takeItem", id: "key" })).toBe("收回物品 key");
+    expect(actionChipLabel({ type: "call", scene: "dlg" })).toBe("呼叫場景 dlg");
     expect(actionChipLabel({ type: "return" })).toBe("返回");
-    expect(actionChipLabel({ type: "gotoScene", scene: "hall" })).toBe("切場景 hall");
+    expect(actionChipLabel({ type: "gotoScene", scene: "hall" })).toBe("切換場景 hall");
     expect(actionChipLabel({ type: "showHotspot", id: "door" })).toBe("顯示熱區 door");
     expect(actionChipLabel({ type: "hideHotspot", id: "door" })).toBe("隱藏熱區 door");
     expect(actionTypeLabel("enableHotspot")).toBe("啟用熱區");

@@ -181,13 +181,13 @@ export function removeWhen(
 
 /** Display-only Chinese labels for editable action types (JSON ids stay English). */
 const EDITABLE_ACTION_TYPE_LABELS: Record<EditableActionType, string> = {
-  say: "說話",
-  setSwitch: "設開關",
-  giveItem: "給物品",
-  takeItem: "收物品",
-  call: "通話",
+  say: "對白",
+  setSwitch: "設定開關",
+  giveItem: "給予物品",
+  takeItem: "收回物品",
+  call: "呼叫場景",
   return: "返回",
-  gotoScene: "切場景",
+  gotoScene: "切換場景",
 };
 
 /** Display-only Chinese labels for all ExploreAction types used in chips. */
