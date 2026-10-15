@@ -35,6 +35,14 @@ import {
   type CtxMenuTarget,
 } from "./canvasContextMenu";
 import type { ExploreDoc } from "./types";
+import {
+  appendDrawPolygonPoint,
+  drawPolygonKeyAction,
+  drawPolygonPreviewGeometry,
+  finalizeDrawPolygonPoints,
+  undoDrawPolygonPoint,
+  type StagePt,
+} from "./drawPolygonDraft";
 
 export interface ExploreCanvasProps {
   doc: ExploreDoc;
@@ -43,6 +51,13 @@ export interface ExploreCanvasProps {
   /** Commit polygon vertex edits (drag / insert / remove). */
   onCommitPolygonPoints: (hotspotId: string, points: [number, number][]) => void;
   onCreateRect: (rect: Rect, opts?: { keepDrawTool?: boolean }) => void;
+  /** Point-by-point polygon draw (≥3 verts). Returns to select unless keepDrawTool. */
+  onCreatePolygon: (
+    points: [number, number][],
+    opts?: { keepDrawTool?: boolean },
+  ) => void;
+  /** Esc / empty right-click cancel while drawing a polygon. */
+  onCancelPolygonDraw?: () => void;
   /** Phase A context-menu actions (blank / rect / polygon). */
   onContextAction?: (action: CtxMenuActionId, target: CtxMenuTarget) => void;
   /** Logical stage size (default project resolution). */
@@ -127,6 +142,8 @@ export function ExploreCanvas({
   onCommitRect,
   onCommitPolygonPoints,
   onCreateRect,
+  onCreatePolygon,
+  onCancelPolygonDraw,
   onContextAction,
   width = doc.project.resolution.width,
   height = doc.project.resolution.height,
@@ -145,6 +162,13 @@ export function ExploreCanvas({
   // Synced ref so onCtxPick still has the target if close races ahead of pick.
   const ctxMenuRef = useRef(ctxMenu);
   ctxMenuRef.current = ctxMenu;
+  /** In-progress point-by-point polygon (only while tool === drawPolygon). */
+  const [polyDraft, setPolyDraft] = useState<StagePt[]>([]);
+  const [polyCursor, setPolyCursor] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const polyDraftRef = useRef(polyDraft);
+  polyDraftRef.current = polyDraft;
   const bgSrc = exploreCanvasBgSrc(doc.scene.bg);
   const [bgFailed, setBgFailed] = useState(false);
   useEffect(() => {
@@ -158,6 +182,32 @@ export function ExploreCanvas({
     setSelectedVertex((v) => (v && v.id === selected ? v : null));
   }, [selected]);
 
+  // Reset in-progress polygon when leaving the tool.
+  useEffect(() => {
+    if (tool !== "drawPolygon") {
+      setPolyDraft([]);
+      setPolyCursor(null);
+    }
+  }, [tool]);
+
+  const finishPolygonDraft = useCallback(
+    (raw: StagePt[], opts?: { keepDrawTool?: boolean }) => {
+      const pts = finalizeDrawPolygonPoints(raw);
+      if (!pts) return false;
+      onCreatePolygon(pts, opts);
+      setPolyDraft([]);
+      setPolyCursor(null);
+      return true;
+    },
+    [onCreatePolygon],
+  );
+
+  const cancelPolygonDraft = useCallback(() => {
+    setPolyDraft([]);
+    setPolyCursor(null);
+    onCancelPolygonDraw?.();
+  }, [onCancelPolygonDraw]);
+
   const commitRemoveVertex = useCallback(
     (hotspotId: string, index: number) => {
       const hs = doc.scene.hotspots.find((h) => h.id === hotspotId);
@@ -170,11 +220,44 @@ export function ExploreCanvas({
     [doc.scene.hotspots, onCommitPolygonPoints],
   );
 
+  // Draw-polygon: Enter finish / Esc cancel / Backspace undo last point.
+  // Capture so Workspace Delete/nudge does not fight the draft.
+  useEffect(() => {
+    if (tool !== "drawPolygon") return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const inEditable =
+        !!t &&
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      const action = drawPolygonKeyAction(e.key, {
+        inEditableField: inEditable,
+        pointCount: polyDraftRef.current.length,
+      });
+      if (!action) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (action === "cancel") {
+        cancelPolygonDraft();
+        return;
+      }
+      if (action === "undoPoint") {
+        setPolyDraft((pts) => undoDrawPolygonPoint(pts));
+        return;
+      }
+      if (action === "finish") {
+        finishPolygonDraft(polyDraftRef.current, { keepDrawTool: e.shiftKey });
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [cancelPolygonDraft, finishPolygonDraft, tool]);
+
   // Delete / Backspace removes selected vertex (≥3 remain).
   // Capture + stopImmediatePropagation so Workspace hotspot-delete does not also fire.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (tool === "drawPolygon") return;
       const t = e.target as HTMLElement | null;
       if (
         t &&
@@ -189,7 +272,7 @@ export function ExploreCanvas({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [commitRemoveVertex, selectedVertex]);
+  }, [commitRemoveVertex, selectedVertex, tool]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -207,6 +290,16 @@ export function ExploreCanvas({
         setDrag({ kind: "draw", start: p, current: rect });
         onSelectHotspot(null);
         setSelectedVertex(null);
+        return;
+      }
+
+      if (tool === "drawPolygon") {
+        const [cx, cy] = clampPoint(p.x, p.y, { width, height });
+        setPolyDraft((pts) => appendDrawPolygonPoint(pts, cx, cy));
+        setPolyCursor({ x: cx, y: cy });
+        onSelectHotspot(null);
+        setSelectedVertex(null);
+        setCtxMenu(null);
         return;
       }
 
@@ -295,8 +388,13 @@ export function ExploreCanvas({
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!drag || !ref.current) return;
+      if (!ref.current) return;
       const p = stagePoint(ref.current, e.clientX, e.clientY, width, height);
+      if (tool === "drawPolygon") {
+        const [cx, cy] = clampPoint(p.x, p.y, { width, height });
+        setPolyCursor({ x: cx, y: cy });
+      }
+      if (!drag) return;
       if (drag.kind === "draw") {
         setDrag({
           ...drag,
@@ -335,7 +433,7 @@ export function ExploreCanvas({
         });
       }
     },
-    [drag, height, width],
+    [drag, height, tool, width],
   );
 
   const onPointerUp = useCallback(
@@ -383,6 +481,16 @@ export function ExploreCanvas({
       const el = ref.current;
       if (!el) return;
       setDrag(null);
+      // While drawing a polygon: right-click undoes last point; empty → cancel.
+      if (tool === "drawPolygon") {
+        setCtxMenu(null);
+        if (polyDraftRef.current.length > 0) {
+          setPolyDraft((pts) => undoDrawPolygonPoint(pts));
+        } else {
+          cancelPolygonDraft();
+        }
+        return;
+      }
       const p = stagePoint(el, e.clientX, e.clientY, width, height);
       const hit = hitTestHotspots(doc.scene.hotspots, p.x, p.y);
       const target = canvasContextMenuTarget(doc.scene.hotspots, p.x, p.y, hit);
@@ -392,7 +500,7 @@ export function ExploreCanvas({
       setSelectedVertex(null);
       setCtxMenu({ clientX: e.clientX, clientY: e.clientY, target });
     },
-    [doc.scene.hotspots, height, onSelectHotspot, width],
+    [cancelPolygonDraft, doc.scene.hotspots, height, onSelectHotspot, tool, width],
   );
 
   const onCtxPick = useCallback(
@@ -406,12 +514,18 @@ export function ExploreCanvas({
     [onContextAction],
   );
 
-  /** Double-click near a polygon edge inserts a vertex. */
+  /** Double-click: finish point-by-point polygon, or insert vertex on edge. */
   const onDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
       const el = ref.current;
       if (!el || tool === "drawRect") return;
+      if (tool === "drawPolygon") {
+        e.preventDefault();
+        // Second click of dblclick already appended via pointerdown.
+        finishPolygonDraft(polyDraftRef.current, { keepDrawTool: e.shiftKey });
+        return;
+      }
       const p = stagePoint(el, e.clientX, e.clientY, width, height);
       const displayW = el.getBoundingClientRect().width;
       const pad = handlePadStage(width, displayW);
@@ -431,6 +545,7 @@ export function ExploreCanvas({
     },
     [
       doc.scene.hotspots,
+      finishPolygonDraft,
       height,
       onCommitPolygonPoints,
       onSelectHotspot,
@@ -478,7 +593,8 @@ export function ExploreCanvas({
         border: "1px solid #333",
         overflow: "hidden",
         touchAction: "none",
-        cursor: tool === "drawRect" ? "crosshair" : "default",
+        cursor:
+          tool === "drawRect" || tool === "drawPolygon" ? "crosshair" : "default",
         outline: "none",
       }}
       onPointerDown={(e) => {
@@ -687,6 +803,72 @@ export function ExploreCanvas({
             pointerEvents: "none",
           }}
         />
+      ) : null}
+      {tool === "drawPolygon" && (polyDraft.length > 0 || polyCursor) ? (
+        <svg
+          data-testid="draw-polygon-preview"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            overflow: "visible",
+          }}
+        >
+          {(() => {
+            const geo = drawPolygonPreviewGeometry(polyDraft, polyCursor);
+            const sw = Math.max(1.5, width / 500);
+            return (
+              <>
+                {geo.closedFill ? (
+                  <polygon
+                    points={geo.closedFill}
+                    fill="rgba(80,180,255,0.12)"
+                    stroke="none"
+                  />
+                ) : null}
+                {geo.polyline ? (
+                  <polyline
+                    points={geo.polyline}
+                    fill="none"
+                    stroke="#6cf"
+                    strokeWidth={sw}
+                    strokeDasharray={`${sw * 4} ${sw * 3}`}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {geo.closeEdge ? (
+                  <line
+                    x1={geo.closeEdge.x1}
+                    y1={geo.closeEdge.y1}
+                    x2={geo.closeEdge.x2}
+                    y2={geo.closeEdge.y2}
+                    stroke="#6cf"
+                    strokeWidth={sw}
+                    strokeOpacity={0.55}
+                    strokeDasharray={`${sw * 2} ${sw * 2}`}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {polyDraft.map(([vx, vy], i) => (
+                  <circle
+                    key={i}
+                    cx={vx}
+                    cy={vy}
+                    r={Math.max(3, width / 250)}
+                    fill={i === 0 ? "#fc6" : "#6cf"}
+                    stroke="#fff"
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </>
+            );
+          })()}
+        </svg>
       ) : null}
       {ctxMenu ? (
         <CanvasContextMenu

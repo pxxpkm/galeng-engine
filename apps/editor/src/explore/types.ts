@@ -131,7 +131,7 @@ export interface ExploreScene {
   onEnter?: ExploreAction[];
 }
 
-export type CanvasTool = "select" | "drawRect";
+export type CanvasTool = "select" | "drawRect" | "drawPolygon";
 
 export interface ExploreUi {
   selectedHotspotId: string | null;

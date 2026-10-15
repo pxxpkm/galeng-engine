@@ -827,7 +827,7 @@ export function HotspotInspector({ doc, hotspot, onUpdate }: HotspotInspectorPro
         </div>
       ) : (
         <div style={{ opacity: 0.65 }} data-testid="hotspot-polygon-note">
-          多邊形熱區：於畫布拖曳頂點調整形狀；雙擊邊可加點，Alt 點擊或選頂點後 Delete 可刪點（至少三點）。選熱區後方向鍵微移、Delete／Backspace 刪熱區
+          多邊形熱區：可用「畫多邊形」逐點繪製；於畫布拖曳頂點調整形狀；雙擊邊可加點，Alt 點擊或選頂點後 Delete 可刪點（至少三點）。選熱區後方向鍵微移、Delete／Backspace 刪熱區
         </div>
       )}
       <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333" }}>

@@ -986,6 +986,27 @@ export function ExploreWorkspace({
         >
           畫熱區
         </button>
+        <button
+          type="button"
+          data-testid="tool-draw-polygon"
+          data-active={doc.ui.canvasTool === "drawPolygon" ? "1" : "0"}
+          aria-pressed={doc.ui.canvasTool === "drawPolygon"}
+          title="逐點繪製多邊形熱區（雙擊或 Enter 完成；Esc 取消；右鍵撤銷上一點）"
+          onClick={() => {
+            setUi({ canvasTool: "drawPolygon", selectedHotspotId: null, selectedCell: null });
+          }}
+          style={
+            doc.ui.canvasTool === "drawPolygon"
+              ? {
+                  background: "#2a4a6a",
+                  border: "1px solid #6af",
+                  fontWeight: 600,
+                }
+              : undefined
+          }
+        >
+          畫多邊形
+        </button>
         <button type="button" data-testid="add-hotspot" onClick={() => applyCmd(addHotspot())}>
           ＋熱區
         </button>
@@ -1049,6 +1070,16 @@ export function ExploreWorkspace({
               applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
               if (!opts?.keepDrawTool) setUi({ canvasTool: "select" });
             }}
+            onCreatePolygon={(points, opts) => {
+              applyCmd(
+                addHotspot({
+                  name: "多邊形",
+                  shape: { type: "polygon", points },
+                }),
+              );
+              if (!opts?.keepDrawTool) setUi({ canvasTool: "select" });
+            }}
+            onCancelPolygonDraw={() => setUi({ canvasTool: "select" })}
             onContextAction={handleCanvasContextAction}
           />
           <div style={{ marginTop: 8 }}>
