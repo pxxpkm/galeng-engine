@@ -10,6 +10,7 @@ import {
   isRect,
   moveRect,
   normalizeRect,
+  pastDragThreshold,
   resizeHandleTestId,
   resizeRect,
   type Handle,
@@ -21,7 +22,7 @@ export interface ExploreCanvasProps {
   doc: ExploreDoc;
   onSelectHotspot: (id: string | null) => void;
   onCommitRect: (hotspotId: string, rect: Rect) => void;
-  onCreateRect: (rect: Rect) => void;
+  onCreateRect: (rect: Rect, opts?: { keepDrawTool?: boolean }) => void;
   /** Logical stage size (default project resolution). */
   width?: number;
   height?: number;
@@ -29,8 +30,22 @@ export interface ExploreCanvasProps {
 
 type Drag =
   | { kind: "draw"; start: { x: number; y: number }; current: Rect }
-  | { kind: "move"; id: string; origin: Rect; last: { x: number; y: number } }
-  | { kind: "resize"; id: string; handle: Handle; origin: Rect };
+  | {
+      kind: "move";
+      id: string;
+      origin: Rect;
+      last: { x: number; y: number };
+      pointerStart: { clientX: number; clientY: number };
+      active: boolean;
+    }
+  | {
+      kind: "resize";
+      id: string;
+      handle: Handle;
+      origin: Rect;
+      pointerStart: { clientX: number; clientY: number };
+      active: boolean;
+    };
 
 function stagePoint(
   el: HTMLElement,
@@ -116,11 +131,25 @@ export function ExploreCanvas({
         if (hs && isRect(hs.shape)) {
           const handle = hitTestHandle(hs.shape, p.x, p.y, pad);
           if (handle) {
-            setDrag({ kind: "resize", id: selected, handle, origin: { ...hs.shape } });
+            setDrag({
+              kind: "resize",
+              id: selected,
+              handle,
+              origin: { ...hs.shape },
+              pointerStart: { clientX: e.clientX, clientY: e.clientY },
+              active: false,
+            });
             return;
           }
           if (hitTestHotspots([hs], p.x, p.y) === selected) {
-            setDrag({ kind: "move", id: selected, origin: { ...hs.shape }, last: p });
+            setDrag({
+              kind: "move",
+              id: selected,
+              origin: { ...hs.shape },
+              last: p,
+              pointerStart: { clientX: e.clientX, clientY: e.clientY },
+              active: false,
+            });
             return;
           }
         }
@@ -131,7 +160,14 @@ export function ExploreCanvas({
       if (hit) {
         const hs = doc.scene.hotspots.find((h) => h.id === hit);
         if (hs && isRect(hs.shape)) {
-          setDrag({ kind: "move", id: hit, origin: { ...hs.shape }, last: p });
+          setDrag({
+            kind: "move",
+            id: hit,
+            origin: { ...hs.shape },
+            last: p,
+            pointerStart: { clientX: e.clientX, clientY: e.clientY },
+            active: false,
+          });
         }
       }
     },
@@ -148,16 +184,22 @@ export function ExploreCanvas({
           current: clampRect(normalizeRect(drag.start, p), { width, height }),
         });
       } else if (drag.kind === "move") {
+        const client = { clientX: e.clientX, clientY: e.clientY };
+        if (!drag.active && !pastDragThreshold(drag.pointerStart, client)) return;
         const dx = p.x - drag.last.x;
         const dy = p.y - drag.last.y;
         setDrag({
           ...drag,
+          active: true,
           last: p,
           origin: clampRect(moveRect(drag.origin, dx, dy), { width, height }),
         });
       } else if (drag.kind === "resize") {
+        const client = { clientX: e.clientX, clientY: e.clientY };
+        if (!drag.active && !pastDragThreshold(drag.pointerStart, client)) return;
         setDrag({
           ...drag,
+          active: true,
           origin: clampRect(resizeRect(drag.origin, drag.handle, p.x, p.y), {
             width,
             height,
@@ -168,26 +210,41 @@ export function ExploreCanvas({
     [drag, height, width],
   );
 
-  const onPointerUp = useCallback(() => {
-    if (!drag) return;
-    if (drag.kind === "draw") {
-      if (drag.current.w >= 8 && drag.current.h >= 8) onCreateRect(drag.current);
-    } else if (drag.kind === "move" || drag.kind === "resize") {
-      const hs = doc.scene.hotspots.find((h) => h.id === drag.id);
-      const same =
-        hs &&
-        isRect(hs.shape) &&
-        hs.shape.x === drag.origin.x &&
-        hs.shape.y === drag.origin.y &&
-        hs.shape.w === drag.origin.w &&
-        hs.shape.h === drag.origin.h;
-      if (!same) onCommitRect(drag.id, drag.origin);
-    }
-    setDrag(null);
-  }, [drag, doc.scene.hotspots, onCommitRect, onCreateRect]);
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!drag) return;
+      if (drag.kind === "draw") {
+        if (drag.current.w >= 8 && drag.current.h >= 8) {
+          onCreateRect(drag.current, { keepDrawTool: e.shiftKey });
+        }
+      } else if (drag.kind === "move" || drag.kind === "resize") {
+        // Below threshold: treat as click — no commit / no dirty.
+        if (!drag.active) {
+          setDrag(null);
+          return;
+        }
+        const hs = doc.scene.hotspots.find((h) => h.id === drag.id);
+        const same =
+          hs &&
+          isRect(hs.shape) &&
+          hs.shape.x === drag.origin.x &&
+          hs.shape.y === drag.origin.y &&
+          hs.shape.w === drag.origin.w &&
+          hs.shape.h === drag.origin.h;
+        if (!same) onCommitRect(drag.id, drag.origin);
+      }
+      setDrag(null);
+    },
+    [drag, doc.scene.hotspots, onCommitRect, onCreateRect],
+  );
 
   const previewRect = (id: string, shape: Rect): Rect => {
-    if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) {
+    if (
+      drag &&
+      (drag.kind === "move" || drag.kind === "resize") &&
+      drag.active &&
+      drag.id === id
+    ) {
       return drag.origin;
     }
     return shape;

@@ -156,3 +156,58 @@ export function rectHasNonInteger(rect: Rect): boolean {
 export function resizeHandleTestId(hotspotId: string, handle: Handle): string {
   return `resize-handle-${hotspotId}-${handle}`;
 }
+
+/** Screen-pixel distance before move/resize becomes an active drag (avoids click→dirty). */
+export const DRAG_THRESHOLD_SCREEN_PX = 4;
+
+export function pastDragThreshold(
+  start: { clientX: number; clientY: number },
+  current: { clientX: number; clientY: number },
+  thresholdPx: number = DRAG_THRESHOLD_SCREEN_PX,
+): boolean {
+  const dx = current.clientX - start.clientX;
+  const dy = current.clientY - start.clientY;
+  return Math.hypot(dx, dy) >= thresholdPx;
+}
+
+const DEFAULT_HS_W = 200;
+const DEFAULT_HS_H = 160;
+const PLACE_OFFSET = 24;
+
+/**
+ * Default rect for 「＋熱區」: first near canvas centre; later offset from the
+ * last rect hotspot so they do not stack at (100,100).
+ */
+export function defaultHotspotPlacement(
+  hotspots: Hotspot[],
+  resolution: { width: number; height: number },
+  size: { w: number; h: number } = { w: DEFAULT_HS_W, h: DEFAULT_HS_H },
+): Rect {
+  const centered = (): Rect =>
+    clampRect(
+      {
+        x: Math.round((resolution.width - size.w) / 2),
+        y: Math.round((resolution.height - size.h) / 2),
+        w: size.w,
+        h: size.h,
+      },
+      resolution,
+    );
+
+  for (let i = hotspots.length - 1; i >= 0; i -= 1) {
+    const shape = hotspots[i]!.shape;
+    if (shape.type === "rect") {
+      return clampRect(
+        {
+          x: shape.x + PLACE_OFFSET,
+          y: shape.y + PLACE_OFFSET,
+          w: size.w,
+          h: size.h,
+        },
+        resolution,
+      );
+    }
+  }
+  return centered();
+}
+

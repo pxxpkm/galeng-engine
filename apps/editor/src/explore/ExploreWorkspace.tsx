@@ -642,14 +642,38 @@ export function ExploreWorkspace({
         <button
           type="button"
           data-testid="tool-select"
+          data-active={doc.ui.canvasTool === "select" ? "1" : "0"}
+          aria-pressed={doc.ui.canvasTool === "select"}
+          title="選取／移動／調整熱區"
           onClick={() => setUi({ canvasTool: "select" })}
+          style={
+            doc.ui.canvasTool === "select"
+              ? {
+                  background: "#2a4a6a",
+                  border: "1px solid #6af",
+                  fontWeight: 600,
+                }
+              : undefined
+          }
         >
           選取
         </button>
         <button
           type="button"
           data-testid="tool-draw"
+          data-active={doc.ui.canvasTool === "drawRect" ? "1" : "0"}
+          aria-pressed={doc.ui.canvasTool === "drawRect"}
+          title="繪製矩形熱區（Shift 維持連續繪製）"
           onClick={() => setUi({ canvasTool: "drawRect" })}
+          style={
+            doc.ui.canvasTool === "drawRect"
+              ? {
+                  background: "#2a4a6a",
+                  border: "1px solid #6af",
+                  fontWeight: 600,
+                }
+              : undefined
+          }
         >
           畫熱區
         </button>
@@ -708,9 +732,10 @@ export function ExploreWorkspace({
             doc={doc}
             onSelectHotspot={selectHotspotOnly}
             onCommitRect={(id, rect) => applyCmd(setHotspotRect(id, rect))}
-            onCreateRect={(rect: Rect) =>
-              applyCmd(addHotspot({ shape: { type: "rect", ...rect } }))
-            }
+            onCreateRect={(rect: Rect, opts) => {
+              applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
+              if (!opts?.keepDrawTool) setUi({ canvasTool: "select" });
+            }}
           />
           <div style={{ marginTop: 8 }}>
             <VerbMatrix

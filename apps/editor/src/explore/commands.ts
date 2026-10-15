@@ -1,4 +1,4 @@
-import { roundRect } from "./canvas";
+import { defaultHotspotPlacement, roundRect } from "./canvas";
 import type { Command } from "./commandBus";
 import {
   sameOn,
@@ -30,7 +30,10 @@ export function addHotspot(partial?: Partial<Hotspot>): Command {
       const hs: Hotspot = {
         id,
         name: partial?.name ?? id,
-        shape: partial?.shape ?? { type: "rect", x: 100, y: 100, w: 200, h: 160 },
+        shape: partial?.shape ?? {
+          type: "rect",
+          ...defaultHotspotPlacement(doc.scene.hotspots, doc.project.resolution),
+        },
         visibleIf: partial?.visibleIf ?? null,
         enabledIf: partial?.enabledIf ?? null,
         defaultVerb: partial?.defaultVerb,

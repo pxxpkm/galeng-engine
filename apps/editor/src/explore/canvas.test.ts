@@ -4,12 +4,14 @@ import {
   HANDLE_PAD,
   HANDLE_SCREEN_PX,
   clampRect,
+  defaultHotspotPlacement,
   handleCenters,
   handlePadStage,
   hitTestHandle,
   hitTestHotspots,
   moveRect,
   normalizeRect,
+  pastDragThreshold,
   resizeHandleTestId,
   resizeRect,
 } from "./canvas";
@@ -111,5 +113,30 @@ describe("canvas geometry", () => {
 
   it("builds resize-handle test ids", () => {
     expect(resizeHandleTestId("desk", "se")).toBe("resize-handle-desk-se");
+  });
+});
+
+describe("drag threshold + hotspot placement", () => {
+  it("pastDragThreshold uses screen pixels", () => {
+    const start = { clientX: 10, clientY: 10 };
+    expect(pastDragThreshold(start, { clientX: 12, clientY: 10 })).toBe(false);
+    expect(pastDragThreshold(start, { clientX: 14, clientY: 10 })).toBe(true);
+    expect(pastDragThreshold(start, { clientX: 10, clientY: 14 })).toBe(true);
+  });
+
+  it("defaultHotspotPlacement centres first then offsets", () => {
+    const res = { width: 1920, height: 1080 };
+    const first = defaultHotspotPlacement([], res);
+    expect(first).toEqual({
+      x: Math.round((1920 - 200) / 2),
+      y: Math.round((1080 - 160) / 2),
+      w: 200,
+      h: 160,
+    });
+    const hs: Hotspot[] = [
+      { id: "a", name: "a", shape: { type: "rect", x: 100, y: 80, w: 200, h: 160 } },
+    ];
+    const second = defaultHotspotPlacement(hs, res);
+    expect(second).toEqual({ x: 124, y: 104, w: 200, h: 160 });
   });
 });
