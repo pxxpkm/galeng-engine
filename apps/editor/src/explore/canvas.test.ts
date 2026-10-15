@@ -12,6 +12,9 @@ import {
   moveRect,
   normalizeRect,
   pastDragThreshold,
+  pointInPolygon,
+  polygonBounds,
+  polygonSvgPoints,
   resizeHandleTestId,
   resizeRect,
 } from "./canvas";
@@ -36,7 +39,7 @@ describe("canvas geometry", () => {
     expect(hitTestHotspots(hs, 10, 10)).toBe("a");
   });
 
-  it("ignores polygons for edit hit", () => {
+  it("hits polygons via point-in-polygon", () => {
     const hs: Hotspot[] = [
       {
         id: "poly",
@@ -44,7 +47,16 @@ describe("canvas geometry", () => {
         shape: { type: "polygon", points: [[0, 0], [100, 0], [100, 100]] },
       },
     ];
-    expect(hitTestHotspots(hs, 10, 10)).toBeNull();
+    expect(hitTestHotspots(hs, 10, 10)).toBe("poly");
+    expect(hitTestHotspots(hs, 10, 90)).toBeNull(); // outside triangle (above hypotenuse)
+  });
+
+  it("pointInPolygon / bounds / svg points helpers", () => {
+    const pts: [number, number][] = [[0, 0], [100, 0], [100, 100]];
+    expect(pointInPolygon(10, 10, pts)).toBe(true);
+    expect(pointInPolygon(10, 90, pts)).toBe(false);
+    expect(polygonBounds(pts)).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+    expect(polygonSvgPoints(pts)).toBe("0,0 100,0 100,100");
   });
 
   it("resizes from se handle", () => {

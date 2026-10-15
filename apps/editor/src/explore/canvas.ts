@@ -25,6 +25,59 @@ export function isRect(shape: HotspotShape): shape is Rect & { type: "rect" } {
   return shape.type === "rect";
 }
 
+export function isPolygon(
+  shape: HotspotShape,
+): shape is { type: "polygon"; points: [number, number][] } {
+  return shape.type === "polygon";
+}
+
+/** Axis-aligned bounds of a polygon (for labels). */
+export function polygonBounds(points: [number, number][]): Rect | null {
+  if (points.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return roundRect({
+    x: minX,
+    y: minY,
+    w: Math.max(1, maxX - minX),
+    h: Math.max(1, maxY - minY),
+  });
+}
+
+/** Ray-casting point-in-polygon (stage coords). */
+export function pointInPolygon(
+  px: number,
+  py: number,
+  points: [number, number][],
+): boolean {
+  if (points.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i]![0];
+    const yi = points[i]![1];
+    const xj = points[j]![0];
+    const yj = points[j]![1];
+    const denom = yj - yi || 1e-12;
+    const intersect =
+      yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / denom + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/** SVG points attribute from polygon vertices. */
+export function polygonSvgPoints(points: [number, number][]): string {
+  return points.map(([x, y]) => `${x},${y}`).join(" ");
+}
+
 export function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number }): Rect {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
@@ -46,11 +99,12 @@ export function pointInRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && py >= r.y && px < r.x + r.w && py < r.y + r.h;
 }
 
-/** Later hotspots win (same as runtime hit-test). Polygons ignored for edit hit. */
+/** Later hotspots win (same as runtime hit-test). Rect + polygon. */
 export function hitTestHotspots(hotspots: Hotspot[], px: number, py: number): string | null {
   for (let i = hotspots.length - 1; i >= 0; i -= 1) {
     const h = hotspots[i]!;
     if (h.shape.type === "rect" && pointInRect(px, py, h.shape)) return h.id;
+    if (h.shape.type === "polygon" && pointInPolygon(px, py, h.shape.points)) return h.id;
   }
   return null;
 }

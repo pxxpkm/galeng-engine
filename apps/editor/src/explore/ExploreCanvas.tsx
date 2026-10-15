@@ -7,10 +7,13 @@ import {
   handlePadStage,
   hitTestHandle,
   hitTestHotspots,
+  isPolygon,
   isRect,
   moveRect,
   normalizeRect,
   pastDragThreshold,
+  polygonBounds,
+  polygonSvgPoints,
   resizeHandleTestId,
   resizeRect,
   type Handle,
@@ -311,20 +314,53 @@ export function ExploreCanvas({
         </div>
       ) : null}
       {doc.scene.hotspots.map((h) => {
+        if (isPolygon(h.shape)) {
+          const sel = selected === h.id;
+          const bounds = polygonBounds(h.shape.points);
+          return (
+            <svg
+              key={h.id}
+              data-testid={`hotspot-poly-${h.id}`}
+              data-selected={sel ? "1" : "0"}
+              viewBox={`0 0 ${width} ${height}`}
+              preserveAspectRatio="none"
+              title={`${h.name}（多邊形）`}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+                overflow: "visible",
+              }}
+            >
+              <polygon
+                points={polygonSvgPoints(h.shape.points)}
+                fill={sel ? "rgba(80,180,255,0.25)" : "rgba(60,160,120,0.18)"}
+                stroke={sel ? "#6cf" : "#4a8"}
+                strokeWidth={sel ? Math.max(2, width / 400) : Math.max(1, width / 600)}
+                vectorEffect="non-scaling-stroke"
+              />
+              {bounds ? (
+                <text
+                  x={bounds.x + 4}
+                  y={bounds.y + 14}
+                  fill="#dff"
+                  fontSize={Math.max(12, width / 100)}
+                  style={{ textShadow: "0 1px 2px #000" }}
+                >
+                  {h.name}
+                </text>
+              ) : null}
+            </svg>
+          );
+        }
         if (!isRect(h.shape)) {
           return (
             <div
               key={h.id}
-              data-testid={`hotspot-poly-${h.id}`}
-              title={`${h.name}（多邊形 — 稍後編輯）`}
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                fontSize: 11,
-                color: "#888",
-                padding: 4,
-              }}
+              data-testid={`hotspot-unknown-${h.id}`}
+              style={{ position: "absolute", left: 0, top: 0, fontSize: 11, color: "#888" }}
             />
           );
         }

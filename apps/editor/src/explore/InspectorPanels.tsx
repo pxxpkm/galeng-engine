@@ -7,6 +7,7 @@ import {
   addRule,
   addWhen,
   editableActionTypeLabel,
+  emptySwitchPred,
   getCellRules,
   interactionCoalesceKey,
   isEditableAction,
@@ -45,6 +46,8 @@ export function CellInspector({ doc, onChangeRules, sceneCatalog = [] }: CellIns
   const rules = getCellRules(doc, cell.hotspotId, cell.on);
   const switches = doc.project.switches;
   const items = doc.project.items;
+  const characters = doc.project.characters;
+  const locale = doc.project.locale || "zh-Hant";
   const effectIds = (doc.project.effectLibrary ?? []).map((e) => e.id);
   const onLabel =
     "verb" in cell.on ? `動詞：${cell.on.verb}` : `物品：${cell.on.item}`;
@@ -68,6 +71,8 @@ export function CellInspector({ doc, onChangeRules, sceneCatalog = [] }: CellIns
           rule={rule}
           switches={switches}
           items={items}
+          characters={characters}
+          locale={locale}
           hotspotId={cell.hotspotId}
           on={cell.on}
           sceneCatalog={sceneCatalog}
@@ -94,6 +99,8 @@ function RuleCard({
   rule,
   switches,
   items,
+  characters,
+  locale,
   hotspotId,
   on,
   sceneCatalog,
@@ -106,6 +113,8 @@ function RuleCard({
   rule: InteractionRule;
   switches: ExploreDoc["project"]["switches"];
   items: ExploreDoc["project"]["items"];
+  characters: ExploreDoc["project"]["characters"];
+  locale: string;
   hotspotId: string;
   on: InteractionOn;
   sceneCatalog: SceneCatalogEntry[];
@@ -239,6 +248,8 @@ function RuleCard({
               action={a}
               switches={switches}
               items={items}
+              characters={characters}
+              locale={locale}
               hotspotId={hotspotId}
               on={on}
               sceneCatalog={sceneCatalog}
@@ -406,6 +417,8 @@ function EditableActionRow({
   action,
   switches,
   items,
+  characters,
+  locale,
   hotspotId,
   on,
   sceneCatalog,
@@ -418,6 +431,8 @@ function EditableActionRow({
   action: Extract<ExploreAction, { type: EditableActionType }>;
   switches: ExploreDoc["project"]["switches"];
   items: ExploreDoc["project"]["items"];
+  characters: ExploreDoc["project"]["characters"];
+  locale: string;
   hotspotId: string;
   on: InteractionOn;
   sceneCatalog: SceneCatalogEntry[];
@@ -450,22 +465,56 @@ function EditableActionRow({
     >
       {typeSelect}
       {action.type === "say" ? (
-        <input
-          data-testid={
-            ruleIndex === 0 && actionIndex === 0
-              ? "inspector-say"
-              : `action-say-${ruleIndex}-${actionIndex}`
-          }
-          style={{ flex: 1, minWidth: 80 }}
-          value={action.text}
-          onChange={(e) => {
-            const next: ExploreAction = { type: "say", text: e.target.value, speaker: action.speaker };
-            onPatch(
-              patchAction(allRules, ruleIndex, actionIndex, next),
-              interactionCoalesceKey(hotspotId, on, ruleIndex, actionIndex, "say"),
-            );
-          }}
-        />
+        <>
+          <select
+            data-testid={
+              ruleIndex === 0 && actionIndex === 0
+                ? "inspector-say-speaker"
+                : `action-say-speaker-${ruleIndex}-${actionIndex}`
+            }
+            value={action.speaker ?? ""}
+            title="說話者"
+            onChange={(e) => {
+              const speaker = e.target.value || undefined;
+              const next: ExploreAction = {
+                type: "say",
+                text: action.text,
+                speaker,
+              };
+              onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
+            }}
+          >
+            <option value="">（無說話者）</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {charLabel(c, locale)} ({c.id})
+              </option>
+            ))}
+            {action.speaker && !characters.some((c) => c.id === action.speaker) ? (
+              <option value={action.speaker}>{action.speaker}（未知）</option>
+            ) : null}
+          </select>
+          <input
+            data-testid={
+              ruleIndex === 0 && actionIndex === 0
+                ? "inspector-say"
+                : `action-say-${ruleIndex}-${actionIndex}`
+            }
+            style={{ flex: 1, minWidth: 80 }}
+            value={action.text}
+            onChange={(e) => {
+              const next: ExploreAction = {
+                type: "say",
+                text: e.target.value,
+                speaker: action.speaker,
+              };
+              onPatch(
+                patchAction(allRules, ruleIndex, actionIndex, next),
+                interactionCoalesceKey(hotspotId, on, ruleIndex, actionIndex, "say"),
+              );
+            }}
+          />
+        </>
       ) : null}
       {action.type === "setSwitch" ? (
         <>
@@ -570,6 +619,111 @@ function EditableActionRow({
   );
 }
 
+
+/** Shared When-style switch predicate rows (rules + hotspot visibleIf/enabledIf). */
+function SwitchPredEditor({
+  preds,
+  switches,
+  testIdPrefix,
+  onChange,
+}: {
+  preds: Pred[];
+  switches: ExploreDoc["project"]["switches"];
+  testIdPrefix: string;
+  onChange: (next: Pred[]) => void;
+}) {
+  const list = preds ?? [];
+  return (
+    <div data-testid={testIdPrefix}>
+      {list.map((p, pi) =>
+        isEditablePred(p) ? (
+          <div
+            key={pi}
+            data-testid={`${testIdPrefix}-row-${pi}`}
+            style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}
+          >
+            <select
+              data-testid={`${testIdPrefix}-switch-${pi}`}
+              value={p.switch}
+              onChange={(e) => {
+                const next = list.map((x, i) =>
+                  i === pi ? ({ switch: e.target.value, is: p.is } as Pred) : x,
+                );
+                onChange(next);
+              }}
+            >
+              <option value="">（選擇開關）</option>
+              {switches.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name ? `${s.name} (${s.id})` : s.id}
+                </option>
+              ))}
+              {p.switch && !switches.some((s) => s.id === p.switch) ? (
+                <option value={p.switch}>{p.switch}（未知）</option>
+              ) : null}
+            </select>
+            <select
+              data-testid={`${testIdPrefix}-is-${pi}`}
+              value={p.is ? "true" : "false"}
+              onChange={(e) => {
+                const next = list.map((x, i) =>
+                  i === pi
+                    ? ({ switch: p.switch, is: e.target.value === "true" } as Pred)
+                    : x,
+                );
+                onChange(next);
+              }}
+            >
+              <option value="true">為真</option>
+              <option value="false">為假</option>
+            </select>
+            <button
+              type="button"
+              data-testid={`${testIdPrefix}-remove-${pi}`}
+              onClick={() => onChange(list.filter((_, i) => i !== pi))}
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div
+            key={pi}
+            data-testid={`${testIdPrefix}-readonly-${pi}`}
+            style={{
+              display: "inline-block",
+              padding: "2px 6px",
+              marginBottom: 4,
+              marginRight: 4,
+              background: "#333",
+              borderRadius: 4,
+              opacity: 0.85,
+            }}
+            title="未支援的條件（只讀保留）"
+          >
+            {predChipLabel(p)}
+          </div>
+        ),
+      )}
+      <button
+        type="button"
+        data-testid={`${testIdPrefix}-add`}
+        onClick={() =>
+          onChange([...list, emptySwitchPred(switches[0]?.id ?? "")])
+        }
+      >
+        ＋條件
+      </button>
+    </div>
+  );
+}
+
+function charLabel(
+  c: ExploreDoc["project"]["characters"][number],
+  locale: string,
+): string {
+  return c.display?.[locale] ?? c.display?.["zh-Hant"] ?? c.display?.en ?? c.id;
+}
+
 export interface HotspotInspectorProps {
   doc: ExploreDoc;
   hotspot: Hotspot;
@@ -672,8 +826,32 @@ export function HotspotInspector({ doc, hotspot, onUpdate }: HotspotInspectorPro
           ))}
         </div>
       ) : (
-        <div style={{ opacity: 0.65 }}>多邊形熱區（座標稍後編輯）</div>
+        <div style={{ opacity: 0.65 }} data-testid="hotspot-polygon-note">
+          多邊形熱區（頂點稍後編輯；可於畫布選取）
+        </div>
       )}
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333" }}>
+        <div style={{ opacity: 0.75, marginBottom: 4 }}>顯示條件（visibleIf）</div>
+        <SwitchPredEditor
+          preds={hotspot.visibleIf ?? []}
+          switches={doc.project.switches}
+          testIdPrefix="hs-visibleIf"
+          onChange={(next) =>
+            onUpdate({ visibleIf: next.length ? next : null }, `hs-visibleIf:${hotspot.id}`)
+          }
+        />
+      </div>
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333" }}>
+        <div style={{ opacity: 0.75, marginBottom: 4 }}>啟用條件（enabledIf）</div>
+        <SwitchPredEditor
+          preds={hotspot.enabledIf ?? []}
+          switches={doc.project.switches}
+          testIdPrefix="hs-enabledIf"
+          onChange={(next) =>
+            onUpdate({ enabledIf: next.length ? next : null }, `hs-enabledIf:${hotspot.id}`)
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -693,6 +871,8 @@ export function OnEnterInspector({
   const actions = doc.scene.onEnter ?? [];
   const switches = doc.project.switches;
   const items = doc.project.items;
+  const characters = doc.project.characters;
+  const locale = doc.project.locale || "zh-Hant";
   const effectIds = (doc.project.effectLibrary ?? []).map((e) => e.id);
   const list = actions.length ? actions : [];
 
@@ -714,6 +894,8 @@ export function OnEnterInspector({
             action={a}
             switches={switches}
             items={items}
+            characters={characters}
+            locale={locale}
             sceneCatalog={sceneCatalog}
             effectIds={effectIds}
             allActions={list}
@@ -759,6 +941,8 @@ function OnEnterActionRow({
   action,
   switches,
   items,
+  characters,
+  locale,
   sceneCatalog,
   effectIds,
   allActions,
@@ -768,6 +952,8 @@ function OnEnterActionRow({
   action: Extract<ExploreAction, { type: EditableActionType }>;
   switches: ExploreDoc["project"]["switches"];
   items: ExploreDoc["project"]["items"];
+  characters: ExploreDoc["project"]["characters"];
+  locale: string;
   sceneCatalog: SceneCatalogEntry[];
   effectIds: string[];
   allActions: ExploreAction[];
@@ -794,22 +980,48 @@ function OnEnterActionRow({
         ))}
       </select>
       {action.type === "say" ? (
-        <input
-          data-testid={`onenter-say-${actionIndex}`}
-          style={{ flex: 1, minWidth: 80 }}
-          value={action.text}
-          onChange={(e) => {
-            const next: ExploreAction = {
-              type: "say",
-              text: e.target.value,
-              speaker: action.speaker,
-            };
-            onPatch(
-              patchActionInList(allActions, actionIndex, next),
-              onEnterCoalesceKey(actionIndex, "say"),
-            );
-          }}
-        />
+        <>
+          <select
+            data-testid={`onenter-say-speaker-${actionIndex}`}
+            value={action.speaker ?? ""}
+            title="說話者"
+            onChange={(e) => {
+              const speaker = e.target.value || undefined;
+              const next: ExploreAction = {
+                type: "say",
+                text: action.text,
+                speaker,
+              };
+              onPatch(patchActionInList(allActions, actionIndex, next));
+            }}
+          >
+            <option value="">（無說話者）</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {charLabel(c, locale)} ({c.id})
+              </option>
+            ))}
+            {action.speaker && !characters.some((c) => c.id === action.speaker) ? (
+              <option value={action.speaker}>{action.speaker}（未知）</option>
+            ) : null}
+          </select>
+          <input
+            data-testid={`onenter-say-${actionIndex}`}
+            style={{ flex: 1, minWidth: 80 }}
+            value={action.text}
+            onChange={(e) => {
+              const next: ExploreAction = {
+                type: "say",
+                text: e.target.value,
+                speaker: action.speaker,
+              };
+              onPatch(
+                patchActionInList(allActions, actionIndex, next),
+                onEnterCoalesceKey(actionIndex, "say"),
+              );
+            }}
+          />
+        </>
       ) : null}
       {action.type === "setSwitch" ? (
         <>
