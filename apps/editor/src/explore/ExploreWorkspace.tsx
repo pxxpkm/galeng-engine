@@ -46,11 +46,15 @@ import { ProblemsPanel } from "./ProblemsPanel";
 import { TracePanel } from "./TracePanel";
 import { resolveTrace } from "./trace";
 import {
+  buildProblemHotspotIds,
+  buildProblemMatrixKeys,
   collectExploreProblems,
   collectExploreProblemsForScenes,
   countErrorProblemsInGroups,
   flattenSceneProblemGroups,
   formatPackProblemReport,
+  formatProblemsBadge,
+  problemNavTarget,
   type ExploreProblem,
 } from "./problems";
 import { PresetBrowser } from "./PresetBrowser";
@@ -510,9 +514,22 @@ export function ExploreWorkspace({
   useEffect(() => {
     setPackScanProblems(null);
   }, [doc]);
-  const problemHs = useMemo(
-    () => new Set(problems.filter((p) => p.hotspotId).map((p) => p.hotspotId!)),
-    [problems],
+  const problemHs = useMemo(() => buildProblemHotspotIds(problems), [problems]);
+  const problemKeys = useMemo(() => buildProblemMatrixKeys(problems), [problems]);
+
+  const navigateProblem = useCallback(
+    (p: ExploreProblem) => {
+      const target = problemNavTarget(p);
+      if (target.kind === "cell") {
+        setUi(selectionAfterCellPick(target.hotspotId, target.on));
+      } else if (target.kind === "hotspot") {
+        selectHotspot(target.hotspotId);
+      } else if (target.kind === "onEnter") {
+        const el = document.querySelector('[data-testid="on-enter-inspector"]');
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    },
+    [setUi, selectHotspot],
   );
 
   const errorCount = problems.filter((p) => p.severity === "error").length;
@@ -751,6 +768,7 @@ export function ExploreWorkspace({
               onSelectCell={(hotspotId, on) => setUi(selectionAfterCellPick(hotspotId, on))}
               onSelectHotspot={(hotspotId) => selectHotspot(hotspotId)}
               problemHotspotIds={problemHs}
+              problemKeys={problemKeys}
             />
           </div>
         </div>
@@ -900,7 +918,7 @@ export function ExploreWorkspace({
             問題
             {problems.length ? (
               <span data-testid="problems-badge" style={{ marginLeft: 6, opacity: 0.85 }}>
-                {errorCount}/{warnCount}
+                {formatProblemsBadge(errorCount, warnCount)}
               </span>
             ) : null}
           </button>
@@ -943,7 +961,7 @@ export function ExploreWorkspace({
           </button>
         </div>
         {bottomTab === "problems" ? (
-          <ProblemsPanel problems={packScanProblems ?? problems} />
+          <ProblemsPanel problems={packScanProblems ?? problems} onNavigate={navigateProblem} />
         ) : bottomTab === "trace" ? (
           <TracePanel resolution={traceResolution} />
         ) : (

@@ -38,13 +38,19 @@ function findInteraction(
   return interactions.find((i) => i.hotspot === hotspotId && sameOn(i.on, on));
 }
 
-function kindOf(rules: InteractionRule[]): MatrixCellKind {
+/** Prefer "problem" when this cell has a linked ExploreProblem. */
+export function kindOf(rules: InteractionRule[], hasProblem = false): MatrixCellKind {
+  if (hasProblem) return "problem";
   if (rules.length === 0) return "empty";
   if (rules.length > 1 || rules.some((r) => r.when.length > 0)) return "multi";
   return "filled";
 }
 
-export function buildMatrix(doc: ExploreDoc): MatrixModel {
+export function buildMatrix(
+  doc: ExploreDoc,
+  /** Keys from buildProblemMatrixKeys — cells show「!」. */
+  problemKeys?: Set<string>,
+): MatrixModel {
   const hotspotIds = doc.scene.hotspots.map((h) => h.id);
   const hotspotNames: Record<string, string> = {};
   for (const h of doc.scene.hotspots) hotspotNames[h.id] = h.name;
@@ -66,7 +72,7 @@ export function buildMatrix(doc: ExploreDoc): MatrixModel {
       cells.set(cellMapKey(hid, on), {
         hotspotId: hid,
         on,
-        kind: kindOf(rules),
+        kind: kindOf(rules, problemKeys?.has(cellMapKey(hid, on)) ?? false),
         rules,
         fallbackPreview: rules.length === 0 ? fb : null,
       });
@@ -78,7 +84,7 @@ export function buildMatrix(doc: ExploreDoc): MatrixModel {
       cells.set(cellMapKey(hid, on), {
         hotspotId: hid,
         on,
-        kind: kindOf(rules),
+        kind: kindOf(rules, problemKeys?.has(cellMapKey(hid, on)) ?? false),
         rules,
         fallbackPreview:
           rules.length === 0

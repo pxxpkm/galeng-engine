@@ -6,7 +6,10 @@ export interface VerbMatrixProps {
   onSelectCell: (hotspotId: string, on: InteractionOn) => void;
   /** Matrix row header (hotspot name) — select hotspot; rebind last verb/item if any. */
   onSelectHotspot?: (hotspotId: string) => void;
+  /** Hotspot ids with any problem (row tint). */
   problemHotspotIds?: Set<string>;
+  /** Cell keys from buildProblemMatrixKeys — kind「problem」→ ! */
+  problemKeys?: Set<string>;
 }
 
 function cellLabel(cell: MatrixCell): string {
@@ -25,18 +28,19 @@ function cellLabel(cell: MatrixCell): string {
 }
 
 function cellTitle(cell: MatrixCell): string {
+  if (cell.kind === "problem") return "此格有問題";
   if (cell.kind === "empty" && cell.fallbackPreview) {
-    return `fallback: ${cell.fallbackPreview}`;
+    return `後備：${cell.fallbackPreview}`;
   }
   if (cell.rules.length > 0) {
-    return `${cell.rules.length} rule(s)`;
+    return `${cell.rules.length} 條規則`;
   }
-  return "empty";
+  return "空白";
 }
 
 /** Sparse Verb×hotspot (+ item columns) matrix. Click cell → Inspector. */
-export function VerbMatrix({ doc, onSelectCell, onSelectHotspot, problemHotspotIds }: VerbMatrixProps) {
-  const model = buildMatrix(doc);
+export function VerbMatrix({ doc, onSelectCell, onSelectHotspot, problemHotspotIds, problemKeys }: VerbMatrixProps) {
+  const model = buildMatrix(doc, problemKeys);
   const sel = doc.ui.selectedCell;
   const selHs = doc.ui.selectedHotspotId;
 

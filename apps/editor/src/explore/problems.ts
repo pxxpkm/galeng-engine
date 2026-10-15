@@ -6,9 +6,11 @@ import type {
   ExploreProject,
   ExploreScene,
   Interaction,
+  InteractionOn,
   Pred,
   SceneCatalogEntry,
 } from "./types";
+import { onKey } from "./types";
 
 export type ProblemSeverity = "error" | "warn";
 
@@ -19,9 +21,72 @@ export interface ExploreProblem {
   key: string;
   message: string;
   hotspotId?: string;
+  /** Matrix cell location when the problem is on an interaction. */
+  on?: InteractionOn;
+  /** True when the problem is on scene.onEnter. */
+  onEnter?: boolean;
   detail?: string;
   /** Set when problem comes from a multi-scene pack scan (L4). */
   sceneId?: string;
+}
+
+/** Matrix map key for a problem that targets a hotspot×verb/item cell. */
+export function problemMatrixKey(p: ExploreProblem): string | null {
+  if (!p.hotspotId || !p.on) return null;
+  return `${p.hotspotId}|${onKey(p.on)}`;
+}
+
+export function buildProblemMatrixKeys(problems: ExploreProblem[]): Set<string> {
+  const keys = new Set<string>();
+  for (const p of problems) {
+    const k = problemMatrixKey(p);
+    if (k) keys.add(k);
+  }
+  return keys;
+}
+
+/** Hotspot ids that have any problem (cell or hotspot-level). */
+export function buildProblemHotspotIds(problems: ExploreProblem[]): Set<string> {
+  const ids = new Set<string>();
+  for (const p of problems) {
+    if (p.hotspotId) ids.add(p.hotspotId);
+  }
+  return ids;
+}
+
+export function formatProblemContext(p: ExploreProblem): string {
+  if (p.onEnter) return "入場動作";
+  if (p.hotspotId && p.on) {
+    const onLabel = "verb" in p.on ? `動詞 ${p.on.verb}` : `物品 ${p.on.item}`;
+    return `${p.hotspotId} · ${onLabel}`;
+  }
+  if (p.hotspotId) return `熱區 ${p.hotspotId}`;
+  return "專案";
+}
+
+export function formatProblemSeverity(s: ProblemSeverity): string {
+  return s === "error" ? "錯誤" : "警告";
+}
+
+/** Badge text e.g. 「錯誤 2／警告 1」; empty when both zero. */
+export function formatProblemsBadge(errorCount: number, warnCount: number): string {
+  const parts: string[] = [];
+  if (errorCount > 0) parts.push(`錯誤 ${errorCount}`);
+  if (warnCount > 0) parts.push(`警告 ${warnCount}`);
+  return parts.join("／");
+}
+
+export type ProblemNavTarget =
+  | { kind: "cell"; hotspotId: string; on: InteractionOn }
+  | { kind: "hotspot"; hotspotId: string }
+  | { kind: "onEnter" }
+  | { kind: "none" };
+
+export function problemNavTarget(p: ExploreProblem): ProblemNavTarget {
+  if (p.onEnter) return { kind: "onEnter" };
+  if (p.hotspotId && p.on) return { kind: "cell", hotspotId: p.hotspotId, on: p.on };
+  if (p.hotspotId) return { kind: "hotspot", hotspotId: p.hotspotId };
+  return { kind: "none" };
 }
 
 export interface CollectProblemsOptions {
@@ -68,6 +133,8 @@ type ActionLoc = {
   /** Stable id fragment, e.g. hotspot id or "onEnter". */
   loc: string;
   hotspotId?: string;
+  on?: InteractionOn;
+  onEnter?: boolean;
 };
 
 /** Validate one action list (interaction do[] or scene.onEnter). */
@@ -85,6 +152,11 @@ function checkActions(
 ): void {
   const { out, switchIds, itemIds, scenes, hasCatalog, effects } = ctx;
   const hs = loc.hotspotId;
+  const locFields = {
+    hotspotId: hs,
+    ...(loc.on ? { on: loc.on } : {}),
+    ...(loc.onEnter ? { onEnter: true as const } : {}),
+  };
 
   for (let actionIndex = 0; actionIndex < actions.length; actionIndex++) {
     const a = actions[actionIndex]!;
@@ -98,7 +170,7 @@ function checkActions(
           severity: "error",
           key: "explore.emptySceneRef",
           message: `${a.type} 未選擇目標場景`,
-          hotspotId: hs,
+          ...locFields,
         });
       } else if (hasCatalog && !scenes.has(scene)) {
         out.push({
@@ -106,7 +178,7 @@ function checkActions(
           severity: "error",
           key: "explore.danglingSceneRef",
           message: `${a.type} 指向未知場景：${scene}`,
-          hotspotId: hs,
+          ...locFields,
           detail: scene,
         });
       } else if (a.type === "call" && scenes.has(scene)) {
@@ -117,7 +189,7 @@ function checkActions(
             severity: "error",
             key: "explore.deadEndCall",
             message: `死路呼叫：場景「${scene}」不會返回`,
-            hotspotId: hs,
+            ...locFields,
             detail: scene,
           });
         }
@@ -130,7 +202,7 @@ function checkActions(
         severity: "error",
         key: "explore.unknownSwitch",
         message: `未知開關：${a.id}`,
-        hotspotId: hs,
+        ...locFields,
       });
     }
     if ((a.type === "giveItem" || a.type === "takeItem") && !itemIds.has(a.id)) {
@@ -139,7 +211,7 @@ function checkActions(
         severity: "error",
         key: "explore.unknownItem",
         message: `未知物品：${a.id}`,
-        hotspotId: hs,
+        ...locFields,
       });
     }
 
@@ -149,7 +221,7 @@ function checkActions(
         severity: "error",
         key: "explore.emptySay",
         message: `空對白（say.text）`,
-        hotspotId: hs,
+        ...locFields,
       });
     }
 
@@ -164,7 +236,7 @@ function checkActions(
         severity: "warn",
         key: "explore.unknownTrans",
         message: `未知轉場：${a.trans}`,
-        hotspotId: hs,
+        ...locFields,
         detail: a.trans,
       });
     }
@@ -185,6 +257,11 @@ function checkPreds(
   if (!preds || preds.length === 0) return;
   const { out, switchIds, itemIds } = ctx;
   const hs = loc.hotspotId;
+  const locFields = {
+    hotspotId: hs,
+    ...(loc.on ? { on: loc.on } : {}),
+    ...(loc.onEnter ? { onEnter: true as const } : {}),
+  };
   const ruleBit = loc.ruleIndex !== undefined ? `r${loc.ruleIndex}` : "x";
 
   for (let i = 0; i < preds.length; i++) {
@@ -199,7 +276,7 @@ function checkPreds(
           severity: "error",
           key: "explore.emptyPredSwitch",
           message: `${loc.kind} 條件空開關 id`,
-          hotspotId: hs,
+          ...locFields,
         });
       } else if (!switchIds.has(id)) {
         out.push({
@@ -207,7 +284,7 @@ function checkPreds(
           severity: "error",
           key: "explore.unknownPredSwitch",
           message: `${loc.kind} 未知開關：${id}`,
-          hotspotId: hs,
+          ...locFields,
           detail: id,
         });
       }
@@ -222,7 +299,7 @@ function checkPreds(
           severity: "error",
           key: "explore.emptyPredHasItem",
           message: `${loc.kind} 條件空物品 id`,
-          hotspotId: hs,
+          ...locFields,
         });
       } else if (!itemIds.has(id)) {
         out.push({
@@ -230,7 +307,7 @@ function checkPreds(
           severity: "error",
           key: "explore.unknownPredHasItem",
           message: `${loc.kind} 未知物品：${id}`,
-          hotspotId: hs,
+          ...locFields,
           detail: id,
         });
       }
@@ -282,6 +359,7 @@ export function collectExploreProblems(
         key: "explore.orphanInteraction",
         message: `互動指向不存在的熱區：${inter.hotspot}`,
         hotspotId: inter.hotspot,
+        on: inter.on,
       });
     }
   }
@@ -292,11 +370,11 @@ export function collectExploreProblems(
     walkActions(inter, (a) => {
       flat.push(a);
     });
-    checkActions(flat, { loc: inter.hotspot, hotspotId: inter.hotspot }, ctx);
+    checkActions(flat, { loc: inter.hotspot, hotspotId: inter.hotspot, on: inter.on }, ctx);
   }
 
   // Rule 3–6b: same checks on scene.onEnter (OnEnterInspector)
-  checkActions(doc.scene.onEnter ?? [], { loc: "onEnter" }, ctx);
+  checkActions(doc.scene.onEnter ?? [], { loc: "onEnter", onEnter: true }, ctx);
 
   // Rule 5: warn empty explore room (no hotspots)
   if (doc.scene.hotspots.length === 0) {
@@ -339,7 +417,7 @@ export function collectExploreProblems(
     inter.rules.forEach((rule, ruleIndex) => {
       checkPreds(
         rule.when,
-        { loc: inter.hotspot, hotspotId: inter.hotspot, kind: "when", ruleIndex },
+        { loc: inter.hotspot, hotspotId: inter.hotspot, on: inter.on, kind: "when", ruleIndex },
         ctx,
       );
     });
@@ -382,6 +460,7 @@ export function collectExploreProblems(
           key: "explore.shadowedRule",
           message: `規則 ${ri + 1} 被前面無條件規則遮蔽（不會執行）`,
           hotspotId: inter.hotspot,
+          on: inter.on,
           detail: `${inter.hotspot}/${onKey}#${ri}`,
         });
       }
