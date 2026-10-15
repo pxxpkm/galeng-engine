@@ -16,6 +16,8 @@ import {
   addHotspot,
   addItem,
   addSwitch,
+  convertHotspotToPolygon,
+  convertHotspotToRect,
   getInteractionRules,
   pasteInteraction,
   removeCharacter,
@@ -32,6 +34,12 @@ import {
   updateScene,
   updateSwitch,
 } from "./commands";
+import {
+  defaultQuadAround,
+  rectCenteredAt,
+  type CtxMenuActionId,
+  type CtxMenuTarget,
+} from "./canvasContextMenu";
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";
@@ -259,6 +267,48 @@ export function ExploreWorkspace({
       }));
     },
     [],
+  );
+
+  const handleCanvasContextAction = useCallback(
+    (action: CtxMenuActionId, target: CtxMenuTarget) => {
+      const res = state.doc.project.resolution;
+      if (action === "addRect" && target.kind === "blank") {
+        const rect = rectCenteredAt(target.stageX, target.stageY, undefined, res);
+        applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
+        return;
+      }
+      if (action === "addPolygon" && target.kind === "blank") {
+        const points = defaultQuadAround(target.stageX, target.stageY, undefined, res);
+        applyCmd(
+          addHotspot({
+            name: "多邊形",
+            shape: { type: "polygon", points },
+          }),
+        );
+        return;
+      }
+      if (action === "editProps" && (target.kind === "rect" || target.kind === "polygon")) {
+        selectHotspot(target.hotspotId);
+        return;
+      }
+      if (action === "toPolygon" && target.kind === "rect") {
+        applyCmd(convertHotspotToPolygon(target.hotspotId));
+        selectHotspot(target.hotspotId);
+        return;
+      }
+      if (action === "toRect" && target.kind === "polygon") {
+        applyCmd(convertHotspotToRect(target.hotspotId));
+        selectHotspot(target.hotspotId);
+        return;
+      }
+      if (action === "delete" && (target.kind === "rect" || target.kind === "polygon")) {
+        const id = target.hotspotId;
+        const impact = countHotspotDeleteImpact(state.doc, id);
+        if (!defaultConfirmFn(confirmDeleteHotspotMessage(id, impact))) return;
+        applyCmd(removeHotspot(id));
+      }
+    },
+    [applyCmd, selectHotspot, state.doc],
   );
 
   const effectiveCatalog = useMemo(() => {
@@ -908,6 +958,7 @@ export function ExploreWorkspace({
               applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
               if (!opts?.keepDrawTool) setUi({ canvasTool: "select" });
             }}
+            onContextAction={handleCanvasContextAction}
           />
           <div style={{ marginTop: 8 }}>
             <VerbMatrix

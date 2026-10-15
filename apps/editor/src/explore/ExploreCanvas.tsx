@@ -19,6 +19,13 @@ import {
   type Handle,
   type Rect,
 } from "./canvas";
+import { CanvasContextMenu } from "./CanvasContextMenu";
+import {
+  canvasContextMenuItems,
+  canvasContextMenuTarget,
+  type CtxMenuActionId,
+  type CtxMenuTarget,
+} from "./canvasContextMenu";
 import type { ExploreDoc } from "./types";
 
 export interface ExploreCanvasProps {
@@ -26,6 +33,8 @@ export interface ExploreCanvasProps {
   onSelectHotspot: (id: string | null) => void;
   onCommitRect: (hotspotId: string, rect: Rect) => void;
   onCreateRect: (rect: Rect, opts?: { keepDrawTool?: boolean }) => void;
+  /** Phase A context-menu actions (blank / rect / polygon). */
+  onContextAction?: (action: CtxMenuActionId, target: CtxMenuTarget) => void;
   /** Logical stage size (default project resolution). */
   width?: number;
   height?: number;
@@ -98,11 +107,17 @@ export function ExploreCanvas({
   onSelectHotspot,
   onCommitRect,
   onCreateRect,
+  onContextAction,
   width = doc.project.resolution.width,
   height = doc.project.resolution.height,
 }: ExploreCanvasProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    clientX: number;
+    clientY: number;
+    target: CtxMenuTarget;
+  } | null>(null);
   const bgSrc = exploreCanvasBgSrc(doc.scene.bg);
   const [bgFailed, setBgFailed] = useState(false);
   useEffect(() => {
@@ -241,6 +256,37 @@ export function ExploreCanvas({
     [drag, doc.scene.hotspots, onCommitRect, onCreateRect],
   );
 
+
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  const onContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const el = ref.current;
+      if (!el) return;
+      setDrag(null);
+      const p = stagePoint(el, e.clientX, e.clientY, width, height);
+      const hit = hitTestHotspots(doc.scene.hotspots, p.x, p.y);
+      const target = canvasContextMenuTarget(doc.scene.hotspots, p.x, p.y, hit);
+      if (target.kind !== "blank") {
+        onSelectHotspot(target.hotspotId);
+      }
+      setCtxMenu({ clientX: e.clientX, clientY: e.clientY, target });
+    },
+    [doc.scene.hotspots, height, onSelectHotspot, width],
+  );
+
+  const onCtxPick = useCallback(
+    (action: CtxMenuActionId) => {
+      if (!ctxMenu) return;
+      const { target } = ctxMenu;
+      setCtxMenu(null);
+      if (action === "cancel") return;
+      onContextAction?.(action, target);
+    },
+    [ctxMenu, onContextAction],
+  );
+
   const previewRect = (id: string, shape: Rect): Rect => {
     if (
       drag &&
@@ -274,6 +320,7 @@ export function ExploreCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={onContextMenu}
     >
       {bgSrc && !bgFailed ? (
         <img
@@ -438,6 +485,15 @@ export function ExploreCanvas({
             background: "rgba(80,180,255,0.15)",
             pointerEvents: "none",
           }}
+        />
+      ) : null}
+      {ctxMenu ? (
+        <CanvasContextMenu
+          x={ctxMenu.clientX}
+          y={ctxMenu.clientY}
+          items={canvasContextMenuItems(ctxMenu.target)}
+          onPick={onCtxPick}
+          onClose={closeCtxMenu}
         />
       ) : null}
     </div>

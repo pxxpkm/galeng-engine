@@ -25,3 +25,6 @@ export { PresetBrowser } from "./PresetBrowser";
 export * from "./sceneCatalog";
 
 export * from "./packClient";
+
+export * from "./canvasContextMenu";
+export { CanvasContextMenu } from "./CanvasContextMenu";

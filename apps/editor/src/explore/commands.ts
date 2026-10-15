@@ -1,4 +1,5 @@
 import { defaultHotspotPlacement, roundRect } from "./canvas";
+import { convertHotspotShape } from "./canvasContextMenu";
 import type { Command } from "./commandBus";
 import {
   sameOn,
@@ -102,6 +103,36 @@ export function setHotspotRect(
   const r = roundRect(rect);
   const shape = { type: "rect" as const, ...r };
   return updateHotspot(hotspotId, { shape }, coalesceKey);
+}
+
+/** Rect corners → polygon shape (no-op if not rect). */
+export function convertHotspotToPolygon(hotspotId: string): Command {
+  return {
+    id: "explore.convertHotspotToPolygon",
+    label: `轉為多邊形 ${hotspotId}`,
+    apply(doc) {
+      const hs = doc.scene.hotspots.find((h) => h.id === hotspotId);
+      if (!hs) return doc;
+      const next = convertHotspotShape(hs.shape, "polygon");
+      if (!next) return doc;
+      return updateHotspot(hotspotId, { shape: next }).apply(doc);
+    },
+  };
+}
+
+/** Polygon → bounding rect (no-op if not polygon). */
+export function convertHotspotToRect(hotspotId: string): Command {
+  return {
+    id: "explore.convertHotspotToRect",
+    label: `轉為矩形 ${hotspotId}`,
+    apply(doc) {
+      const hs = doc.scene.hotspots.find((h) => h.id === hotspotId);
+      if (!hs) return doc;
+      const next = convertHotspotShape(hs.shape, "rect");
+      if (!next) return doc;
+      return updateHotspot(hotspotId, { shape: next }).apply(doc);
+    },
+  };
 }
 
 export function setInteraction(
