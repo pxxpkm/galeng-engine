@@ -60,6 +60,7 @@ import type {
   SceneCatalogEntry,
 } from "./types";
 import { VerbMatrix } from "./VerbMatrix";
+import { confirmDiscardIfDirty, shouldWarnUnload } from "../dirty";
 
 export interface ExploreWorkspaceProps {
   initial: ExploreDoc;
@@ -111,6 +112,16 @@ export function ExploreWorkspace({
       setLocalCatalog(sceneCatalog);
     }
   }, [sceneCatalog]);
+
+  useEffect(() => {
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      if (!shouldWarnUnload(dirty)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   const applyCmd = useCallback((cmd: Command) => {
     setState((s) => {
@@ -209,6 +220,10 @@ export function ExploreWorkspace({
       setSaveStatus("未接 persist");
       return;
     }
+    if (!confirmDiscardIfDirty(dirty)) {
+      setSaveStatus("已取消重載");
+      return;
+    }
     setSaveStatus("重載中…");
     try {
       const next = await loadExploreDoc(persist, state.doc.scene.id);
@@ -217,7 +232,7 @@ export function ExploreWorkspace({
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc.scene.id]);
+  }, [persist, state.doc.scene.id, dirty]);
 
   const doSwitchScene = useCallback(
     async (sceneId: string) => {
