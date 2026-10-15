@@ -4,6 +4,8 @@ import type { ExploreDoc, InteractionOn } from "./types";
 export interface VerbMatrixProps {
   doc: ExploreDoc;
   onSelectCell: (hotspotId: string, on: InteractionOn) => void;
+  /** Matrix row header (hotspot name) — select hotspot; rebind last verb/item if any. */
+  onSelectHotspot?: (hotspotId: string) => void;
   problemHotspotIds?: Set<string>;
 }
 
@@ -33,9 +35,10 @@ function cellTitle(cell: MatrixCell): string {
 }
 
 /** Sparse Verb×hotspot (+ item columns) matrix. Click cell → Inspector. */
-export function VerbMatrix({ doc, onSelectCell, problemHotspotIds }: VerbMatrixProps) {
+export function VerbMatrix({ doc, onSelectCell, onSelectHotspot, problemHotspotIds }: VerbMatrixProps) {
   const model = buildMatrix(doc);
   const sel = doc.ui.selectedCell;
+  const selHs = doc.ui.selectedHotspotId;
 
   const renderCell = (hotspotId: string, on: InteractionOn) => {
     const cell = getCell(model, hotspotId, on)!;
@@ -95,7 +98,18 @@ export function VerbMatrix({ doc, onSelectCell, problemHotspotIds }: VerbMatrixP
           <tbody>
             {model.hotspotIds.map((hid) => (
               <tr key={hid}>
-                <td style={{ border: "1px solid #333", padding: 4 }}>
+                <td
+                  data-testid={`matrix-row-${hid}`}
+                  title="選擇此熱區"
+                  onClick={() => onSelectHotspot?.(hid)}
+                  style={{
+                    border: "1px solid #333",
+                    padding: 4,
+                    cursor: onSelectHotspot ? "pointer" : undefined,
+                    background: selHs === hid ? "#234" : undefined,
+                    fontWeight: selHs === hid ? 600 : undefined,
+                  }}
+                >
                   {model.hotspotNames[hid] ?? hid}
                 </td>
                 {model.verbColumns.map((v) => renderCell(hid, { verb: v.id }))}

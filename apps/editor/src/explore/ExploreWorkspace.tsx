@@ -67,6 +67,10 @@ import type {
   InteractionRule,
   SceneCatalogEntry,
 } from "./types";
+import {
+  selectionAfterCellPick,
+  selectionAfterHotspotPick,
+} from "./selection";
 import { VerbMatrix } from "./VerbMatrix";
 import { confirmDiscardIfDirty, shouldWarnUnload } from "../dirty";
 
@@ -180,11 +184,15 @@ export function ExploreWorkspace({
     setState((s) => ({ ...s, doc: patchUi(s.doc, patch) }));
   }, []);
 
-  const selectHotspotOnly = useCallback(
+  /** Canvas / hierarchy / matrix row: pick hotspot; rebind cell `on` if any. */
+  const selectHotspot = useCallback(
     (id: string | null) => {
-      setUi({ selectedHotspotId: id, selectedCell: null });
+      setState((s) => ({
+        ...s,
+        doc: patchUi(s.doc, selectionAfterHotspotPick(s.doc.ui, id)),
+      }));
     },
-    [setUi],
+    [],
   );
 
   const effectiveCatalog = useMemo(() => {
@@ -718,7 +726,7 @@ export function ExploreWorkspace({
         <HierarchyPanel
           doc={doc}
           sceneCatalog={effectiveCatalog}
-          onSelectHotspot={selectHotspotOnly}
+          onSelectHotspot={selectHotspot}
           onUpdateScene={(patch, coalesceKey) =>
             applyCmd(updateScene(patch, coalesceKey))
           }
@@ -730,7 +738,7 @@ export function ExploreWorkspace({
         <div>
           <ExploreCanvas
             doc={doc}
-            onSelectHotspot={selectHotspotOnly}
+            onSelectHotspot={selectHotspot}
             onCommitRect={(id, rect) => applyCmd(setHotspotRect(id, rect))}
             onCreateRect={(rect: Rect, opts) => {
               applyCmd(addHotspot({ shape: { type: "rect", ...rect } }));
@@ -740,9 +748,8 @@ export function ExploreWorkspace({
           <div style={{ marginTop: 8 }}>
             <VerbMatrix
               doc={doc}
-              onSelectCell={(hotspotId, on) =>
-                setUi({ selectedCell: { hotspotId, on }, selectedHotspotId: hotspotId })
-              }
+              onSelectCell={(hotspotId, on) => setUi(selectionAfterCellPick(hotspotId, on))}
+              onSelectHotspot={(hotspotId) => selectHotspot(hotspotId)}
               problemHotspotIds={problemHs}
             />
           </div>
@@ -750,34 +757,51 @@ export function ExploreWorkspace({
 
         <div data-testid="inspector-column">
           <h4 style={{ margin: "0 0 8px" }}>屬性</h4>
-          {doc.ui.selectedCell ? (
-            <CellInspector
-              doc={doc}
-              sceneCatalog={effectiveCatalog}
-              onChangeRules={(rules: InteractionRule[], coalesceKey?: string) =>
-                applyCmd(
-                  setInteraction(
-                    doc.ui.selectedCell!.hotspotId,
-                    doc.ui.selectedCell!.on,
-                    rules,
-                    coalesceKey,
-                  ),
-                )
-              }
-            />
-          ) : selectedHotspot ? (
-            <HotspotInspector
-              doc={doc}
-              hotspot={selectedHotspot}
-              onUpdate={(patch, coalesceKey) =>
-                applyCmd(updateHotspot(selectedHotspot.id, patch, coalesceKey))
-              }
-            />
-          ) : (
+          {!selectedHotspot && !doc.ui.selectedCell ? (
             <div style={{ fontSize: 12, opacity: 0.6 }} data-testid="inspector-empty">
-              選熱區或矩陣格
+              請選擇熱區或矩陣格
             </div>
-          )}
+          ) : null}
+          {selectedHotspot ? (
+            <div data-testid="inspector-hotspot-section">
+              <HotspotInspector
+                doc={doc}
+                hotspot={selectedHotspot}
+                onUpdate={(patch, coalesceKey) =>
+                  applyCmd(updateHotspot(selectedHotspot.id, patch, coalesceKey))
+                }
+              />
+            </div>
+          ) : null}
+          {doc.ui.selectedCell ? (
+            <div
+              data-testid="inspector-cell-section"
+              style={
+                selectedHotspot
+                  ? {
+                      marginTop: 12,
+                      paddingTop: 8,
+                      borderTop: "1px solid #333",
+                    }
+                  : undefined
+              }
+            >
+              <CellInspector
+                doc={doc}
+                sceneCatalog={effectiveCatalog}
+                onChangeRules={(rules: InteractionRule[], coalesceKey?: string) =>
+                  applyCmd(
+                    setInteraction(
+                      doc.ui.selectedCell!.hotspotId,
+                      doc.ui.selectedCell!.on,
+                      rules,
+                      coalesceKey,
+                    ),
+                  )
+                }
+              />
+            </div>
+          ) : null}
           <div
             style={{
               marginTop: 12,
