@@ -10,6 +10,7 @@ export function AssetField({
   placeholder,
   disabled,
   warn = true,
+  inputTestId,
 }: {
   value: string;
   options: string[];
@@ -18,6 +19,8 @@ export function AssetField({
   placeholder?: string;
   disabled?: boolean;
   warn?: boolean;
+  /** Optional data-testid on the text input. */
+  inputTestId?: string;
 }) {
   const listId = useId();
   const missing = warn && isMissingAsset(value, options);
@@ -30,6 +33,7 @@ export function AssetField({
           value={value}
           placeholder={placeholder}
           disabled={disabled}
+          data-testid={inputTestId}
           onChange={(e) => onChange(e.target.value)}
         />
         <AuditionButton logical={value} t={t} />

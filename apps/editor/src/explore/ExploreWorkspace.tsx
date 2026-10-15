@@ -81,7 +81,10 @@ import {
   selectionAfterHotspotPick,
 } from "./selection";
 import { VerbMatrix } from "./VerbMatrix";
+import { getJson } from "../api";
 import { confirmDiscardIfDirty, shouldWarnUnload } from "../dirty";
+import type { AssetMeta } from "../types";
+import { assetLists } from "../assets";
 
 
 /** Pure mod-key routing for Explore shortcuts (Ctrl/Cmd). */
@@ -141,6 +144,8 @@ export function ExploreWorkspace({
     const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
   /** Multi-scene pack gate problems (L4); cleared when doc changes. */
   const [packScanProblems, setPackScanProblems] = useState<ExploreProblem[] | null>(null);
+  const [bgAssetOptions, setBgAssetOptions] = useState<string[]>([]);
+  const [knownAssets, setKnownAssets] = useState<Set<string> | undefined>(undefined);
   const [localCatalog, setLocalCatalog] = useState<SceneCatalogEntry[]>(
     () => sceneCatalog ?? [],
   );
@@ -151,6 +156,24 @@ export function ExploreWorkspace({
       setLocalCatalog(sceneCatalog);
     }
   }, [sceneCatalog]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const assets = await getJson<AssetMeta[]>("/api/assets");
+        if (cancelled) return;
+        const lists = assetLists(assets);
+        setBgAssetOptions(lists.bg);
+        setKnownAssets(lists.known);
+      } catch {
+        // Host without /api/assets — text field still works; skip knownAssets checks.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
@@ -512,8 +535,9 @@ export function ExploreWorkspace({
       collectExploreProblems(doc, {
         sceneCatalog: effectiveCatalog,
         knownSceneIds,
+        knownAssets,
       }),
-    [doc, effectiveCatalog, knownSceneIds],
+    [doc, effectiveCatalog, knownSceneIds, knownAssets],
   );
 
   useEffect(() => {
@@ -753,6 +777,7 @@ export function ExploreWorkspace({
         <HierarchyPanel
           doc={doc}
           sceneCatalog={effectiveCatalog}
+          bgAssetOptions={bgAssetOptions}
           onSelectHotspot={selectHotspot}
           onUpdateScene={(patch, coalesceKey) =>
             applyCmd(updateScene(patch, coalesceKey))

@@ -290,6 +290,26 @@ export function ExploreCanvas({
           }}
         />
       ) : null}
+      {bgSrc && bgFailed ? (
+        <div
+          data-testid="explore-canvas-bg-missing"
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+            background: "rgba(26, 29, 36, 0.92)",
+            color: "#fc8",
+            fontSize: 13,
+            textAlign: "center",
+            padding: 12,
+          }}
+        >
+          找不到背景：{doc.scene.bg?.asset?.trim() || "（未命名）"}
+        </div>
+      ) : null}
       {doc.scene.hotspots.map((h) => {
         if (!isRect(h.shape)) {
           return (

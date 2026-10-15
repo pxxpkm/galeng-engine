@@ -96,6 +96,11 @@ export interface CollectProblemsOptions {
   sceneCatalog?: SceneCatalogEntry[];
   /** Skip project-level startScene check (sibling scenes in a pack scan). */
   skipStartSceneCheck?: boolean;
+  /**
+   * Known media logicals (e.g. from /api/assets). When set, non-empty
+   * scene.bg.asset missing from this set → missingBg warn.
+   */
+  knownAssets?: Iterable<string>;
 }
 
 /** One explore scene's problems (L4 pack gate). */
@@ -383,6 +388,33 @@ export function collectExploreProblems(
       key: "explore.noHotspots",
       message: "探險場景尚無熱區",
     });
+  }
+
+  // Rule 5b: background asset missing / blank (M8)
+  if (doc.scene.bg !== undefined && doc.scene.bg !== null) {
+    const asset = (doc.scene.bg.asset ?? "").trim();
+    if (!asset) {
+      out.push({
+        id: "missing-bg-blank",
+        severity: "warn",
+        key: "explore.missingBg",
+        message: "背景資產為空",
+        detail: "",
+      });
+    } else if (opts.knownAssets) {
+      const known = opts.knownAssets instanceof Set
+        ? opts.knownAssets
+        : new Set(opts.knownAssets);
+      if (!known.has(asset)) {
+        out.push({
+          id: `missing-bg-${asset}`,
+          severity: "warn",
+          key: "explore.missingBg",
+          message: `找不到背景：${asset}`,
+          detail: asset,
+        });
+      }
+    }
   }
 
   // Rule 5c: non-integer hotspot rect coords (schema i32 / 1920×1080)

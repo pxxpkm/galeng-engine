@@ -1,4 +1,14 @@
+import { AssetField } from "../AssetField";
 import type { ExploreDoc, SceneCatalogEntry } from "./types";
+
+/** Minimal i18n for AssetField inside Explore (書面語). */
+function exploreAssetT(key: string): string {
+  if (key === "editor.assetMissing") return "找不到此資產（不在媒體清單）";
+  if (key === "editor.audition") return "試聽";
+  if (key === "editor.auditionStop") return "停止";
+  return key;
+}
+
 
 export interface HierarchyPanelProps {
   doc: ExploreDoc;
@@ -15,6 +25,8 @@ export interface HierarchyPanelProps {
     patch: { title?: string; startScene?: string },
     coalesceKey?: string,
   ) => void;
+  /** Host /api/assets bg/* logicals for AssetField datalist. */
+  bgAssetOptions?: string[];
 }
 
 /** Left Hierarchy: scene/project meta (editable) + hotspot list. */
@@ -24,6 +36,7 @@ export function HierarchyPanel({
   sceneCatalog = [],
   onUpdateScene,
   onUpdateProject,
+  bgAssetOptions = [],
 }: HierarchyPanelProps) {
   const sel = doc.scene.hotspots;
   const selected = doc.ui.selectedHotspotId;
@@ -122,16 +135,16 @@ export function HierarchyPanel({
             }
           />
         </label>
-        <label style={{ display: "block", marginBottom: 4 }}>
-          背景 asset
-          <input
-            data-testid="hierarchy-scene-bg-asset"
-            style={{ width: "100%", display: "block", boxSizing: "border-box" }}
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ marginBottom: 2 }}>背景</div>
+          <AssetField
             value={bgAsset}
+            options={bgAssetOptions}
+            t={exploreAssetT}
             placeholder="bg/room"
             disabled={!canEditScene}
-            onChange={(e) => {
-              const asset = e.target.value;
+            inputTestId="hierarchy-scene-bg-asset"
+            onChange={(asset) => {
               const prev = doc.scene.bg;
               if (!asset.trim()) {
                 onUpdateScene?.({ bg: undefined }, "scene-bg-asset");
@@ -149,7 +162,14 @@ export function HierarchyPanel({
               );
             }}
           />
-        </label>
+          {doc.scene.bg && (doc.scene.bg.trans !== undefined || doc.scene.bg.ms !== undefined) ? (
+            <div style={{ opacity: 0.55, fontSize: 11, marginTop: 2 }}>
+              轉場／毫秒已保留
+              {doc.scene.bg.trans !== undefined ? ` · ${doc.scene.bg.trans}` : ""}
+              {doc.scene.bg.ms !== undefined ? ` · ${doc.scene.bg.ms}ms` : ""}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ opacity: 0.7, marginBottom: 4 }}>熱區</div>
