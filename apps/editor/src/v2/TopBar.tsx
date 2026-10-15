@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { navigateToExploreEditor } from "../editorRoute";
 import type { Editor } from "./useEditorState";
 import type { Locale } from "../types";
 import {
@@ -191,6 +192,15 @@ export function TopBar({ ed }: { ed: Editor }) {
           <option value="zh-Hans">{t("locale.zhHans")}</option>
           <option value="en">{t("locale.en")}</option>
         </select>
+        <button
+          type="button"
+          className="v2-btn"
+          data-testid="open-explore-editor"
+          title="開啟探險編輯器（#explore）"
+          onClick={() => navigateToExploreEditor()}
+        >
+          探險編輯器
+        </button>
         <button
           type="button"
           className="v2-btn v2-btn-icon"

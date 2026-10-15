@@ -42,6 +42,9 @@ import {
   saveExploreDoc,
   type ExplorePersistApi,
 } from "./persist";
+import { loadSceneCatalog } from "./sceneCatalog";
+import { exploreNewSceneIdError, parseNewExploreSceneId } from "./sceneId";
+import { navigateToDialogueEditor } from "../editorRoute";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { TracePanel } from "./TracePanel";
 import { resolveTrace } from "./trace";
@@ -141,7 +144,7 @@ export function ExploreWorkspace({
     dirty: false,
   }));
   const [saveStatus, setSaveStatus] = useState<string>("");
-    const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
+  const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
   /** Multi-scene pack gate problems (L4); cleared when doc changes. */
   const [packScanProblems, setPackScanProblems] = useState<ExploreProblem[] | null>(null);
   const [bgAssetOptions, setBgAssetOptions] = useState<string[]>([]);
@@ -149,6 +152,9 @@ export function ExploreWorkspace({
   const [localCatalog, setLocalCatalog] = useState<SceneCatalogEntry[]>(
     () => sceneCatalog ?? [],
   );
+  const [creatingScene, setCreatingScene] = useState(false);
+  const [newSceneIdDraft, setNewSceneIdDraft] = useState("room_2");
+  const [createSceneError, setCreateSceneError] = useState<string | null>(null);
   const { doc, bus, dirty } = state;
 
   useEffect(() => {
@@ -156,6 +162,34 @@ export function ExploreWorkspace({
       setLocalCatalog(sceneCatalog);
     }
   }, [sceneCatalog]);
+
+  const refreshCatalog = useCallback(async () => {
+    if (!persist) return;
+    try {
+      const next = await loadSceneCatalog(persist);
+      if (next.length > 0) {
+        setLocalCatalog(next);
+      }
+    } catch {
+      // keep prior catalog on transient host errors
+    }
+  }, [persist]);
+
+  useEffect(() => {
+    if (!persist) return;
+    const onFocus = () => {
+      void refreshCatalog();
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refreshCatalog();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [persist, refreshCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,10 +310,11 @@ export function ExploreWorkspace({
         },
       }));
       setSaveStatus("已儲存");
+      void refreshCatalog();
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc, effectiveCatalog, knownSceneIds]);
+  }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog]);
 
   const doReload = useCallback(async () => {
     if (!persist) {
@@ -316,13 +351,14 @@ export function ExploreWorkspace({
         const next = await loadExploreDoc(persist, sceneId);
         setState({ doc: next, bus: emptyBus(), dirty: false });
         setSaveStatus(`已切換：${sceneId}`);
+        void refreshCatalog();
       } catch (e) {
         setSaveStatus(
           `無法切換「${sceneId}」：${e instanceof Error ? e.message : String(e)}`,
         );
       }
     },
-    [persist, state.doc.scene.id, dirty],
+    [persist, state.doc.scene.id, dirty, refreshCatalog],
   );
 
   const copySelected = useCallback(() => {
@@ -386,26 +422,33 @@ export function ExploreWorkspace({
     return () => window.removeEventListener("keydown", onKey);
   }, [copySelected, pasteSelected, doUndo, doRedo, doSave, persist, doc.ui]);
 
+  const openCreateSceneForm = useCallback(() => {
+    setCreatingScene(true);
+    setNewSceneIdDraft("room_2");
+    setCreateSceneError(null);
+  }, []);
+
+  const cancelCreateScene = useCallback(() => {
+    setCreatingScene(false);
+    setCreateSceneError(null);
+  }, []);
+
   const doCreateScene = useCallback(async () => {
     if (!persist) {
+      setCreateSceneError("未接 persist");
       setSaveStatus("未接 persist");
       return;
     }
-    const raw =
-      typeof window !== "undefined"
-        ? window.prompt("新探險場景 ID（檔名）", "room_2")
-        : null;
-    if (raw === null) return;
-    const id = raw.trim();
-    if (!id) {
-      setSaveStatus("場景 ID 不可為空");
+    const existing = effectiveCatalog.map((c) => c.id);
+    const err = exploreNewSceneIdError(newSceneIdDraft, existing);
+    if (err) {
+      setCreateSceneError(err);
+      setSaveStatus(err);
       return;
     }
-    if (effectiveCatalog.some((c) => c.id === id)) {
-      setSaveStatus(`場景「${id}」已存在於目錄`);
-      return;
-    }
+    const id = parseNewExploreSceneId(newSceneIdDraft, existing)!;
     if (dirty) {
+      setCreateSceneError("請先存檔再建新場景");
       setSaveStatus("請先存檔再建新場景");
       return;
     }
@@ -417,6 +460,7 @@ export function ExploreWorkspace({
       scene: { ...blank.scene, title: id },
     };
     setSaveStatus("建立中…");
+    setCreateSceneError(null);
     try {
       const saved = await saveExploreDoc(persist, nextDoc);
       const loaded: ExploreDoc = {
@@ -432,13 +476,23 @@ export function ExploreWorkspace({
         return [...prev, { id, kind: "explore", title: loaded.scene.title }];
       });
       setState({ doc: loaded, bus: emptyBus(), dirty: false });
+      setCreatingScene(false);
       setSaveStatus(`已建立並切換：${id}`);
+      void refreshCatalog();
     } catch (e) {
-      setSaveStatus(
-        `建立失敗：${e instanceof Error ? e.message : String(e)}`,
-      );
+      const msg = `建立失敗：${e instanceof Error ? e.message : String(e)}`;
+      setCreateSceneError(msg);
+      setSaveStatus(msg);
     }
-  }, [persist, dirty, state.doc.project, state.doc._rawProject, effectiveCatalog]);
+  }, [
+    persist,
+    dirty,
+    state.doc.project,
+    state.doc._rawProject,
+    effectiveCatalog,
+    newSceneIdDraft,
+    refreshCatalog,
+  ]);
 
   const resolvedPackApi = useMemo(
     () => (packApi === null ? null : packApi ?? createHttpPackApi()),
@@ -626,14 +680,72 @@ export function ExploreWorkspace({
             ) : null}
           </select>
         </label>
+        {creatingScene ? (
+          <span
+            data-testid="scene-create-form"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}
+          >
+            <input
+              data-testid="scene-create-id"
+              type="text"
+              value={newSceneIdDraft}
+              placeholder="新場景 ID"
+              title="僅可含英數、底線與連字號"
+              onChange={(e) => {
+                setNewSceneIdDraft(e.target.value);
+                setCreateSceneError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void doCreateScene();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelCreateScene();
+                }
+              }}
+              style={{ width: 120, fontSize: 12 }}
+              autoFocus
+            />
+            <button
+              type="button"
+              data-testid="scene-create-confirm"
+              onClick={() => void doCreateScene()}
+              disabled={!persist}
+            >
+              建立
+            </button>
+            <button type="button" data-testid="scene-create-cancel" onClick={cancelCreateScene}>
+              取消
+            </button>
+            {createSceneError ? (
+              <span
+                data-testid="scene-create-error"
+                style={{ fontSize: 12, color: "#f88" }}
+              >
+                {createSceneError}
+              </span>
+            ) : null}
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-testid="scene-create"
+            onClick={openCreateSceneForm}
+            disabled={!persist}
+            title={persist ? "新建空白探險場景" : "未接 persist"}
+          >
+            ＋場景
+          </button>
+        )}
         <button
           type="button"
-          data-testid="scene-create"
-          onClick={() => void doCreateScene()}
-          disabled={!persist}
-          title={persist ? "新建空白探險場景" : "未接 persist"}
+          data-testid="open-dialogue-editor"
+          title="開啟對話編輯器（離開 #explore）"
+          onClick={() => navigateToDialogueEditor()}
         >
-          ＋場景
+          對話編輯器
         </button>
         <button
           type="button"
