@@ -378,7 +378,7 @@ pub fn explore_cursor_from_verb(verb: Option<&str>) -> ExploreCursorKind {
 
 /// Logical size of procedural Explore cursors (readable on 1280×720).
 /// Glyph art is authored at [`CURSOR_ART`] and scaled via [`cs`].
-const CURSOR_SIZE: i32 = 52;
+const CURSOR_SIZE: i32 = 72;
 const CURSOR_ART: i32 = 28;
 
 /// Scale a coordinate / thickness from the 28×28 art space into [`CURSOR_SIZE`].
@@ -1667,15 +1667,15 @@ mod tests {
         fb.fill(Rgba::rgb(0, 0, 0));
         draw_explore_cursor(&mut fb, ExploreCursorKind::Look, 400, 300);
         // CURSOR_SIZE is 52; sample a window large enough for scaled glyphs.
-        let n = fb.count_nonblack_in(360, 260, 80, 80);
-        assert!(n > 40, "look cursor should paint pixels, got {n}");
+        let n = fb.count_nonblack_in(340, 240, 120, 120);
+        assert!(n > 60, "look cursor should paint pixels, got {n}");
     }
 
     #[test]
     fn explore_cursor_size_is_readable() {
         assert!(
-            CURSOR_SIZE >= 48 && CURSOR_SIZE <= 56,
-            "CURSOR_SIZE={CURSOR_SIZE} should be ~48–56 for 1280×720"
+            CURSOR_SIZE >= 48 && CURSOR_SIZE <= 80,
+            "CURSOR_SIZE={CURSOR_SIZE} should be readable on 1280×720"
         );
         assert_eq!(cs(28), CURSOR_SIZE);
         assert_eq!(cs(14), CURSOR_SIZE / 2);
