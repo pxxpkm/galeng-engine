@@ -88,5 +88,7 @@
     "toDialogue": "fade_black",
     "fromDialogue": "fade_black",
     "gotoScene": "fade_black"
-  }
+  },
+  "font": "fonts/noto-sans-tc-demo",
+  "msgBox": "ui/msgbox"
 }

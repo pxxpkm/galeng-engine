@@ -31,3 +31,8 @@ cargo run -p galeng-packer -- --project examples/click-room --out /tmp/click-roo
 - **Aim** (default): click an inventory chip, then click a hotspot. Door + key uses Aim (`"on": { "item": "key" }` ≡ `useMode: "aim"`).
 - **Drag**: press an inventory chip, drag onto a hotspot, release. Demo: drag key onto the window for a different line (`"useMode": "drag"`).
 - Hover a hotspot with multiple verbs and scroll the mouse wheel to cycle the single action button.
+
+## Fonts & UI skin
+
+- `font`: `fonts/noto-sans-tc-demo` — OFL subset of **Noto Sans CJK TC** (see `assets/fonts/OFL-NotoSans.txt`). Covers Click Room + common UI glyphs only; not the full typeface.
+- `msgBox`: `ui/msgbox` — simple translucent panel PNG.
