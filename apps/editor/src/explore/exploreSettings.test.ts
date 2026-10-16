@@ -13,6 +13,7 @@ describe("detectEditorLocale / editorT", () => {
     const t = editorT("zh-Hant");
     expect(t("menu.settings")).toBe("設定");
     expect(t("editor.fontsPanel")).toBe("字型");
+    expect(t("editor.audioPanel")).toBe("音訊");
   });
 });
 

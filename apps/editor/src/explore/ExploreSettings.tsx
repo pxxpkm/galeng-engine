@@ -4,6 +4,7 @@ import zhHans from "../../../../packages/i18n/locales/zh-Hans.json";
 import zhHant from "../../../../packages/i18n/locales/zh-Hant.json";
 import { getJson, putJson } from "../api";
 import type { AssetMeta, Locale, Project } from "../types";
+import { AudioPanel, type AudioPanelHost } from "../v2/AudioPanel";
 import { FontPanel, type FontPanelHost } from "../v2/FontPanel";
 import { IconSettings, IconX } from "../v2/icons";
 import "../v2/v2.css";
@@ -55,10 +56,10 @@ export async function saveExploreProject(
   return api.putJson<Project>("/api/project", project);
 }
 
-type Page = "main" | "fonts";
+type Page = "main" | "fonts" | "audio";
 
 /**
- * Minimal project Settings for Explore shell (Fonts / 字級 via /api/project).
+ * Minimal project Settings for Explore shell (Fonts / Audio via /api/project).
  * Does not mount the full V2 editor tree.
  */
 export function ExploreSettingsDialog({
@@ -139,9 +140,13 @@ export function ExploreSettingsDialog({
   if (!open) return null;
 
   const title =
-    page === "fonts" ? t("editor.fontsPanel") : t("menu.settings");
+    page === "fonts"
+      ? t("editor.fontsPanel")
+      : page === "audio"
+        ? t("editor.audioPanel")
+        : t("menu.settings");
 
-  const host: FontPanelHost | null =
+  const host: (FontPanelHost & AudioPanelHost) | null =
     project == null
       ? null
       : {
@@ -206,12 +211,25 @@ export function ExploreSettingsDialog({
                     {t("editor.fontsPanel")}
                   </button>
                 </div>
+                <div className="v2-field">
+                  <label>{t("editor.audioPanel")}</label>
+                  <p className="v2-hint">{t("editor.audioPanelHint")}</p>
+                  <button
+                    type="button"
+                    className="v2-btn"
+                    data-testid="explore-settings-audio"
+                    onClick={() => setPage("audio")}
+                  >
+                    {t("editor.audioPanel")}
+                  </button>
+                </div>
                 <p className="v2-hint">
-                  字型／字級寫入 galeng.json（/api/project）。對話編輯器內其餘專案設定仍可在對話殼開啟。
+                  字型／字級／音訊寫入 galeng.json（/api/project）。對話編輯器內其餘專案設定仍可在對話殼開啟。
                 </p>
               </>
             ) : null}
             {!loadError && host && page === "fonts" ? <FontPanel ed={host} /> : null}
+            {!loadError && host && page === "audio" ? <AudioPanel ed={host} /> : null}
           </div>
           <div className="v2-modal-foot">
             {page !== "main" ? (

@@ -6,6 +6,7 @@ import { SearchPalette } from "../SearchPalette";
 import { VarList } from "../VarList";
 import type { Locale } from "../types";
 import { IconX } from "./icons";
+import { AudioPanel } from "./AudioPanel";
 import { FontPanel } from "./FontPanel";
 import { ScriptLibrary } from "./ScriptLibrary";
 import { ProjectFields, ScreenButtonsFields } from "./ProjectFields";
@@ -211,10 +212,18 @@ function PackDialog({ ed }: { ed: Editor }) {
 
 function SettingsDialog({ ed }: { ed: Editor }) {
   const { t } = ed;
-  const [page, setPage] = useState<"main" | "buttons" | "roster" | "fonts">("main");
+  const [page, setPage] = useState<"main" | "buttons" | "roster" | "fonts" | "audio">("main");
   if (!ed.settingsOpen) return null;
   const title =
-    page === "buttons" ? t("editor.screenButtons") : page === "roster" ? t("editor.roster") : page === "fonts" ? t("editor.fontsPanel") : t("menu.settings");
+    page === "buttons"
+      ? t("editor.screenButtons")
+      : page === "roster"
+        ? t("editor.roster")
+        : page === "fonts"
+          ? t("editor.fontsPanel")
+          : page === "audio"
+            ? t("editor.audioPanel")
+            : t("menu.settings");
   return (
     <Modal
       title={title}
@@ -258,6 +267,13 @@ function SettingsDialog({ ed }: { ed: Editor }) {
               </button>
             </div>
             <div className="v2-field">
+              <label>{t("editor.audioPanel")}</label>
+              <p className="v2-hint">{t("editor.audioPanelHint")}</p>
+              <button type="button" className="v2-btn" data-testid="settings-audio" onClick={() => setPage("audio")}>
+                {t("editor.audioPanel")}
+              </button>
+            </div>
+            <div className="v2-field">
               <label>{t("editor.roster")}</label>
               <p className="v2-hint">{t("editor.rosterPageHint")}</p>
               <button type="button" className="v2-btn" onClick={() => setPage("roster")}>
@@ -289,6 +305,8 @@ function SettingsDialog({ ed }: { ed: Editor }) {
         ) : (
           page === "fonts" ? (
             <FontPanel ed={ed} />
+          ) : page === "audio" ? (
+            <AudioPanel ed={ed} />
           ) : page === "roster" ? (
             <RosterEditor ed={ed} />
           ) : (
