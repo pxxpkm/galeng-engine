@@ -318,6 +318,16 @@
   "editor.assetRoot": "素材文件夹",
   "editor.assetBrowse": "浏览素材夹…",
   "editor.assetDefault": "用项目 assets",
-  "editor.assetHint": "指定后自动建立 bg／char／voice／bgm／se／amb／cg／movie／fonts／ui。路径只存在本机，不写入 galeng.json。"
+  "editor.assetHint": "指定后自动建立 bg／char／voice／bgm／se／amb／cg／movie／fonts／ui。路径只存在本机，不写入 galeng.json。",
+  "editor.fontsPanel": "字体",
+  "editor.fontsPanelHint": "为对话、界面、标题指定项目字体。文件放在 assets/fonts/。",
+  "editor.fontDialogue": "对话字体",
+  "editor.fontUi": "界面字体",
+  "editor.fontTitle": "标题字体",
+  "editor.fontLibrary": "字体库",
+  "editor.fontLibraryEmpty": "尚无 fonts/ 资源。",
+  "editor.fontOpen": "打开",
+  "editor.fontLicense": "授权说明",
+  "editor.fontLicenseHint": "文件名含 OFL/license 的会列在这里方便查阅。",
+  "editor.fontDeprecatedAlias": "顶层 project.font 仍是对话角色的旧别名（会同步）。"
 }
-

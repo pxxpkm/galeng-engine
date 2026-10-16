@@ -6,6 +6,7 @@ import { SearchPalette } from "../SearchPalette";
 import { VarList } from "../VarList";
 import type { Locale } from "../types";
 import { IconX } from "./icons";
+import { FontPanel } from "./FontPanel";
 import { ProjectFields, ScreenButtonsFields } from "./ProjectFields";
 import { RosterEditor } from "./RosterEditor";
 import { switchUiVersion } from "./uiVersion";
@@ -209,10 +210,10 @@ function PackDialog({ ed }: { ed: Editor }) {
 
 function SettingsDialog({ ed }: { ed: Editor }) {
   const { t } = ed;
-  const [page, setPage] = useState<"main" | "buttons" | "roster">("main");
+  const [page, setPage] = useState<"main" | "buttons" | "roster" | "fonts">("main");
   if (!ed.settingsOpen) return null;
   const title =
-    page === "buttons" ? t("editor.screenButtons") : page === "roster" ? t("editor.roster") : t("menu.settings");
+    page === "buttons" ? t("editor.screenButtons") : page === "roster" ? t("editor.roster") : page === "fonts" ? t("editor.fontsPanel") : t("menu.settings");
   return (
     <Modal
       title={title}
@@ -249,6 +250,13 @@ function SettingsDialog({ ed }: { ed: Editor }) {
             </div>
             <ProjectFields ed={ed} />
             <div className="v2-field">
+              <label>{t("editor.fontsPanel")}</label>
+              <p className="v2-hint">{t("editor.fontsPanelHint")}</p>
+              <button type="button" className="v2-btn" onClick={() => setPage("fonts")}>
+                {t("editor.fontsPanel")}
+              </button>
+            </div>
+            <div className="v2-field">
               <label>{t("editor.roster")}</label>
               <p className="v2-hint">{t("editor.rosterPageHint")}</p>
               <button type="button" className="v2-btn" onClick={() => setPage("roster")}>
@@ -278,7 +286,13 @@ function SettingsDialog({ ed }: { ed: Editor }) {
             </div>
           </>
         ) : (
-          page === "roster" ? <RosterEditor ed={ed} /> : <ScreenButtonsFields ed={ed} />
+          page === "fonts" ? (
+            <FontPanel ed={ed} />
+          ) : page === "roster" ? (
+            <RosterEditor ed={ed} />
+          ) : (
+            <ScreenButtonsFields ed={ed} />
+          )
         )}
       </div>
       <div className="v2-modal-foot">

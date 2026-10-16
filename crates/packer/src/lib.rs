@@ -73,6 +73,11 @@ pub fn collect_refs(project: &Project, scenes: &[Scene]) -> BTreeSet<String> {
     if let Some(s) = &project.font {
         out.insert(s.clone());
     }
+    if let Some(fonts) = &project.fonts {
+        for s in fonts.role_logicals() {
+            out.insert(s.to_string());
+        }
+    }
     if let Some(s) = &project.msg_box {
         out.insert(s.clone());
     }
@@ -281,7 +286,16 @@ pub fn pack_with(
     let project_bytes = fs::read(project_dir.join("galeng.json"))?;
     let project = validate_project_file(project_dir.join("galeng.json"))?;
     let (scenes, scene_files, mut warnings) = load_scenes(project_dir)?;
+    let mut font_roles: Vec<String> = Vec::new();
     if let Some(font) = &project.font {
+        font_roles.push(font.clone());
+    }
+    if let Some(fonts) = &project.fonts {
+        for s in fonts.role_logicals() {
+            font_roles.push(s.to_string());
+        }
+    }
+    for font in &font_roles {
         if !font.starts_with("fonts/") {
             return Err(Error::Msg(format!(
                 "font must be under fonts/, got `{font}`"

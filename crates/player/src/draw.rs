@@ -3,7 +3,7 @@ use galeng_schema::{PauseButtons, Slot, TitleButtons};
 use crate::assets::{fit_bottom_center, Bank};
 use crate::camera::map_rect;
 use crate::fb::{hash_rgb, Framebuffer, Rgba, HEIGHT, WIDTH};
-use crate::font::GameFont;
+use crate::font::{GameFont, TypeScale};
 use crate::backlog;
 use crate::settings::{
     self, Settings, AUTO_DELAY_ROW, AUTO_PLAY_ROW, FULLSCREEN_ROW, SETTINGS_ROWS, SKIP_UNREAD_ROW,
@@ -140,6 +140,7 @@ pub fn missing_scene_text(locale: &str, id: &str) -> String {
 pub fn draw_view(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     view: &View,
     speaker_label: &str,
     assets: &mut Bank,
@@ -218,7 +219,7 @@ pub fn draw_view(
                 fb,
                 MSG_X + 32,
                 MSG_Y + SAY_SPEAKER_DY,
-                28.0,
+                scale.speaker,
                 choices_label(ui_locale),
                 Rgba::rgb(255, 230, 160),
                 MSG_X + MSG_W - 32,
@@ -234,7 +235,7 @@ pub fn draw_view(
                     fb,
                     MSG_X + 32,
                     MSG_Y + SAY_SPEAKER_DY,
-                    28.0,
+                    scale.speaker,
                     speaker_label,
                     Rgba::rgb(255, 220, 140),
                     MSG_X + MSG_W - 32,
@@ -244,7 +245,7 @@ pub fn draw_view(
                         fb,
                         MSG_X + 32,
                         MSG_Y + SAY_BODY_DY,
-                        34.0,
+                        scale.dialogue_body,
                         text,
                         Rgba::rgb(255, 255, 255),
                         MSG_X + MSG_W - 32,
@@ -289,6 +290,7 @@ pub fn explore_action_rect() -> (i32, i32, i32, i32) {
 pub fn draw_explore_action_button(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     x: i32,
     y: i32,
     w: i32,
@@ -317,7 +319,7 @@ pub fn draw_explore_action_button(
     fb.fill_rect(x, y + h - 2, w, 2, border);
     fb.fill_rect(x, y, 2, h, border);
     fb.fill_rect(x + w - 2, y, 2, h, border);
-    font.draw_text_in_box(fb, x, y, w, h, 16, 30.0, text, label);
+    font.draw_text_in_box(fb, x, y, w, h, 16, scale.explore_pill, text, label);
 }
 
 /// Inventory chips sit above the action button.
@@ -672,6 +674,7 @@ fn line_pix(buf: &mut [u8], mut x0: i32, mut y0: i32, x1: i32, y1: i32, c: Rgba)
 pub fn draw_explore_chrome(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     action_label: Option<&str>,
     action_hover: bool,
     inventory: &[(String, String, bool)],
@@ -704,7 +707,7 @@ pub fn draw_explore_chrome(
 
     if let Some(label) = action_label {
         let (x, y, w, h) = explore_action_rect();
-        draw_explore_action_button(fb, font, x, y, w, h, label, action_hover);
+        draw_explore_action_button(fb, font, scale, x, y, w, h, label, action_hover);
     }
 
     if !inventory.is_empty() {
@@ -713,7 +716,7 @@ pub fn draw_explore_chrome(
             fb,
             40,
             inv_y - 28,
-            26.0,
+            scale.inventory,
             "道具",
             Rgba::rgb(255, 245, 220),
             400,
@@ -725,7 +728,7 @@ pub fn draw_explore_chrome(
             } else {
                 ButtonState::Idle
             };
-            draw_button(fb, font, x, y, w, h, label, 26.0, state);
+            draw_button(fb, font, x, y, w, h, label, scale.inventory, state);
         }
     }
 }
@@ -776,6 +779,7 @@ pub fn hit_explore_item(lx: i32, ly: i32, inventory: &[(String, String, bool)]) 
 pub fn draw_one_choice(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     view: &View,
     index: usize,
     choice_sel: usize,
@@ -793,7 +797,7 @@ pub fn draw_one_choice(
         w,
         h,
         &opt.text,
-        32.0,
+        scale.menu,
         button_state(index, choice_sel, hover_choice, pressed_choice),
     );
     Some((x, y, w, h))
@@ -802,19 +806,21 @@ pub fn draw_one_choice(
 pub fn draw_choice_buttons(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     view: &View,
     choice_sel: usize,
     hover_choice: Option<usize>,
     pressed_choice: Option<usize>,
 ) {
     for i in 0..view.choices.len() {
-        let _ = draw_one_choice(fb, font, view, i, choice_sel, hover_choice, pressed_choice);
+        let _ = draw_one_choice(fb, font, scale, view, i, choice_sel, hover_choice, pressed_choice);
     }
 }
 
 pub fn draw_title(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     locale: &str,
     game_title: &str,
     selected: usize,
@@ -847,7 +853,7 @@ pub fn draw_title(
             fb,
             200,
             280,
-            72.0,
+            scale.title,
             game_title,
             Rgba::rgb(255, 230, 160),
             1720,
@@ -872,7 +878,7 @@ pub fn draw_title(
                     w,
                     h,
                     20,
-                    32.0,
+                    scale.menu,
                     &caption,
                     Rgba::rgb(255, 255, 255),
                 );
@@ -886,7 +892,7 @@ pub fn draw_title(
                 w,
                 h,
                 &caption,
-                32.0,
+                scale.menu,
                 button_state(i, selected, hover, pressed),
             );
         }
@@ -1034,6 +1040,7 @@ fn blit_logical_cam(
 pub fn draw_settings(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     locale: &str,
     settings: &Settings,
     selected: usize,
@@ -1054,7 +1061,7 @@ pub fn draw_settings(
         fb,
         360,
         180,
-        32.0,
+        scale.menu,
         settings::settings_title(locale),
         Rgba::rgb(255, 230, 160),
         1560,
@@ -1069,7 +1076,7 @@ pub fn draw_settings(
             w,
             h,
             "",
-            28.0,
+            scale.settings,
             button_state(i, selected, None, None),
         );
         if i == FULLSCREEN_ROW || i == AUTO_PLAY_ROW || i == SKIP_UNREAD_ROW {
@@ -1088,7 +1095,7 @@ pub fn draw_settings(
                 settings::skip_unread_label(locale)
             };
             let label = format!("{}  {}", name, settings::on_off(locale, on));
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == UI_LANG_ROW {
@@ -1097,7 +1104,7 @@ pub fn draw_settings(
                 settings::ui_lang_label(locale),
                 settings.ui_language.choice_label(locale)
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == TEXT_SPEED_ROW {
@@ -1106,7 +1113,7 @@ pub fn draw_settings(
                 settings::text_speed_label(locale),
                 settings.text_speed
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == AUTO_DELAY_ROW {
@@ -1115,12 +1122,12 @@ pub fn draw_settings(
                 settings::auto_delay_label(locale),
                 settings.auto_delay_ms
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         let vol = settings.get(i);
         let label = format!("{}  {vol}", settings::channel_label(locale, i));
-        font.draw_text_in_box(fb, x, y, 380, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
+        font.draw_text_in_box(fb, x, y, 380, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
         let bar_x = x + 400;
         let bar_y = y + 28;
         let bar_w = w - 440;
@@ -1158,6 +1165,7 @@ pub fn draw_settings(
 pub fn draw_menu(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     locale: &str,
     selected: usize,
     hover: Option<usize>,
@@ -1197,7 +1205,7 @@ pub fn draw_menu(
                     w,
                     h,
                     20,
-                    32.0,
+                    scale.menu,
                     &caption,
                     Rgba::rgb(255, 255, 255),
                 );
@@ -1211,7 +1219,7 @@ pub fn draw_menu(
                 w,
                 h,
                 &caption,
-                32.0,
+                scale.menu,
                 button_state(i, selected, hover, pressed),
             );
         }
@@ -1341,6 +1349,7 @@ pub fn draw_backlog(
 pub fn draw_hud(
     fb: &mut Framebuffer,
     font: &GameFont,
+    scale: &TypeScale,
     locale: &str,
     hover: Option<usize>,
     pressed: Option<usize>,
@@ -1365,7 +1374,7 @@ pub fn draw_hud(
             w,
             h,
             &label,
-            24.0,
+            scale.hud,
             button_state(i, usize::MAX, hover, pressed),
         );
     }
@@ -1546,7 +1555,7 @@ mod tests {
         // Scene-ish mid-gray so near-white button stands out.
         fb.fill(Rgba::rgb(90, 90, 100));
         let (x, y, w, h) = explore_action_rect();
-        draw_explore_action_button(&mut fb, &font, x, y, w, h, "開 · 書桌", false);
+        draw_explore_action_button(&mut fb, &font, &TypeScale::default(), x, y, w, h, "開 · 書桌", false);
         // Sample near-left interior (avoid centered glyph) — near-white, not dark Idle.
         let sx = x + 8;
         let sy = y + h / 2;
@@ -1640,6 +1649,7 @@ mod tests {
         draw_explore_chrome(
             &mut fb,
             &font,
+            &TypeScale::default(),
             None,
             false,
             &[],
@@ -1656,6 +1666,7 @@ mod tests {
         draw_explore_chrome(
             &mut fb,
             &font,
+            &TypeScale::default(),
             None,
             false,
             &[],

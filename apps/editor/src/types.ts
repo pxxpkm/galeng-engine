@@ -51,6 +51,24 @@ export type PauseButtonKey = (typeof PAUSE_BUTTON_KEYS)[number];
 
 export type PauseButtons = Partial<Record<PauseButtonKey, TitleButton>>;
 
+export interface FontScale {
+  dialogueBody?: number;
+  speaker?: number;
+  explorePill?: number;
+  inventory?: number;
+  hud?: number;
+  title?: number;
+  menu?: number;
+  settings?: number;
+}
+
+export interface FontConfig {
+  dialogue?: string;
+  ui?: string;
+  title?: string;
+  scale?: FontScale;
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -62,7 +80,9 @@ export interface Project {
   titleBgm?: string;
   titleBg?: string;
   titleMovie?: string;
+  /** @deprecated Prefer fonts.dialogue */
   font?: string;
+  fonts?: FontConfig;
   msgBox?: string;
   icon?: string;
   hideGameTitle?: boolean;

@@ -1,4 +1,5 @@
 import type {
+  FontConfig,
   GalleryItem,
   PauseButtonKey,
   PauseButtons,
@@ -134,4 +135,40 @@ export function addMusicItem(project: Project): Project {
 
 export function applyMusicAsset(project: Project, asset: string): Project {
   return { ...project, musicGallery: ensureGalleryItem(project.musicGallery, asset) };
+}
+
+export function fontDialogueOf(project: Project | null | undefined): string | undefined {
+  return project?.fonts?.dialogue || project?.font || undefined;
+}
+
+export function fontUiOf(project: Project | null | undefined): string | undefined {
+  return project?.fonts?.ui || fontDialogueOf(project);
+}
+
+export function fontTitleOf(project: Project | null | undefined): string | undefined {
+  return project?.fonts?.title || fontUiOf(project);
+}
+
+export function patchFontRole(
+  project: Project,
+  role: keyof Pick<FontConfig, "dialogue" | "ui" | "title">,
+  value: string,
+): Project {
+  const trimmed = value.trim();
+  const fonts: FontConfig = { ...(project.fonts ?? {}) };
+  if (!trimmed) {
+    delete fonts[role];
+  } else {
+    fonts[role] = trimmed;
+  }
+  const next: Project = { ...project, fonts };
+  // Keep deprecated alias in sync when dialogue changes.
+  if (role === "dialogue") {
+    if (!trimmed) delete next.font;
+    else next.font = trimmed;
+  }
+  if (!fonts.dialogue && !fonts.ui && !fonts.title && !fonts.scale) {
+    delete next.fonts;
+  }
+  return next;
 }

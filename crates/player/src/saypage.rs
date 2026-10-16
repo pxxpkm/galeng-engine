@@ -2,7 +2,8 @@ use crate::draw::{MSG_W, MSG_Y, SAY_BODY_DY};
 use crate::font::GameFont;
 use crate::hud;
 
-pub const SAY_SIZE: f32 = 40.0;
+/// Fallback when no TypeScale is available (matches soft-chrome default body).
+pub const SAY_SIZE: f32 = 34.0;
 
 pub fn say_body_y() -> i32 {
     MSG_Y + SAY_BODY_DY
@@ -12,15 +13,19 @@ pub fn say_wrap_width() -> i32 {
     MSG_W - 64
 }
 
-pub fn lines_per_page() -> usize {
-    let h = GameFont::line_h(SAY_SIZE);
+pub fn lines_per_page(body_size: f32) -> usize {
+    let h = GameFont::line_h(body_size);
     let n = (hud::hud_y() - say_body_y()) / h;
     n.max(1) as usize
 }
 
 pub fn pages(font: &GameFont, text: &str) -> Vec<(usize, usize)> {
-    let lines = font.wrap_lines(text, SAY_SIZE, say_wrap_width());
-    let per = lines_per_page().max(1);
+    pages_sized(font, text, SAY_SIZE)
+}
+
+pub fn pages_sized(font: &GameFont, text: &str, body_size: f32) -> Vec<(usize, usize)> {
+    let lines = font.wrap_lines(text, body_size, say_wrap_width());
+    let per = lines_per_page(body_size).max(1);
     let mut out = Vec::new();
     let mut i = 0;
     while i < lines.len() {
@@ -72,7 +77,7 @@ mod tests {
 
     #[test]
     fn two_lines_fit_above_hud() {
-        assert_eq!(lines_per_page(), 2);
+        assert_eq!(lines_per_page(SAY_SIZE), 2);
     }
 
     #[test]

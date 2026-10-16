@@ -28,6 +28,7 @@ export function Stage({ ed }: { ed: Editor }) {
             beats={beats}
             beatIndex={ed.beatIndex}
             msgBox={ed.project?.msgBox}
+            dialogueFont={ed.project?.fonts?.dialogue || ed.project?.font}
             onCharOffset={(index, x, y) => ed.updateBeat((cur) => setCharOffset(cur, index, x, y))}
           />
           {isEmptyBeat ? <div className="v2-stage-hint">{t("editor.emptyBeat")}</div> : null}

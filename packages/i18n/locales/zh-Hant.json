@@ -318,5 +318,16 @@
   "editor.assetRoot": "素材資料夾",
   "editor.assetBrowse": "瀏覽素材夾…",
   "editor.assetDefault": "用專案 assets",
-  "editor.assetHint": "指定後自動建立 bg／char／voice／bgm／se／amb／cg／movie／fonts／ui。路徑只存在本機，不寫進 galeng.json。"
+  "editor.assetHint": "指定後自動建立 bg／char／voice／bgm／se／amb／cg／movie／fonts／ui。路徑只存在本機，不寫進 galeng.json。",
+  "editor.fontsPanel": "字型",
+  "editor.fontsPanelHint": "為對話、介面、標題指定專案字型。檔案放在 assets/fonts/。",
+  "editor.fontDialogue": "對話字型",
+  "editor.fontUi": "介面字型",
+  "editor.fontTitle": "標題字型",
+  "editor.fontLibrary": "字型庫",
+  "editor.fontLibraryEmpty": "尚未有 fonts/ 資源。",
+  "editor.fontOpen": "開啟",
+  "editor.fontLicense": "授權說明",
+  "editor.fontLicenseHint": "檔名含 OFL/license 者會列喺呢度方便查閱。",
+  "editor.fontDeprecatedAlias": "頂層 project.font 仍係對話角色嘅舊別名（會同步）。"
 }

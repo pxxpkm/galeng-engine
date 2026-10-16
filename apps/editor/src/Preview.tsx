@@ -48,12 +48,15 @@ export function Preview({
   beats,
   beatIndex,
   msgBox,
+  dialogueFont,
   onCharOffset,
 }: {
   sceneId: string;
   beats: Beat[];
   beatIndex: number;
   msgBox?: string;
+  /** Project dialogue font logical (`fonts/…`); Preview loads via FontFace when possible. */
+  dialogueFont?: string;
   onCharOffset?: (index: number, x: number, y: number) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -127,6 +130,20 @@ export function Preview({
         }
       }
       ctx.restore();
+      let fontFamily = "sans-serif";
+      if (dialogueFont) {
+        try {
+          const family = "GalengDialoguePreview";
+          const face = new FontFace(family, `url(${mediaUrl(dialogueFont)})`);
+          await face.load();
+          document.fonts.add(face);
+          fontFamily = `"${family}", sans-serif`;
+        } catch {
+          /* keep sans-serif fallback */
+        }
+      }
+      if (cancelled || !ctx) return;
+
       if (snap.sayText) {
         if (boxImg) {
           ctx.drawImage(boxImg, 80 * sx, 780 * sy, 1760 * sx, 260 * sy);
@@ -135,10 +152,10 @@ export function Preview({
           ctx.fillRect(80 * sx, 780 * sy, 1760 * sx, 260 * sy);
         }
         ctx.fillStyle = "#ffdc8c";
-        ctx.font = `${Math.max(14, 28 * sy)}px sans-serif`;
+        ctx.font = `${Math.max(14, 28 * sy)}px ${fontFamily}`;
         ctx.fillText(snap.saySpeaker ?? "", 112 * sx, 830 * sy);
         ctx.fillStyle = "#fff";
-        ctx.font = `${Math.max(16, 36 * sy)}px sans-serif`;
+        ctx.font = `${Math.max(16, 36 * sy)}px ${fontFamily}`;
         ctx.fillText(snap.sayText, 112 * sx, 900 * sy);
       }
     })();
@@ -146,7 +163,7 @@ export function Preview({
     return () => {
       cancelled = true;
     };
-  }, [sceneId, beats, beatIndex, msgBox]);
+  }, [sceneId, beats, beatIndex, msgBox, dialogueFont]);
 
   return (
     <canvas

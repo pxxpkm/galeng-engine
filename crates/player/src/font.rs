@@ -418,3 +418,161 @@ fn blit_glyph(
         }
     }
 }
+
+
+/// Resolved type sizes (logical px). Defaults match current soft-chrome polish.
+#[derive(Debug, Clone, Copy)]
+pub struct TypeScale {
+    pub dialogue_body: f32,
+    pub speaker: f32,
+    pub explore_pill: f32,
+    pub inventory: f32,
+    pub hud: f32,
+    pub title: f32,
+    pub menu: f32,
+    pub settings: f32,
+}
+
+impl Default for TypeScale {
+    fn default() -> Self {
+        Self {
+            dialogue_body: 34.0,
+            speaker: 28.0,
+            explore_pill: 30.0,
+            inventory: 26.0,
+            hud: 24.0,
+            title: 72.0,
+            menu: 32.0,
+            settings: 28.0,
+        }
+    }
+}
+
+impl TypeScale {
+    pub fn from_project(project: &galeng_schema::Project) -> Self {
+        let mut s = Self::default();
+        let Some(fonts) = project.fonts.as_ref() else {
+            return s;
+        };
+        let Some(sc) = fonts.scale.as_ref() else {
+            return s;
+        };
+        if let Some(v) = sc.dialogue_body {
+            s.dialogue_body = v;
+        }
+        if let Some(v) = sc.speaker {
+            s.speaker = v;
+        }
+        if let Some(v) = sc.explore_pill {
+            s.explore_pill = v;
+        }
+        if let Some(v) = sc.inventory {
+            s.inventory = v;
+        }
+        if let Some(v) = sc.hud {
+            s.hud = v;
+        }
+        if let Some(v) = sc.title {
+            s.title = v;
+        }
+        if let Some(v) = sc.menu {
+            s.menu = v;
+        }
+        if let Some(v) = sc.settings {
+            s.settings = v;
+        }
+        s
+    }
+}
+
+/// Dialogue / UI / title faces loaded for a project.
+pub struct FontSet {
+    pub dialogue: GameFont,
+    pub ui: GameFont,
+    pub title: GameFont,
+}
+
+impl FontSet {
+    pub fn load(project: &galeng_schema::Project, source: &Source) -> Result<Self, String> {
+        let locale = Some(project.locale.as_str());
+        let dialogue = GameFont::load_preferred(project.font_dialogue(), locale, source)?;
+        let ui = GameFont::load_preferred(project.font_ui(), locale, source)?;
+        let title = GameFont::load_preferred(project.font_title(), locale, source)?;
+        Ok(Self {
+            dialogue,
+            ui,
+            title,
+        })
+    }
+}
+
+
+#[cfg(test)]
+mod font_manager_tests {
+    use super::*;
+    use galeng_schema::{FontConfig, FontScale, Project, Resolution};
+
+    fn bare_project() -> Project {
+        Project {
+            id: "t".into(),
+            title: "t".into(),
+            schema_version: 1,
+            resolution: Resolution {
+                width: 1920,
+                height: 1080,
+            },
+            start_scene: "a".into(),
+            locale: "zh-Hant".into(),
+            skip_title: true,
+            title_bgm: None,
+            title_bg: None,
+            title_movie: None,
+            font: Some("fonts/legacy".into()),
+            fonts: None,
+            msg_box: None,
+            icon: None,
+            hide_game_title: false,
+            title_buttons: None,
+            pause_buttons: None,
+            ui_languages: None,
+            characters: None,
+            cg: None,
+            music_gallery: None,
+            verbs: vec![],
+            items: vec![],
+            switches: vec![],
+            fallback: Default::default(),
+            effect_library: vec![],
+            transition_defaults: Default::default(),
+        }
+    }
+
+    #[test]
+    fn type_scale_defaults_match_soft_chrome() {
+        let s = TypeScale::default();
+        assert_eq!(s.dialogue_body, 34.0);
+        assert_eq!(s.speaker, 28.0);
+        assert_eq!(s.explore_pill, 30.0);
+    }
+
+    #[test]
+    fn font_roles_fall_back_to_deprecated_font() {
+        let p = bare_project();
+        assert_eq!(p.font_dialogue(), Some("fonts/legacy"));
+        assert_eq!(p.font_ui(), Some("fonts/legacy"));
+        let mut p2 = p;
+        p2.fonts = Some(FontConfig {
+            dialogue: Some("fonts/dlg".into()),
+            ui: Some("fonts/ui".into()),
+            title: None,
+            scale: Some(FontScale {
+                dialogue_body: Some(40.0),
+                ..Default::default()
+            }),
+        });
+        assert_eq!(p2.font_dialogue(), Some("fonts/dlg"));
+        assert_eq!(p2.font_ui(), Some("fonts/ui"));
+        assert_eq!(p2.font_title(), Some("fonts/ui"));
+        assert_eq!(TypeScale::from_project(&p2).dialogue_body, 40.0);
+    }
+}

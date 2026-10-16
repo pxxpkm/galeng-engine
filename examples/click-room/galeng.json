@@ -90,5 +90,10 @@
     "gotoScene": "fade_black"
   },
   "font": "fonts/noto-sans-tc-demo",
-  "msgBox": "ui/msgbox"
+  "msgBox": "ui/msgbox",
+  "fonts": {
+    "dialogue": "fonts/noto-sans-tc-demo",
+    "ui": "fonts/noto-sans-tc-demo",
+    "title": "fonts/noto-sans-tc-demo"
+  }
 }

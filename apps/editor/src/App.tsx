@@ -963,6 +963,7 @@ export function App() {
             beats={scene?.beats ?? EMPTY_BEATS}
             beatIndex={beatIndex}
             msgBox={project?.msgBox}
+            dialogueFont={project?.fonts?.dialogue || project?.font}
             onCharOffset={(index, x, y) => updateBeat((cur) => setCharOffset(cur, index, x, y))}
           />
         </section>

@@ -304,6 +304,7 @@ mod tests {
             title_bg: None,
             title_movie: None,
             font: None,
+            fonts: None,
             msg_box: None,
             icon: None,
             hide_game_title: false,

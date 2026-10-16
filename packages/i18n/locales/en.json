@@ -318,5 +318,16 @@
   "editor.assetRoot": "Asset folder",
   "editor.assetBrowse": "Browse assets…",
   "editor.assetDefault": "Use project assets",
-  "editor.assetHint": "Picking a folder creates bg / char / voice / bgm / se / amb / cg / movie / fonts / ui if missing. The path stays on this machine; it is not written to galeng.json."
+  "editor.assetHint": "Picking a folder creates bg / char / voice / bgm / se / amb / cg / movie / fonts / ui if missing. The path stays on this machine; it is not written to galeng.json.",
+  "editor.fontsPanel": "Fonts",
+  "editor.fontsPanelHint": "Assign project fonts for dialogue, UI chrome, and title. Files live under assets/fonts/.",
+  "editor.fontDialogue": "Dialogue font",
+  "editor.fontUi": "UI font",
+  "editor.fontTitle": "Title font",
+  "editor.fontLibrary": "Font library",
+  "editor.fontLibraryEmpty": "No fonts/ assets yet.",
+  "editor.fontOpen": "open",
+  "editor.fontLicense": "License notes",
+  "editor.fontLicenseHint": "Files whose names include OFL/license are listed for convenience.",
+  "editor.fontDeprecatedAlias": "Top-level project.font stays as a deprecated alias of the dialogue role."
 }

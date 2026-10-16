@@ -288,6 +288,71 @@ impl TransitionDefaults {
     }
 }
 
+
+/// Optional type scale (logical px at project resolution, typically 1920×1080).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FontScale {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue_body: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explore_pill: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inventory: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hud: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<f32>,
+}
+
+impl FontScale {
+    pub fn is_empty(&self) -> bool {
+        self.dialogue_body.is_none()
+            && self.speaker.is_none()
+            && self.explore_pill.is_none()
+            && self.inventory.is_none()
+            && self.hud.is_none()
+            && self.title.is_none()
+            && self.menu.is_none()
+            && self.settings.is_none()
+    }
+}
+
+/// Project font roles. Top-level `Project.font` remains a deprecated alias for dialogue.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FontConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<FontScale>,
+}
+
+impl FontConfig {
+    pub fn is_empty(&self) -> bool {
+        self.dialogue.is_none()
+            && self.ui.is_none()
+            && self.title.is_none()
+            && self.scale.as_ref().map(FontScale::is_empty).unwrap_or(true)
+    }
+
+    pub fn role_logicals(&self) -> impl Iterator<Item = &str> {
+        [self.dialogue.as_deref(), self.ui.as_deref(), self.title.as_deref()]
+            .into_iter()
+            .flatten()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -307,8 +372,11 @@ pub struct Project {
     pub title_bg: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_movie: Option<String>,
+    /// Deprecated alias for `fonts.dialogue`. Prefer `fonts`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fonts: Option<FontConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub msg_box: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -339,6 +407,33 @@ pub struct Project {
     pub effect_library: Vec<EffectDef>,
     #[serde(default, skip_serializing_if = "TransitionDefaults::is_empty")]
     pub transition_defaults: TransitionDefaults,
+}
+
+
+impl Project {
+    /// Dialogue face logical (`fonts/…`), falling back to deprecated `font`.
+    pub fn font_dialogue(&self) -> Option<&str> {
+        self.fonts
+            .as_ref()
+            .and_then(|f| f.dialogue.as_deref())
+            .or(self.font.as_deref())
+    }
+
+    /// UI / HUD / Explore chrome face; falls back to dialogue then `font`.
+    pub fn font_ui(&self) -> Option<&str> {
+        self.fonts
+            .as_ref()
+            .and_then(|f| f.ui.as_deref())
+            .or_else(|| self.font_dialogue())
+    }
+
+    /// Title-screen face; falls back to UI then dialogue.
+    pub fn font_title(&self) -> Option<&str> {
+        self.fonts
+            .as_ref()
+            .and_then(|f| f.title.as_deref())
+            .or_else(|| self.font_ui())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

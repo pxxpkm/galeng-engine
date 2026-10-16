@@ -26,7 +26,7 @@ use crate::title::{
     game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
 };
 use crate::fb::{mix_rgba, Framebuffer, HEIGHT, WIDTH};
-use crate::font::GameFont;
+use crate::font::{FontSet, TypeScale};
 use crate::save::{
     check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, write_slot, write_thumb,
     AUTO_SLOT, THUMB_H, THUMB_W,
@@ -88,11 +88,8 @@ struct ChromeSnap {
 }
 
 pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
-    let font = GameFont::load_preferred(
-        runtime.project.font.as_deref(),
-        Some(runtime.project.locale.as_str()),
-        &runtime.source,
-    )?;
+    let fonts = FontSet::load(&runtime.project, &runtime.source)?;
+    let scale = TypeScale::from_project(&runtime.project);
     let mut assets = Bank::from_source(runtime.source.clone());
     let config_path = default_config_path(&runtime.project.id, &runtime.project_dir);
     let mut settings = read_config(&config_path);
@@ -230,14 +227,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     say_page_key = Some(key);
                     say_page = 0;
                 }
-                let spans = saypage::pages(&font, text);
+                let spans = saypage::pages_sized(&fonts.dialogue, text, scale.dialogue_body);
                 say_page_count = spans.len().max(1);
                 if say_page >= say_page_count {
                     say_page = say_page_count - 1;
                 }
                 let page_text = saypage::page_text(text, &spans, say_page);
-                font.prewarm(page_text, 34.0);
-                font.prewarm(&speaker, 28.0);
+                fonts.dialogue.prewarm(page_text, scale.dialogue_body);
+                fonts.dialogue.prewarm(&speaker, scale.speaker);
                 typewriter.tick(
                     &view.scene_id,
                     view.beat_index,
@@ -258,7 +255,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             say_page = 0;
         }
         let say_shown = view.say_text.as_deref().map(|text| {
-            let spans = saypage::pages(&font, text);
+            let spans = saypage::pages_sized(&fonts.dialogue, text, scale.dialogue_body);
             let page_text = saypage::page_text(text, &spans, say_page);
             typewriter.visible(page_text)
         });
@@ -424,7 +421,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     for i in [prev.choice, choice_sel] {
                         if let Some(r) = draw_one_choice(
                             &mut fb,
-                            &font,
+                            &fonts.ui,
+                            &scale,
                             &view,
                             i,
                             choice_sel,
@@ -436,8 +434,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     }
                 } else {
                     draw_choice_buttons(
-                        &mut fb,
-                        &font,
+                    &mut fb,
+                    &fonts.ui,
+                    &scale,
                         &view,
                         choice_sel,
                         hover_choice,
@@ -456,7 +455,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             ) {
                 draw_hud(
                     &mut fb,
-                    &font,
+                    &fonts.ui,
+                    &scale,
                     &ui_locale,
                     hover_hud,
                     pressed_hud,
@@ -470,7 +470,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         } else {
             draw_view(
                 &mut fb,
-                &font,
+                &fonts.dialogue,
+                &scale,
                 &view,
                 &speaker,
                 &mut assets,
@@ -489,7 +490,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             if !title_open && view.phase == Phase::Choices {
                 draw_choice_buttons(
                     &mut fb,
-                    &font,
+                    &fonts.ui,
+                    &scale,
                     &view,
                     choice_sel,
                     hover_choice,
@@ -547,7 +549,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 let debug_hs = std::env::var_os("GALENG_EXPLORE_DEBUG_HOTSPOTS").is_some();
                 draw_explore_chrome(
                     &mut fb,
-                    &font,
+                    &fonts.ui,
+                    &scale,
                     action_label.as_deref(),
                     on_action && action_label.is_some(),
                     &inv,
@@ -566,7 +569,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             .unwrap_or(item.as_str());
                         draw_button(
                             &mut fb,
-                            &font,
+                            &fonts.ui,
                             lx - EXPLORE_ITEM_W / 2,
                             ly - EXPLORE_ITEM_H / 2,
                             EXPLORE_ITEM_W,
@@ -617,7 +620,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         if let Some(play) = title_op.as_ref().or(movie.as_ref()) {
             play.blit(&mut fb);
             if !overlay {
-                draw_movie_skip(&mut fb, &font, &ui_locale);
+                draw_movie_skip(&mut fb, &fonts.ui, &ui_locale);
             }
         }
         if full_upload && !overlay && !title_open && title_op.is_none() {
@@ -633,8 +636,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         );
         if full_upload && show_hud {
             draw_hud(
-                &mut fb,
-                &font,
+                    &mut fb,
+                    &fonts.ui,
+                    &scale,
                 &ui_locale,
                 hover_hud,
                 pressed_hud,
@@ -658,13 +662,15 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         } else if gallery_open {
             let ids: Vec<&str> = cgs.iter().map(|g| g.id.as_str()).collect();
             let unlocked: Vec<bool> = cgs.iter().map(|g| seen.has(&g.asset)).collect();
-            draw_gallery(&mut fb, &font, &ui_locale, &ids, gallery_sel, &unlocked);
+            draw_gallery(
+            &mut fb,
+            &fonts.ui, &ui_locale, &ids, gallery_sel, &unlocked);
         } else if music_open {
             let tracks = runtime.project.music_gallery.as_deref().unwrap_or(&[]);
             let ids: Vec<&str> = tracks.iter().map(|g| g.id.as_str()).collect();
             draw_music(
-                &mut fb,
-                &font,
+            &mut fb,
+            &fonts.ui,
                 &ui_locale,
                 &ids,
                 music_sel,
@@ -683,7 +689,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     )
                 })
                 .collect();
-            draw_backlog(&mut fb, &font, &ui_locale, &rows);
+            draw_backlog(
+            &mut fb,
+            &fonts.ui, &ui_locale, &rows);
         }
         if let Some(saving) = slot_pick {
             let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
@@ -700,8 +708,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 thumbs[i] = read_thumb(&dir, n);
             }
             draw_slots(
-                &mut fb,
-                &font,
+            &mut fb,
+            &fonts.ui,
                 &ui_locale,
                 saving,
                 slot_sel,
@@ -711,7 +719,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         } else if settings_open {
             draw_settings(
                 &mut fb,
-                &font,
+                &fonts.ui,
+                &scale,
                 &ui_locale,
                 &settings,
                 settings_sel,
@@ -719,7 +728,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         } else if menu_open {
             draw_menu(
                 &mut fb,
-                &font,
+                &fonts.ui,
+                &scale,
                 &ui_locale,
                 menu_sel,
                 hover_menu,
@@ -733,7 +743,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         } else if title_open {
             draw_title(
                 &mut fb,
-                &font,
+                &fonts.title,
+                &scale,
                 &ui_locale,
                 &runtime.project.title,
                 title_sel,
