@@ -260,14 +260,44 @@ pub fn draw_view(
     }
 }
 
+pub const EXPLORE_VERB_W: i32 = 140;
+pub const EXPLORE_VERB_H: i32 = 48;
+pub const EXPLORE_VERB_GAP: i32 = 12;
+pub const EXPLORE_ITEM_W: i32 = 168;
+pub const EXPLORE_ITEM_H: i32 = 44;
+pub const EXPLORE_ITEM_GAP: i32 = 12;
+
+/// Verb row sits above the message-box band (same idea as [`choice_rect`]).
+pub fn explore_verb_rect(index: usize, count: usize) -> (i32, i32, i32, i32) {
+    let n = count.max(1) as i32;
+    let total_w = n * (EXPLORE_VERB_W + EXPLORE_VERB_GAP) - EXPLORE_VERB_GAP;
+    let x0 = (WIDTH as i32 - total_w) / 2;
+    let y = MSG_Y - 16 - EXPLORE_VERB_H;
+    (
+        x0 + index as i32 * (EXPLORE_VERB_W + EXPLORE_VERB_GAP),
+        y,
+        EXPLORE_VERB_W,
+        EXPLORE_VERB_H,
+    )
+}
+
+/// Inventory chips sit above the verb row.
+pub fn explore_item_rect(index: usize) -> (i32, i32, i32, i32) {
+    let y = MSG_Y - 16 - EXPLORE_VERB_H - 16 - EXPLORE_ITEM_H;
+    let x = 40 + index as i32 * (EXPLORE_ITEM_W + EXPLORE_ITEM_GAP);
+    (x, y, EXPLORE_ITEM_W, EXPLORE_ITEM_H)
+}
+
 /// Verb / inventory chrome + hotspot outlines for Explore phase.
 pub fn draw_explore_chrome(
     fb: &mut Framebuffer,
     font: &GameFont,
     verbs: &[(String, String, bool)],
-    inventory: &[(String, bool)],
+    inventory: &[(String, String, bool)],
     hotspots: &[(String, galeng_schema::HotspotShape)],
     hover_hotspot: Option<&str>,
+    hover_verb: Option<&str>,
+    hover_item: Option<&str>,
 ) {
     let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
     let hover = Rgba { r: 255, g: 220, b: 80, a: 160 };
@@ -290,63 +320,35 @@ pub fn draw_explore_chrome(
         }
     }
 
-    let bar_y = HEIGHT as i32 - 96;
-    let btn_w = 140i32;
-    let btn_h = 48i32;
-    let gap = 12i32;
-    let total_w = verbs.len() as i32 * (btn_w + gap) - gap;
-    let mut x = (WIDTH as i32 - total_w) / 2;
-    for (id, label, selected) in verbs {
-        let bg = if *selected {
-            Rgba { r: 60, g: 100, b: 180, a: 220 }
+    for (i, (id, label, selected)) in verbs.iter().enumerate() {
+        let (x, y, w, h) = explore_verb_rect(i, verbs.len());
+        let state = if hover_verb == Some(id.as_str()) || *selected {
+            ButtonState::Hover
         } else {
-            Rgba { r: 20, g: 20, b: 30, a: 200 }
+            ButtonState::Idle
         };
-        fb.fill_rect(x, bar_y, btn_w, btn_h, bg);
-        stroke_rect(fb, x, bar_y, btn_w, btn_h, Rgba::rgb(200, 200, 220), 1);
-        let _ = id;
-        font.draw_text(
-            fb,
-            x + 16,
-            bar_y + 14,
-            28.0,
-            label,
-            Rgba::rgb(255, 255, 255),
-            x + btn_w - 8,
-        );
-        x += btn_w + gap;
+        draw_button(fb, font, x, y, w, h, label, 28.0, state);
     }
 
     if !inventory.is_empty() {
-        let inv_y = bar_y - 64;
-        let mut ix = 40i32;
+        let (_ix0, inv_y, _, _) = explore_item_rect(0);
         font.draw_text(
             fb,
-            ix,
+            40,
             inv_y - 28,
             24.0,
             "道具",
             Rgba::rgb(255, 230, 160),
             400,
         );
-        for (item_id, selected) in inventory {
-            let bg = if *selected {
-                Rgba { r: 180, g: 120, b: 40, a: 220 }
+        for (i, (item_id, label, selected)) in inventory.iter().enumerate() {
+            let (x, y, w, h) = explore_item_rect(i);
+            let state = if hover_item == Some(item_id.as_str()) || *selected {
+                ButtonState::Hover
             } else {
-                Rgba { r: 40, g: 40, b: 50, a: 200 }
+                ButtonState::Idle
             };
-            fb.fill_rect(ix, inv_y, 120, 44, bg);
-            stroke_rect(fb, ix, inv_y, 120, 44, Rgba::rgb(220, 200, 160), 1);
-            font.draw_text(
-                fb,
-                ix + 10,
-                inv_y + 10,
-                24.0,
-                item_id,
-                Rgba::rgb(255, 255, 255),
-                ix + 110,
-            );
-            ix += 132;
+            draw_button(fb, font, x, y, w, h, label, 24.0, state);
         }
     }
 }
@@ -379,34 +381,22 @@ fn stroke_rect(fb: &mut Framebuffer, x: i32, y: i32, w: i32, h: i32, color: Rgba
 
 /// Hit-test explore verb bar. Returns verb id.
 pub fn hit_explore_verb(lx: i32, ly: i32, verbs: &[(String, String, bool)]) -> Option<String> {
-    let bar_y = HEIGHT as i32 - 96;
-    let btn_w = 140i32;
-    let btn_h = 48i32;
-    let gap = 12i32;
-    let total_w = verbs.len() as i32 * (btn_w + gap) - gap;
-    let mut x = (WIDTH as i32 - total_w) / 2;
-    for (id, _label, _sel) in verbs {
-        if lx >= x && lx < x + btn_w && ly >= bar_y && ly < bar_y + btn_h {
+    for (i, (id, _label, _sel)) in verbs.iter().enumerate() {
+        let (x, y, w, h) = explore_verb_rect(i, verbs.len());
+        if lx >= x && lx < x + w && ly >= y && ly < y + h {
             return Some(id.clone());
         }
-        x += btn_w + gap;
     }
     None
 }
 
 /// Hit-test explore inventory strip. Returns item id.
-pub fn hit_explore_item(lx: i32, ly: i32, inventory: &[(String, bool)]) -> Option<String> {
-    if inventory.is_empty() {
-        return None;
-    }
-    let bar_y = HEIGHT as i32 - 96;
-    let inv_y = bar_y - 64;
-    let mut ix = 40i32;
-    for (item_id, _) in inventory {
-        if lx >= ix && lx < ix + 120 && ly >= inv_y && ly < inv_y + 44 {
+pub fn hit_explore_item(lx: i32, ly: i32, inventory: &[(String, String, bool)]) -> Option<String> {
+    for (i, (item_id, _label, _sel)) in inventory.iter().enumerate() {
+        let (x, y, w, h) = explore_item_rect(i);
+        if lx >= x && lx < x + w && ly >= y && ly < y + h {
             return Some(item_id.clone());
         }
-        ix += 132;
     }
     None
 }
@@ -1122,5 +1112,45 @@ mod tests {
         assert!(pixels > 40, "expected label pixels inside the button");
         let above = fb.count_nonblack_in(x as u32, (y - 8).max(0) as u32, w as u32, 6);
         assert_eq!(above, 0, "label leaked above the box");
+    }
+
+    #[test]
+    fn explore_verb_bar_stays_above_message_box() {
+        let verbs = vec![
+            ("look".into(), "看".into(), false),
+            ("open".into(), "開".into(), true),
+            ("take".into(), "拎".into(), false),
+            ("use".into(), "用".into(), false),
+            ("move".into(), "去".into(), false),
+        ];
+        for i in 0..verbs.len() {
+            let (x, y, w, h) = explore_verb_rect(i, verbs.len());
+            assert!(y >= 0, "verb {i} y={y}");
+            assert!(y + h <= MSG_Y, "verb {i} overlaps message box: bottom={}", y + h);
+            assert!(
+                y + h < crate::hud::hud_y(),
+                "verb {i} overlaps HUD y={}",
+                crate::hud::hud_y()
+            );
+            assert_eq!(
+                hit_explore_verb(x + w / 2, y + h / 2, &verbs).as_deref(),
+                Some(verbs[i].0.as_str())
+            );
+        }
+        // Old bottom-chrome region must not hit verbs.
+        assert_eq!(hit_explore_verb(WIDTH as i32 / 2, HEIGHT as i32 - 72, &verbs), None);
+    }
+
+    #[test]
+    fn explore_item_strip_above_verb_bar() {
+        let inv = vec![("key".into(), "黃銅鎖匙".into(), true)];
+        let (_vx, vy, _vw, _vh) = explore_verb_rect(0, 1);
+        let (x, y, w, h) = explore_item_rect(0);
+        assert!(y + h <= vy, "inventory overlaps verb bar");
+        assert!(y + h <= MSG_Y);
+        assert_eq!(
+            hit_explore_item(x + w / 2, y + h / 2, &inv).as_deref(),
+            Some("key")
+        );
     }
 }

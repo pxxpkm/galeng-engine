@@ -283,7 +283,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             } else if !overlay && view.phase == Phase::Choices {
                 hover_choice = hit_choice(lx, ly, view.choices.len());
             }
-            if !overlay && !title_open && !ui_hidden {
+            if show_hud_now(
+                overlay,
+                title_open,
+                ui_hidden,
+                title_op.is_some(),
+                movie.is_some(),
+                &view,
+            ) {
                 hover_hud = hud::hit_hud(lx, ly);
             }
         }
@@ -472,8 +479,10 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 let hotspots = runtime.explore_hotspots();
                 let (ww, wh) = canvas.output_size().unwrap_or((1280, 720));
                 let ms = events.mouse_state();
-                let hover_hs = window_to_logical(ms.x(), ms.y(), ww, wh)
-                    .and_then(|(lx, ly)| runtime.explore_hit(lx, ly));
+                let logical = window_to_logical(ms.x(), ms.y(), ww, wh);
+                let hover_hs = logical.and_then(|(lx, ly)| runtime.explore_hit(lx, ly));
+                let hover_verb = logical.and_then(|(lx, ly)| hit_explore_verb(lx, ly, &verbs));
+                let hover_item = logical.and_then(|(lx, ly)| hit_explore_item(lx, ly, &inv));
                 draw_explore_chrome(
                     &mut fb,
                     &font,
@@ -481,6 +490,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     &inv,
                     &hotspots,
                     hover_hs.as_deref(),
+                    hover_verb.as_deref(),
+                    hover_item.as_deref(),
                 );
             }
         }
@@ -1524,26 +1535,35 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         ui_hidden = false;
                         continue;
                     }
-                    if let Some(i) = hud::hit_hud(lx, ly) {
-                        pressed_hud = Some(i);
-                        apply_hud(
-                            HUD_ACTIONS[i],
-                            &mut settings,
-                            &config_path,
-                            &mut skip_latch,
-                            &mut ui_hidden,
-                            &mut backlog,
-                            &mut menu_open,
-                            &mut menu_sel,
-                            &mut runtime,
-                            &mut fade,
-                            &mut auto_until,
-                            &mut auto_key,
-                            &mut title_open,
-                            &mut title_dirty,
-                            last_thumb.as_deref(),
-                        );
-                        continue;
+                    if show_hud_now(
+                        overlay,
+                        title_open,
+                        ui_hidden,
+                        title_op.is_some(),
+                        movie.is_some(),
+                        &runtime.view(),
+                    ) {
+                        if let Some(i) = hud::hit_hud(lx, ly) {
+                            pressed_hud = Some(i);
+                            apply_hud(
+                                HUD_ACTIONS[i],
+                                &mut settings,
+                                &config_path,
+                                &mut skip_latch,
+                                &mut ui_hidden,
+                                &mut backlog,
+                                &mut menu_open,
+                                &mut menu_sel,
+                                &mut runtime,
+                                &mut fade,
+                                &mut auto_until,
+                                &mut auto_key,
+                                &mut title_open,
+                                &mut title_dirty,
+                                last_thumb.as_deref(),
+                            );
+                            continue;
+                        }
                     }
                     if fade.take().is_some() {
                         continue;
@@ -1936,14 +1956,21 @@ fn explore_verb_rows(runtime: &Runtime) -> Vec<(String, String, bool)> {
         .collect()
 }
 
-fn explore_inv_rows(runtime: &Runtime) -> Vec<(String, bool)> {
+fn explore_inv_rows(runtime: &Runtime) -> Vec<(String, String, bool)> {
     let pending = runtime.explore_pending_item();
     runtime
         .explore_inventory()
         .into_iter()
         .map(|id| {
             let on = pending.as_deref() == Some(id.as_str());
-            (id, on)
+            let label = runtime
+                .project
+                .items
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| item.name.clone())
+                .unwrap_or_else(|| id.clone());
+            (id, label, on)
         })
         .collect()
 }
@@ -1963,11 +1990,7 @@ fn show_hud_now(
         && !movie
         && matches!(
             view.phase,
-            Phase::Explore
-                | Phase::Dialogue
-                | Phase::Choices
-                | Phase::Ended
-                | Phase::MissingScene(_)
+            Phase::Dialogue | Phase::Choices | Phase::Ended | Phase::MissingScene(_)
         )
         && (view.say_text.is_some() || view.phase != Phase::Dialogue)
 }
