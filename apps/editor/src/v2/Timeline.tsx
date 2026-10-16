@@ -15,11 +15,23 @@ const TRACKS = [
   { key: "cg", i18n: "editor.trackCg", icon: <IconCg /> },
 ] as const;
 
-function Cell({ value, text }: { value: string; text?: boolean }) {
+function Cell({ value }: { value: string }) {
   const empty = value === "—";
   return (
-    <div className={`v2-tl-cell${text ? " v2-tl-cell-text" : ""}${empty ? " empty" : ""}`} title={empty ? "" : value}>
+    <div className={`v2-tl-cell${empty ? " empty" : ""}`} title={empty ? "" : value}>
       {empty ? "·" : value}
+    </div>
+  );
+}
+
+/** Dialogue strip: speaker + readable CJK preview (classic-style beat card cue). */
+function TextCell({ speaker, text }: { speaker?: string; text: string }) {
+  const empty = !text || text === "—";
+  const title = empty ? "" : [speaker?.trim(), text].filter(Boolean).join(" · ");
+  return (
+    <div className={`v2-tl-cell v2-tl-cell-text${empty ? " empty" : ""}`} title={title}>
+      {speaker?.trim() ? <span className="v2-tl-speaker">{speaker.trim()}</span> : null}
+      <span className="v2-tl-dialogue">{empty ? "·" : text}</span>
     </div>
   );
 }
@@ -187,7 +199,7 @@ export function Timeline({ ed }: { ed: Editor }) {
                     setDragOver(null);
                   }}
                 >
-                  #{i}
+                  <span className="v2-tl-index-num">#{i}</span>
                 </span>
                 {s.label ? (
                   <span className="v2-tl-note" title={s.label}>
@@ -230,7 +242,7 @@ export function Timeline({ ed }: { ed: Editor }) {
               </div>
               <Cell value={s.bg} />
               <Cell value={s.char} />
-              <Cell value={s.text} text />
+              <TextCell speaker={b.say?.speaker} text={s.text} />
               <Cell value={s.bgm} />
               <Cell value={s.voice} />
               <Cell value={s.se} />
