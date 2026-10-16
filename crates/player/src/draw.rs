@@ -76,6 +76,7 @@ pub fn button_state(index: usize, selected: usize, hover: Option<usize>, pressed
     }
 }
 
+/// Soft light chrome (YU-NO-like): near-white fill, dark label, gold only on hover/press.
 pub fn draw_button(
     fb: &mut Framebuffer,
     font: &GameFont,
@@ -87,31 +88,29 @@ pub fn draw_button(
     size: f32,
     state: ButtonState,
 ) {
-    let fill = match state {
-        ButtonState::Idle => Rgba::rgb(20, 20, 32),
-        ButtonState::Hover => Rgba::rgb(110, 88, 40),
-        ButtonState::Pressed => Rgba::rgb(70, 48, 20),
+    let (fill, border, label) = match state {
+        ButtonState::Idle => (
+            Rgba::rgb(248, 248, 252),
+            Rgba::rgb(170, 170, 180),
+            Rgba::rgb(28, 28, 36),
+        ),
+        ButtonState::Hover => (
+            Rgba::rgb(255, 242, 210),
+            Rgba::rgb(210, 170, 70),
+            Rgba::rgb(40, 32, 16),
+        ),
+        ButtonState::Pressed => (
+            Rgba::rgb(230, 220, 190),
+            Rgba::rgb(180, 140, 50),
+            Rgba::rgb(32, 28, 16),
+        ),
     };
     fb.fill_rect(x, y, w, h, fill);
-    if state != ButtonState::Idle {
-        let edge = Rgba::rgb(255, 220, 120);
-        fb.fill_rect(x, y, w, 3, edge);
-        fb.fill_rect(x, y + h - 3, w, 3, edge);
-        fb.fill_rect(x, y, 3, h, edge);
-        fb.fill_rect(x + w - 3, y, 3, h, edge);
-        fb.fill_rect(x, y, 8, h, Rgba::rgb(255, 210, 80));
-    }
-    font.draw_text_in_box(
-        fb,
-        x,
-        y,
-        w,
-        h,
-        20,
-        size,
-        text,
-        Rgba::rgb(255, 255, 255),
-    );
+    fb.fill_rect(x, y, w, 2, border);
+    fb.fill_rect(x, y + h - 2, w, 2, border);
+    fb.fill_rect(x, y, 2, h, border);
+    fb.fill_rect(x + w - 2, y, 2, h, border);
+    font.draw_text_in_box(fb, x, y, w, h, 20, size, text, label);
 }
 
 pub fn choices_label(locale: &str) -> &'static str {
@@ -219,7 +218,7 @@ pub fn draw_view(
                 fb,
                 MSG_X + 32,
                 MSG_Y + SAY_SPEAKER_DY,
-                24.0,
+                28.0,
                 choices_label(ui_locale),
                 Rgba::rgb(255, 230, 160),
                 MSG_X + MSG_W - 32,
@@ -235,7 +234,7 @@ pub fn draw_view(
                     fb,
                     MSG_X + 32,
                     MSG_Y + SAY_SPEAKER_DY,
-                    24.0,
+                    28.0,
                     speaker_label,
                     Rgba::rgb(255, 220, 140),
                     MSG_X + MSG_W - 32,
@@ -245,7 +244,7 @@ pub fn draw_view(
                         fb,
                         MSG_X + 32,
                         MSG_Y + SAY_BODY_DY,
-                        40.0,
+                        34.0,
                         text,
                         Rgba::rgb(255, 255, 255),
                         MSG_X + MSG_W - 32,
@@ -318,7 +317,7 @@ pub fn draw_explore_action_button(
     fb.fill_rect(x, y + h - 2, w, 2, border);
     fb.fill_rect(x, y, 2, h, border);
     fb.fill_rect(x + w - 2, y, 2, h, border);
-    font.draw_text_in_box(fb, x, y, w, h, 16, 28.0, text, label);
+    font.draw_text_in_box(fb, x, y, w, h, 16, 27.0, text, label);
 }
 
 /// Inventory chips sit above the action button.
@@ -714,9 +713,9 @@ pub fn draw_explore_chrome(
             fb,
             40,
             inv_y - 28,
-            24.0,
+            26.0,
             "道具",
-            Rgba::rgb(255, 230, 160),
+            Rgba::rgb(255, 245, 220),
             400,
         );
         for (i, (item_id, label, selected)) in inventory.iter().enumerate() {
@@ -726,7 +725,7 @@ pub fn draw_explore_chrome(
             } else {
                 ButtonState::Idle
             };
-            draw_button(fb, font, x, y, w, h, label, 24.0, state);
+            draw_button(fb, font, x, y, w, h, label, 26.0, state);
         }
     }
 }
@@ -1089,7 +1088,7 @@ pub fn draw_settings(
                 settings::skip_unread_label(locale)
             };
             let label = format!("{}  {}", name, settings::on_off(locale, on));
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(255, 255, 255));
+            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == UI_LANG_ROW {
@@ -1098,7 +1097,7 @@ pub fn draw_settings(
                 settings::ui_lang_label(locale),
                 settings.ui_language.choice_label(locale)
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(255, 255, 255));
+            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == TEXT_SPEED_ROW {
@@ -1107,7 +1106,7 @@ pub fn draw_settings(
                 settings::text_speed_label(locale),
                 settings.text_speed
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(255, 255, 255));
+            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         if i == AUTO_DELAY_ROW {
@@ -1116,12 +1115,12 @@ pub fn draw_settings(
                 settings::auto_delay_label(locale),
                 settings.auto_delay_ms
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(255, 255, 255));
+            font.draw_text_in_box(fb, x, y, w, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
             continue;
         }
         let vol = settings.get(i);
         let label = format!("{}  {vol}", settings::channel_label(locale, i));
-        font.draw_text_in_box(fb, x, y, 380, h, 24, 28.0, &label, Rgba::rgb(255, 255, 255));
+        font.draw_text_in_box(fb, x, y, 380, h, 24, 28.0, &label, Rgba::rgb(28, 28, 36));
         let bar_x = x + 400;
         let bar_y = y + 28;
         let bar_w = w - 440;
@@ -1132,9 +1131,9 @@ pub fn draw_settings(
             bar_w,
             bar_h,
             Rgba {
-                r: 30,
-                g: 30,
-                b: 40,
+                r: 200,
+                g: 200,
+                b: 210,
                 a: 255,
             },
         );
@@ -1366,7 +1365,7 @@ pub fn draw_hud(
             w,
             h,
             &label,
-            22.0,
+            24.0,
             button_state(i, usize::MAX, hover, pressed),
         );
     }
@@ -1387,7 +1386,15 @@ fn draw_box(fb: &mut Framebuffer, assets: &mut Bank, msg_box: Option<&str>) {
             return;
         }
     }
-    fb.fill_rect(MSG_X, MSG_Y, MSG_W, MSG_H, Rgba::rgb(8, 8, 16));
+    // Soft fallback when no msgBox asset: translucent-looking dark panel + light edge.
+    fb.fill_rect(MSG_X, MSG_Y, MSG_W, MSG_H, Rgba::rgb(28, 30, 42));
+    let edge = Rgba::rgb(200, 185, 140);
+    fb.fill_rect(MSG_X, MSG_Y, MSG_W, 2, edge);
+    fb.fill_rect(MSG_X, MSG_Y + MSG_H - 2, MSG_W, 2, edge);
+    fb.fill_rect(MSG_X, MSG_Y, 2, MSG_H, edge);
+    fb.fill_rect(MSG_X + MSG_W - 2, MSG_Y, 2, MSG_H, edge);
+    // Inner highlight band
+    fb.fill_rect(MSG_X + 2, MSG_Y + 2, MSG_W - 4, 1, Rgba::rgb(255, 245, 220));
 }
 
 fn char_pose_changed(a: &galeng_schema::CharOnStage, b: &galeng_schema::CharOnStage) -> bool {

@@ -236,7 +236,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     say_page = say_page_count - 1;
                 }
                 let page_text = saypage::page_text(text, &spans, say_page);
-                font.prewarm(page_text, 40.0);
+                font.prewarm(page_text, 34.0);
                 font.prewarm(&speaker, 28.0);
                 typewriter.tick(
                     &view.scene_id,
