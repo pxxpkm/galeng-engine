@@ -271,9 +271,54 @@ pub const EXPLORE_ITEM_W: i32 = 168;
 pub const EXPLORE_ITEM_H: i32 = 44;
 pub const EXPLORE_ITEM_GAP: i32 = 12;
 
-/// Single YU-NO action button above the message box (same geometry as one choice).
+/// Compact centered YU-NO action pill (not full-width choice chrome).
+pub const EXPLORE_ACTION_W: i32 = 480;
+pub const EXPLORE_ACTION_H: i32 = 52;
+/// Gap between action pill bottom and MSG_Y.
+pub const EXPLORE_ACTION_GAP_ABOVE_MSG: i32 = 28;
+
+/// Single YU-NO action pill, centered on screen above the message box.
 pub fn explore_action_rect() -> (i32, i32, i32, i32) {
-    choice_rect(0, 1)
+    let w = EXPLORE_ACTION_W;
+    let h = EXPLORE_ACTION_H;
+    let x = (WIDTH as i32 - w) / 2;
+    let y = MSG_Y - EXPLORE_ACTION_GAP_ABOVE_MSG - h;
+    (x, y, w, h)
+}
+
+/// Light YU-NO-style action button (near-white fill, dark text) — not dialogue choice chrome.
+pub fn draw_explore_action_button(
+    fb: &mut Framebuffer,
+    font: &GameFont,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    text: &str,
+    hover: bool,
+) {
+    let fill = if hover {
+        Rgba::rgb(255, 242, 210) // soft gold tint
+    } else {
+        Rgba::rgb(248, 248, 252) // near-white
+    };
+    let border = if hover {
+        Rgba::rgb(210, 170, 70)
+    } else {
+        Rgba::rgb(170, 170, 180)
+    };
+    let label = if hover {
+        Rgba::rgb(40, 32, 16)
+    } else {
+        Rgba::rgb(28, 28, 36)
+    };
+    fb.fill_rect(x, y, w, h, fill);
+    // 2px border
+    fb.fill_rect(x, y, w, 2, border);
+    fb.fill_rect(x, y + h - 2, w, 2, border);
+    fb.fill_rect(x, y, 2, h, border);
+    fb.fill_rect(x + w - 2, y, 2, h, border);
+    font.draw_text_in_box(fb, x, y, w, h, 16, 28.0, text, label);
 }
 
 /// Inventory chips sit above the action button.
@@ -318,12 +363,7 @@ pub fn draw_explore_chrome(
 
     if let Some(label) = action_label {
         let (x, y, w, h) = explore_action_rect();
-        let state = if action_hover {
-            ButtonState::Hover
-        } else {
-            ButtonState::Idle
-        };
-        draw_button(fb, font, x, y, w, h, label, 32.0, state);
+        draw_explore_action_button(fb, font, x, y, w, h, label, action_hover);
     }
 
     if !inventory.is_empty() {
@@ -1108,6 +1148,7 @@ mod tests {
     #[test]
     fn explore_action_button_stays_above_message_box() {
         let (x, y, w, h) = explore_action_rect();
+        assert_eq!((x, y, w, h), (720, 820, 480, 52));
         assert!(y >= 0, "action y={y}");
         assert!(y + h <= MSG_Y, "action overlaps message box: bottom={}", y + h);
         assert!(
@@ -1120,12 +1161,49 @@ mod tests {
             "action overlaps HUD y={}",
             crate::hud::hud_y()
         );
+        // Compact centered pill — not full-width choice chrome.
+        assert!(w <= 560, "action too wide: {w}");
+        assert!(w >= 420, "action too narrow: {w}");
+        assert!(h >= 48 && h <= 56, "action height {h}");
+        let cx = x + w / 2;
+        assert!(
+            (cx - WIDTH as i32 / 2).abs() <= 1,
+            "action not centered: cx={cx}"
+        );
+        assert!(w < MSG_W - 80, "action still looks like choice_rect width");
         // Message box stays on-screen.
         assert!(MSG_X >= 0 && MSG_Y >= 0);
         assert!(MSG_X + MSG_W <= WIDTH as i32);
         assert!(MSG_Y + MSG_H <= HEIGHT as i32);
         assert!(hit_explore_action(x + w / 2, y + h / 2));
         assert!(!hit_explore_action(WIDTH as i32 / 2, HEIGHT as i32 - 72));
+        // Far left/right of old full-width bar must miss.
+        assert!(!hit_explore_action(MSG_X + 40, y + h / 2));
+        assert!(!hit_explore_action(MSG_X + MSG_W - 40, y + h / 2));
+    }
+
+    #[test]
+    fn explore_action_button_paints_light_not_dark_idle() {
+        let font = GameFont::load_system()
+            .or_else(|_| {
+                let p = std::path::PathBuf::from(
+                    "/usr/share/fonts/truetype/sand-box/google/Sen/Sen-VariableFont_wght.ttf",
+                );
+                let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+                GameFont::from_bytes(bytes, p)
+            })
+            .expect("font");
+        let mut fb = Framebuffer::new();
+        // Scene-ish mid-gray so near-white button stands out.
+        fb.fill(Rgba::rgb(90, 90, 100));
+        let (x, y, w, h) = explore_action_rect();
+        draw_explore_action_button(&mut fb, &font, x, y, w, h, "開 · 書桌", false);
+        // Sample near-left interior (avoid centered glyph) — near-white, not dark Idle.
+        let sx = x + 8;
+        let sy = y + h / 2;
+        let i = ((sy as u32 * WIDTH + sx as u32) * 4) as usize;
+        let (r, g, b) = (fb.pixels[i], fb.pixels[i + 1], fb.pixels[i + 2]);
+        assert!(r > 200 && g > 200 && b > 200, "expected light fill, got rgb({r},{g},{b})");
     }
 
     #[test]
