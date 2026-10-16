@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, setInteraction, setOnEnter, updateScene } from "./commands";
+import {
+  addHotspot,
+  addItem,
+  setInteraction,
+  setOnEmptyClick,
+  setOnEnter,
+  updateScene,
+} from "./commands";
 import { blankExploreDoc } from "./fixture";
 import {
   apiToExploreScene,
@@ -213,7 +220,7 @@ describe("Explore persist (real file path)", () => {
     expect(sceneOnDisk.sceneKind).toBe("explore");
   });
 
-  it("cleared bg/onEnter/title/effectLibrary do not resurrect from raw on save", async () => {
+  it("cleared bg/onEnter/onEmptyClick/title/effectLibrary do not resurrect from raw on save", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "plane-explore-clear-"));
     await mkdir(path.join(root, "scenario"), { recursive: true });
     const api = createFsPersistApi(root);
@@ -240,6 +247,7 @@ describe("Explore persist (real file path)", () => {
       hotspots: [],
       interactions: [],
       onEnter: [{ type: "say", text: "入場" }],
+      onEmptyClick: [{ type: "say", text: "空白睇房" }],
     };
     await writeFile(
       path.join(root, "galeng.json"),
@@ -255,11 +263,13 @@ describe("Explore persist (real file path)", () => {
     let doc = await loadExploreDoc(api, "study");
     expect(doc.scene.bg?.asset).toBe("bg/study");
     expect(doc.scene.onEnter).toHaveLength(1);
+    expect(doc.scene.onEmptyClick).toHaveLength(1);
     expect(doc.project.effectLibrary?.[0]?.id).toBe("fade_black");
 
     let bus = emptyBus();
     ({ bus, doc } = dispatch(bus, doc, updateScene({ bg: undefined }, "clear-bg")));
     ({ bus, doc } = dispatch(bus, doc, setOnEnter([])));
+    ({ bus, doc } = dispatch(bus, doc, setOnEmptyClick([])));
     void bus;
     // title / effectLibrary have no clear-via-command yet; mutate Explore-owned state directly.
     doc = {
@@ -279,16 +289,31 @@ describe("Explore persist (real file path)", () => {
 
     expect(sceneOnDisk.bg).toBeUndefined();
     expect(sceneOnDisk.onEnter).toBeUndefined();
+    expect(sceneOnDisk.onEmptyClick).toBeUndefined();
     expect(sceneOnDisk.title).toBeUndefined();
     expect(projectOnDisk.effectLibrary).toBeUndefined();
 
     // Unit-level: owned omit + raw merge must delete keys
     const sceneMerged = exploreSceneToApi(
-      { ...blankExploreDoc("study").scene, bg: undefined, onEnter: [], title: undefined },
-      { id: "study", bg: { asset: "old" }, onEnter: [{ type: "say", text: "x" }], title: "old", exit: { type: "return" } },
+      {
+        ...blankExploreDoc("study").scene,
+        bg: undefined,
+        onEnter: [],
+        onEmptyClick: [],
+        title: undefined,
+      },
+      {
+        id: "study",
+        bg: { asset: "old" },
+        onEnter: [{ type: "say", text: "x" }],
+        onEmptyClick: [{ type: "say", text: "y" }],
+        title: "old",
+        exit: { type: "return" },
+      },
     );
     expect(sceneMerged.bg).toBeUndefined();
     expect(sceneMerged.onEnter).toBeUndefined();
+    expect(sceneMerged.onEmptyClick).toBeUndefined();
     expect(sceneMerged.title).toBeUndefined();
     expect(sceneMerged.exit).toEqual({ type: "return" });
 
@@ -298,6 +323,24 @@ describe("Explore persist (real file path)", () => {
     );
     expect(projMerged.effectLibrary).toBeUndefined();
     expect(projMerged.font).toBe("keep.ttf");
+  });
+
+  it("loads onEmptyClick from click-room study.json and round-trips", async () => {
+    const { fileURLToPath } = await import("node:url");
+    const root = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../../examples/click-room",
+    );
+    const api = createFsPersistApi(root);
+    const doc = await loadExploreDoc(api, "study");
+    expect(doc.scene.onEmptyClick).toEqual([
+      { type: "say", text: "靜謐書房，舊紙同木蠟味混喺空氣裏。" },
+    ]);
+
+    const body = exploreSceneToApi(doc.scene, doc._rawScene);
+    expect(body.onEmptyClick).toEqual(doc.scene.onEmptyClick);
+    const back = apiToExploreScene(body);
+    expect(back.onEmptyClick).toEqual(doc.scene.onEmptyClick);
   });
 });
 

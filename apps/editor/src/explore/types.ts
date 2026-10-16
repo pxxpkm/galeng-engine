@@ -129,6 +129,8 @@ export interface ExploreScene {
   hotspots: Hotspot[];
   interactions: Interaction[];
   onEnter?: ExploreAction[];
+  /** YU-NO empty-room click; empty = player fallback (perVerb look / room title). */
+  onEmptyClick?: ExploreAction[];
 }
 
 export type CanvasTool = "select" | "drawRect" | "drawPolygon";

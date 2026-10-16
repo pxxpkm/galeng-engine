@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, setInteraction, setOnEnter } from "./commands";
+import { addHotspot, setInteraction, setOnEmptyClick, setOnEnter } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import { buildMatrix, getCell, kindOf } from "./matrix";
 import {
@@ -43,7 +43,7 @@ describe("kindOf + problem keys", () => {
 });
 
 describe("problem location helpers", () => {
-  it("attaches on to interaction problems and onEnter flag", () => {
+  it("attaches on to interaction problems and onEnter / onEmptyClick flags", () => {
     let doc = blankExploreDoc();
     let bus = emptyBus();
     ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "door" })));
@@ -59,6 +59,11 @@ describe("problem location helpers", () => {
       doc,
       setOnEnter([{ type: "say", text: "" }]),
     ));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEmptyClick([{ type: "say", text: "" }]),
+    ));
     const problems = collectExploreProblems(doc, {
       sceneCatalog: [{ id: "study", kind: "explore" }, { id: "door", kind: "explore" }],
     });
@@ -69,10 +74,15 @@ describe("problem location helpers", () => {
     expect(problemNavTarget(cellProb!).kind).toBe("cell");
     expect(formatProblemContext(cellProb!)).toBe("door · 動詞 move");
 
-    const enterProb = problems.find((p) => p.key === "explore.emptySay");
+    const enterProb = problems.find((p) => p.key === "explore.emptySay" && p.onEnter);
     expect(enterProb?.onEnter).toBe(true);
     expect(problemNavTarget(enterProb!).kind).toBe("onEnter");
     expect(formatProblemContext(enterProb!)).toBe("入場動作");
+
+    const emptyProb = problems.find((p) => p.key === "explore.emptySay" && p.onEmptyClick);
+    expect(emptyProb?.onEmptyClick).toBe(true);
+    expect(problemNavTarget(emptyProb!).kind).toBe("onEmptyClick");
+    expect(formatProblemContext(emptyProb!)).toBe("空白點擊");
   });
 
   it("formatProblemsBadge uses Chinese labels", () => {

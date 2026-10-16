@@ -33,6 +33,7 @@ import {
   setHotspotPolygonPoints,
   setHotspotRect,
   setInteraction,
+  setOnEmptyClick,
   setOnEnter,
   updateCharacter,
   updateHotspot,
@@ -50,7 +51,12 @@ import {
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";
-import { CellInspector, HotspotInspector, OnEnterInspector } from "./InspectorPanels";
+import {
+  CellInspector,
+  HotspotInspector,
+  OnEmptyClickInspector,
+  OnEnterInspector,
+} from "./InspectorPanels";
 import {
   loadExploreDoc,
   loadSiblingExploreScenes,
@@ -783,6 +789,9 @@ export function ExploreWorkspace({
       } else if (target.kind === "onEnter") {
         const el = document.querySelector('[data-testid="on-enter-inspector"]');
         el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } else if (target.kind === "onEmptyClick") {
+        const el = document.querySelector('[data-testid="on-empty-click-inspector"]');
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     },
     [setUi, selectHotspot],
@@ -1222,6 +1231,21 @@ export function ExploreWorkspace({
               sceneCatalog={effectiveCatalog}
               onChange={(actions, coalesceKey) =>
                 applyCmd(setOnEnter(actions, coalesceKey))
+              }
+            />
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px solid #333",
+            }}
+          >
+            <OnEmptyClickInspector
+              doc={doc}
+              sceneCatalog={effectiveCatalog}
+              onChange={(actions, coalesceKey) =>
+                applyCmd(setOnEmptyClick(actions, coalesceKey))
               }
             />
           </div>

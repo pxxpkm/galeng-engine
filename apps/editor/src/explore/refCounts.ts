@@ -1,6 +1,6 @@
 /**
  * Pure reference counts for delete confirms (M7).
- * Scans the current ExploreDoc scene (+ onEnter / hotspot preds).
+ * Scans the current ExploreDoc scene (+ onEnter / onEmptyClick / hotspot preds).
  */
 
 import type { ExploreAction, ExploreDoc, Pred } from "./types";
@@ -37,6 +37,7 @@ function walkSceneActionsAndPreds(
     }
   }
   walkActions(doc.scene.onEnter ?? [], visitAction);
+  walkActions(doc.scene.onEmptyClick ?? [], visitAction);
 }
 
 /** Interactions + rules removed when deleting a hotspot. */

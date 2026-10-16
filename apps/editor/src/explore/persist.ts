@@ -105,6 +105,9 @@ export function exploreSceneToApi(
     hotspots: s.hotspots,
     interactions: s.interactions,
     ...(s.onEnter && s.onEnter.length > 0 ? { onEnter: s.onEnter } : {}),
+    ...(s.onEmptyClick && s.onEmptyClick.length > 0
+      ? { onEmptyClick: s.onEmptyClick }
+      : {}),
   };
   // Overlay must not delete exit / beats / unknown keys — omit them from owned.
   const merged: Record<string, unknown> = { ...(raw ?? {}), ...owned };
@@ -117,6 +120,9 @@ export function exploreSceneToApi(
   }
   if (!s.onEnter || s.onEnter.length === 0) {
     delete merged.onEnter;
+  }
+  if (!s.onEmptyClick || s.onEmptyClick.length === 0) {
+    delete merged.onEmptyClick;
   }
   // Host schema expects beats array; keep raw beats or default empty (never wipe raw).
   if (!Array.isArray(merged.beats)) {
@@ -207,6 +213,9 @@ export function apiToExploreScene(raw: unknown): ExploreScene {
       : [],
     onEnter: Array.isArray(o.onEnter)
       ? (o.onEnter as ExploreScene["onEnter"])
+      : [],
+    onEmptyClick: Array.isArray(o.onEmptyClick)
+      ? (o.onEmptyClick as ExploreScene["onEmptyClick"])
       : [],
   };
 }

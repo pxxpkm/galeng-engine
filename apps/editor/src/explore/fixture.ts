@@ -44,6 +44,7 @@ export function blankExploreDoc(sceneId = "room"): ExploreDoc {
       hotspots: [],
       interactions: [],
       onEnter: [],
+      onEmptyClick: [],
     },
     ui: emptyUi(),
   };

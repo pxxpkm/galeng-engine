@@ -29,7 +29,7 @@ import {
   removeActionFromList,
   sameProjectScene,
 } from "./inspectorModel";
-import { setOnEnter, updateItem } from "./commands";
+import { setOnEmptyClick, setOnEnter, updateItem } from "./commands";
 
 describe("inspectorModel", () => {
   it("patchAction say text preserves when + sibling actions", () => {
@@ -226,6 +226,12 @@ describe("commandBus no-op + coalesce", () => {
       setOnEnter([{ type: "say", text: "書房入面靜悄悄。" }]),
     ));
     expect(doc.scene.onEnter).toEqual([{ type: "say", text: "書房入面靜悄悄。" }]);
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEmptyClick([{ type: "say", text: "靜謐書房。" }]),
+    ));
+    expect(doc.scene.onEmptyClick).toEqual([{ type: "say", text: "靜謐書房。" }]);
     const list = addActionToList(doc.scene.onEnter ?? [], "takeItem");
     const patched = patchActionInList(list, 1, { type: "takeItem", id: "key" });
     expect(patched[1]).toEqual({ type: "takeItem", id: "key" });

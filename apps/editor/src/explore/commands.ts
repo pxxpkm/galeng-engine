@@ -366,6 +366,23 @@ export function setOnEnter(
   };
 }
 
+export function setOnEmptyClick(
+  actions: ExploreAction[],
+  coalesceKey?: string,
+): Command {
+  return {
+    id: "explore.setOnEmptyClick",
+    label: "Set onEmptyClick",
+    coalesceKey,
+    apply(doc) {
+      return {
+        ...doc,
+        scene: { ...doc.scene, onEmptyClick: structuredClone(actions) },
+      };
+    },
+  };
+}
+
 /** Serialize scene+project slice for save/reload round-trip tests. */
 export function serializeExplore(doc: ExploreDoc): {
   project: ExploreDoc["project"];

@@ -13,6 +13,7 @@ import {
   isEditableAction,
   isEditablePred,
   moveRule,
+  onEmptyClickCoalesceKey,
   onEnterCoalesceKey,
   patchAction,
   patchActionInList,
@@ -876,13 +877,31 @@ export interface OnEnterInspectorProps {
   onChange: (actions: ExploreAction[], coalesceKey?: string) => void;
 }
 
-/** Scene-level onEnter action list — same editable types as rule Do. */
-export function OnEnterInspector({
+type SceneActionListProps = {
+  actions: ExploreAction[];
+  title: string;
+  emptyHint: string;
+  testId: string;
+  /** Prefix for row/button data-testids, e.g. "onenter" or "onempty". */
+  idPrefix: string;
+  coalesceKey: (actionIndex: number, field: string) => string;
+  doc: ExploreDoc;
+  sceneCatalog: SceneCatalogEntry[];
+  onChange: (actions: ExploreAction[], coalesceKey?: string) => void;
+};
+
+/** Shared scene-level action list (onEnter / onEmptyClick). */
+function SceneActionListInspector({
+  actions,
+  title,
+  emptyHint,
+  testId,
+  idPrefix,
+  coalesceKey,
   doc,
-  sceneCatalog = [],
+  sceneCatalog,
   onChange,
-}: OnEnterInspectorProps) {
-  const actions = doc.scene.onEnter ?? [];
+}: SceneActionListProps) {
   const switches = doc.project.switches;
   const items = doc.project.items;
   const characters = doc.project.characters;
@@ -890,20 +909,22 @@ export function OnEnterInspector({
   const effectIds = (doc.project.effectLibrary ?? []).map((e) => e.id);
   const list = actions.length ? actions : [];
 
-  const commit = (next: ExploreAction[], coalesceKey?: string) => {
-    onChange(next, coalesceKey);
+  const commit = (next: ExploreAction[], key?: string) => {
+    onChange(next, key);
   };
 
   return (
-    <div data-testid="on-enter-inspector" style={{ fontSize: 12 }}>
-      <div style={{ marginBottom: 6, fontWeight: 600 }}>入場動作</div>
+    <div data-testid={testId} style={{ fontSize: 12 }}>
+      <div style={{ marginBottom: 6, fontWeight: 600 }}>{title}</div>
       {list.length === 0 ? (
-        <div style={{ opacity: 0.65, marginBottom: 6 }}>無（進入場景時不執行動作）</div>
+        <div style={{ opacity: 0.65, marginBottom: 6 }}>{emptyHint}</div>
       ) : null}
       {list.map((a, ai) =>
         isEditableAction(a) ? (
-          <OnEnterActionRow
+          <SceneActionRow
             key={ai}
+            idPrefix={idPrefix}
+            coalesceKey={coalesceKey}
             actionIndex={ai}
             action={a}
             switches={switches}
@@ -918,7 +939,7 @@ export function OnEnterInspector({
         ) : (
           <div
             key={ai}
-            data-testid={`onenter-readonly-${ai}`}
+            data-testid={`${idPrefix}-readonly-${ai}`}
             style={{
               display: "inline-block",
               padding: "2px 6px",
@@ -939,7 +960,7 @@ export function OnEnterInspector({
           <button
             key={t}
             type="button"
-            data-testid={`onenter-add-${t}`}
+            data-testid={`${idPrefix}-add-${t}`}
             onClick={() => commit(addActionToList(list, t))}
           >
             ＋{editableActionTypeLabel(t)}
@@ -950,7 +971,57 @@ export function OnEnterInspector({
   );
 }
 
-function OnEnterActionRow({
+/** Scene-level onEnter action list — same editable types as rule Do. */
+export function OnEnterInspector({
+  doc,
+  sceneCatalog = [],
+  onChange,
+}: OnEnterInspectorProps) {
+  return (
+    <SceneActionListInspector
+      actions={doc.scene.onEnter ?? []}
+      title="入場動作"
+      emptyHint="無（進入場景時不執行動作）"
+      testId="on-enter-inspector"
+      idPrefix="onenter"
+      coalesceKey={onEnterCoalesceKey}
+      doc={doc}
+      sceneCatalog={sceneCatalog}
+      onChange={onChange}
+    />
+  );
+}
+
+export interface OnEmptyClickInspectorProps {
+  doc: ExploreDoc;
+  sceneCatalog?: SceneCatalogEntry[];
+  onChange: (actions: ExploreAction[], coalesceKey?: string) => void;
+}
+
+/** YU-NO empty-room click — empty list = player fallback (look / room title). */
+export function OnEmptyClickInspector({
+  doc,
+  sceneCatalog = [],
+  onChange,
+}: OnEmptyClickInspectorProps) {
+  return (
+    <SceneActionListInspector
+      actions={doc.scene.onEmptyClick ?? []}
+      title="空白點擊"
+      emptyHint="無（空白處點擊用玩家後備：房間標題／「看」後備句）"
+      testId="on-empty-click-inspector"
+      idPrefix="onempty"
+      coalesceKey={onEmptyClickCoalesceKey}
+      doc={doc}
+      sceneCatalog={sceneCatalog}
+      onChange={onChange}
+    />
+  );
+}
+
+function SceneActionRow({
+  idPrefix,
+  coalesceKey,
   actionIndex,
   action,
   switches,
@@ -962,6 +1033,8 @@ function OnEnterActionRow({
   allActions,
   onPatch,
 }: {
+  idPrefix: string;
+  coalesceKey: (actionIndex: number, field: string) => string;
   actionIndex: number;
   action: Extract<ExploreAction, { type: EditableActionType }>;
   switches: ExploreDoc["project"]["switches"];
@@ -975,11 +1048,11 @@ function OnEnterActionRow({
 }) {
   return (
     <div
-      data-testid={`onenter-row-${actionIndex}`}
+      data-testid={`${idPrefix}-row-${actionIndex}`}
       style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center", flexWrap: "wrap" }}
     >
       <select
-        data-testid={`onenter-type-${actionIndex}`}
+        data-testid={`${idPrefix}-type-${actionIndex}`}
         value={action.type}
         onChange={(e) => {
           const t = e.target.value as EditableActionType;
@@ -996,7 +1069,7 @@ function OnEnterActionRow({
       {action.type === "say" ? (
         <>
           <select
-            data-testid={`onenter-say-speaker-${actionIndex}`}
+            data-testid={`${idPrefix}-say-speaker-${actionIndex}`}
             value={action.speaker ?? ""}
             title="說話者"
             onChange={(e) => {
@@ -1020,7 +1093,7 @@ function OnEnterActionRow({
             ) : null}
           </select>
           <input
-            data-testid={`onenter-say-${actionIndex}`}
+            data-testid={`${idPrefix}-say-${actionIndex}`}
             style={{ flex: 1, minWidth: 80 }}
             value={action.text}
             onChange={(e) => {
@@ -1031,7 +1104,7 @@ function OnEnterActionRow({
               };
               onPatch(
                 patchActionInList(allActions, actionIndex, next),
-                onEnterCoalesceKey(actionIndex, "say"),
+                coalesceKey(actionIndex, "say"),
               );
             }}
           />
@@ -1040,7 +1113,7 @@ function OnEnterActionRow({
       {action.type === "setSwitch" ? (
         <>
           <select
-            data-testid={`onenter-switch-id-${actionIndex}`}
+            data-testid={`${idPrefix}-switch-id-${actionIndex}`}
             value={action.id}
             onChange={(e) => {
               const next: ExploreAction = {
@@ -1062,7 +1135,7 @@ function OnEnterActionRow({
             ) : null}
           </select>
           <select
-            data-testid={`onenter-switch-val-${actionIndex}`}
+            data-testid={`${idPrefix}-switch-val-${actionIndex}`}
             value={action.value ? "true" : "false"}
             onChange={(e) => {
               const next: ExploreAction = {
@@ -1080,7 +1153,7 @@ function OnEnterActionRow({
       ) : null}
       {action.type === "giveItem" || action.type === "takeItem" ? (
         <select
-          data-testid={`onenter-item-id-${actionIndex}`}
+          data-testid={`${idPrefix}-item-id-${actionIndex}`}
           value={action.id}
           onChange={(e) => {
             const next: ExploreAction =
@@ -1104,7 +1177,7 @@ function OnEnterActionRow({
       {action.type === "call" || action.type === "gotoScene" ? (
         <>
           <SceneSelect
-            testId={`onenter-scene-${actionIndex}`}
+            testId={`${idPrefix}-scene-${actionIndex}`}
             value={action.scene}
             sceneCatalog={sceneCatalog}
             onChange={(scene) => {
@@ -1117,7 +1190,7 @@ function OnEnterActionRow({
           />
           <button
             type="button"
-            data-testid={`onenter-open-script-${actionIndex}`}
+            data-testid={`${idPrefix}-open-script-${actionIndex}`}
             title="在腳本庫開啟此對話場景"
             disabled={!action.scene}
             onClick={() =>
@@ -1130,7 +1203,7 @@ function OnEnterActionRow({
       ) : null}
       {action.type === "call" || action.type === "return" || action.type === "gotoScene" ? (
         <TransSelect
-          testId={`onenter-trans-${actionIndex}`}
+          testId={`${idPrefix}-trans-${actionIndex}`}
           value={action.trans}
           effectIds={effectIds}
           onChange={(trans) => {
@@ -1144,7 +1217,7 @@ function OnEnterActionRow({
       ) : null}
       <button
         type="button"
-        data-testid={`onenter-remove-${actionIndex}`}
+        data-testid={`${idPrefix}-remove-${actionIndex}`}
         onClick={() =>
           onPatch(allActions.filter((_, i) => i !== actionIndex))
         }

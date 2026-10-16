@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatch, emptyBus } from "./commandBus";
-import { addHotspot, addItem, addSwitch, setInteraction, setOnEnter, updateHotspot, updateProject } from "./commands";
+import { addHotspot, addItem, addSwitch, setInteraction, setOnEmptyClick, setOnEnter, updateHotspot, updateProject } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import {
   collectExploreProblems,
@@ -285,6 +285,24 @@ describe("explore problems onEnter", () => {
     const empties = collectExploreProblems(doc).filter((p) => p.key === "explore.emptySay");
     expect(empties.length).toBe(2);
     expect(new Set(empties.map((p) => p.id)).size).toBe(2);
+  });
+});
+
+describe("explore problems onEmptyClick", () => {
+  it("errors on empty say in onEmptyClick", () => {
+    let doc = blankExploreDoc();
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(bus, doc, addHotspot({ id: "desk" })));
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      setOnEmptyClick([{ type: "say", text: "" }]),
+    ));
+    void bus;
+    const probs = collectExploreProblems(doc);
+    expect(
+      probs.some((p) => p.key === "explore.emptySay" && p.id.includes("onEmptyClick")),
+    ).toBe(true);
   });
 });
 

@@ -303,6 +303,10 @@ export function onEnterCoalesceKey(actionIndex: number, field: string): string {
   return `onEnter:a${actionIndex}:${field}`;
 }
 
+export function onEmptyClickCoalesceKey(actionIndex: number, field: string): string {
+  return `onEmptyClick:a${actionIndex}:${field}`;
+}
+
 /** Compare project+scene only (ignore ui). */
 export function sameProjectScene(a: ExploreDoc, b: ExploreDoc): boolean {
   return (

@@ -25,6 +25,8 @@ export interface ExploreProblem {
   on?: InteractionOn;
   /** True when the problem is on scene.onEnter. */
   onEnter?: boolean;
+  /** True when the problem is on scene.onEmptyClick. */
+  onEmptyClick?: boolean;
   detail?: string;
   /** Set when problem comes from a multi-scene pack scan (L4). */
   sceneId?: string;
@@ -56,6 +58,7 @@ export function buildProblemHotspotIds(problems: ExploreProblem[]): Set<string> 
 
 export function formatProblemContext(p: ExploreProblem): string {
   if (p.onEnter) return "入場動作";
+  if (p.onEmptyClick) return "空白點擊";
   if (p.hotspotId && p.on) {
     const onLabel = "verb" in p.on ? `動詞 ${p.on.verb}` : `物品 ${p.on.item}`;
     return `${p.hotspotId} · ${onLabel}`;
@@ -80,10 +83,12 @@ export type ProblemNavTarget =
   | { kind: "cell"; hotspotId: string; on: InteractionOn }
   | { kind: "hotspot"; hotspotId: string }
   | { kind: "onEnter" }
+  | { kind: "onEmptyClick" }
   | { kind: "none" };
 
 export function problemNavTarget(p: ExploreProblem): ProblemNavTarget {
   if (p.onEnter) return { kind: "onEnter" };
+  if (p.onEmptyClick) return { kind: "onEmptyClick" };
   if (p.hotspotId && p.on) return { kind: "cell", hotspotId: p.hotspotId, on: p.on };
   if (p.hotspotId) return { kind: "hotspot", hotspotId: p.hotspotId };
   return { kind: "none" };
@@ -140,6 +145,7 @@ type ActionLoc = {
   hotspotId?: string;
   on?: InteractionOn;
   onEnter?: boolean;
+  onEmptyClick?: boolean;
 };
 
 /** Validate one action list (interaction do[] or scene.onEnter). */
@@ -161,6 +167,7 @@ function checkActions(
     hotspotId: hs,
     ...(loc.on ? { on: loc.on } : {}),
     ...(loc.onEnter ? { onEnter: true as const } : {}),
+    ...(loc.onEmptyClick ? { onEmptyClick: true as const } : {}),
   };
 
   for (let actionIndex = 0; actionIndex < actions.length; actionIndex++) {
@@ -319,7 +326,7 @@ function checkPreds(
   }
 }
 
-/** Problems rules for Explore editor (M2 + M3 dead-end Call + onEnter). */
+/** Problems rules for Explore editor (M2 + M3 dead-end Call + onEnter + onEmptyClick). */
 export function collectExploreProblems(
   doc: ExploreDoc,
   knownSceneIdsOrOpts: Set<string> | CollectProblemsOptions = {},
@@ -379,6 +386,13 @@ export function collectExploreProblems(
 
   // Rule 3–6b: same checks on scene.onEnter (OnEnterInspector)
   checkActions(doc.scene.onEnter ?? [], { loc: "onEnter", onEnter: true }, ctx);
+
+  // Rule 3–6c: same checks on scene.onEmptyClick
+  checkActions(
+    doc.scene.onEmptyClick ?? [],
+    { loc: "onEmptyClick", onEmptyClick: true },
+    ctx,
+  );
 
   // Rule 5: warn empty explore room (no hotspots)
   if (doc.scene.hotspots.length === 0) {

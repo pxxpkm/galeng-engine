@@ -304,5 +304,7 @@ export interface Scene {
   hotspots?: Hotspot[];
   interactions?: Interaction[];
   onEnter?: ExploreAction[];
+  /** YU-NO empty-room click actions. */
+  onEmptyClick?: ExploreAction[];
   exit?: Exit;
 }

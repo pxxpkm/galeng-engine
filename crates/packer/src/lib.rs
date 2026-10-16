@@ -114,6 +114,7 @@ pub fn collect_refs(project: &Project, scenes: &[Scene]) -> BTreeSet<String> {
             out.insert(bg.asset.clone());
         }
         collect_explore_action_refs(&mut out, &scene.on_enter);
+        collect_explore_action_refs(&mut out, &scene.on_empty_click);
         for interaction in &scene.interactions {
             for rule in &interaction.rules {
                 collect_explore_action_refs(&mut out, &rule.actions);

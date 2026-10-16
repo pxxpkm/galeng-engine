@@ -270,12 +270,17 @@ describe("M4 click-room via CommandBus (D0-A GUI/command golden)", () => {
     expect(authored.scene.hotspots.map((h) => h.id)).toEqual(
       example.scene.hotspots.map((h) => h.id),
     );
-    expect(authored.scene.interactions).toHaveLength(example.scene.interactions.length);
-    // Structural equality of interactions (order + content)
-    expect(JSON.stringify(authored.scene.interactions)).toBe(
-      JSON.stringify(example.scene.interactions),
+    // Example may include drag useMode rows the CommandBus author path omits.
+    const exampleCore = example.scene.interactions.filter(
+      (ix) => !("useMode" in (ix.on as object)),
     );
+    expect(authored.scene.interactions).toHaveLength(exampleCore.length);
+    expect(JSON.stringify(authored.scene.interactions)).toBe(JSON.stringify(exampleCore));
     expect(JSON.stringify(authored.scene.onEnter)).toBe(JSON.stringify(example.scene.onEnter));
+    expect(example.scene.onEmptyClick?.[0]).toMatchObject({
+      type: "say",
+      text: "靜謐書房，舊紙同木蠟味混喺空氣裏。",
+    });
     expect(authored.scene.bg?.asset).toBe(example.scene.bg?.asset);
     expect(authored.project.items.map((i) => i.id)).toEqual(
       example.project.items.map((i) => i.id),

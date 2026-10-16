@@ -17,7 +17,7 @@ One on-disk file per scene: `scenario/<id>.json` → schema `Scene`:
 | `beats[]` | Primary edit surface (Timeline / Inspector) | **Forced to `[]` on Explore save** (`exploreSceneToApi`) | Dialogue phase advances beats; Call into dialogue scene plays beats |
 | `exit` (Next / Choices / Branch / **Call** / **Return** / End) | Edited in dialogue Inspector | Preserved via raw merge on Explore save (not Explore-owned UI) | Stack: Explore `Call` → dialogue → `Return` back |
 | `bg`, `hotspots`, `interactions`, `onEnter` | Mostly ignored / invisible in v2 Timeline | Primary edit surface | Explore hit-test + verb matrix |
-| `onEmptyClick` | Not edited | **Not in Explore persist model yet** (raw key survives merge if present) | YU-NO empty-room look |
+| `onEmptyClick` | Not edited | Explore Inspector「空白點擊」(persist round-trip) | YU-NO empty-room look |
 
 Project-level glue: `startScene`, `verbs`, `items`, `fallback`, `transitionDefaults.toDialogue` / `fromDialogue` / `gotoScene`, `effectLibrary`, `fonts` (Font Manager).
 
@@ -54,7 +54,7 @@ Helpers: `navigateToExploreEditor()`, `navigateToDialogueEditor({ sceneId, openS
 
 - Hotspot geometry (rect / polygon), draw tools, verb × hotspot matrix, `visibleIf` / `enabledIf`.
 - Interaction rules + Explore actions (`GotoScene`, `Call`, `GiveItem`, …).
-- `onEnter`, room `bg`, project verbs/items/fallback/transitionDefaults (Explore settings panels).
+- `onEnter`, `onEmptyClick`, room `bg`, project verbs/items/fallback/transitionDefaults (Explore settings panels).
 - Pack-time Explore problem scan across all explore scenes; dead-end Call checks via catalog.
 
 ### Dialogue-only（探險殼做唔到）
@@ -77,7 +77,7 @@ Helpers: `navigateToExploreEditor()`, `navigateToDialogueEditor({ sceneId, openS
 - **腳本庫 deep link** from Explore Call/Goto targets the right dialogue scene.
 - Explore persist **does not delete** unknown/`exit` keys when saving rooms (overlay model).
 - Script Library filters by `sceneKind` and Call/Return / unresolved goto — project-wide awareness.
-- Packer collects Explore action asset refs (`on_enter`, interactions) as well as dialogue beat refs.
+- Packer collects Explore action asset refs (`on_enter`, `on_empty_click`, interactions) as well as dialogue beat refs.
 
 ---
 
@@ -101,9 +101,9 @@ Opening an `sceneKind: explore` row edits `beats` on a room file. Explore save l
 
 By design for room purity, but destructive if anyone used beats on that id. No UI warning.
 
-### P1 — `onEmptyClick` editor gap
+### P1 — `onEmptyClick` editor gap — ✅ fixed
 
-Schema + player support YU-NO empty click; Explore `apiToExploreScene` / `exploreSceneToApi` omit it. Raw JSON can keep it, but authors can’t edit it in-shell; a future full rewrite path could drop it.
+Explore persist round-trips `onEmptyClick`; Inspector「空白點擊」edits the action list (empty = player fallback look / room title). Schema + player unchanged.
 
 ### P2 — Host `create_scene` always Dialogue
 
@@ -145,7 +145,7 @@ Feature work (Script Library, Fonts, timeline polish) lands on v2 first; classic
 1. **P0 — Shell switch save gate:** ✅ implemented (`shellGate.ts` + `main.tsx` hashchange): auto-save when dirty before `#explore` ↔ `#dialogue`; revert hash if save fails; `switchUiVersion` flushes before reload.
 2. **P0 — Boot / hub cue:** after load project, if `startScene` is explore (or project has explore scenes), show a one-shot banner or default hash `#explore` for click-room-like projects; keep `#dialogue?scripts=1` as explicit deep link only.
 3. **P1 — Kind-aware open:** ✅ Script Library explore → `#explore?scene=`; dialogue → Timeline. Explore save preserves raw `beats`. Dialogue save confirms before writing explore scenes.
-4. **P1 — Preserve + expose `onEmptyClick`** in Explore persist + small inspector block (YU-NO room look).
+4. **P1 — Preserve + expose `onEmptyClick`** ✅ Explore persist + Inspector「空白點擊」(YU-NO room look).
 5. **P2 — Cross-links polish:** Explore 「腳本庫」already good; add symmetric 「喺探險編輯器開啟」from Library; surface Fonts shortcut from Explore settings strip.
 
 Out of scope for quick wins: full shell merge, rename rewrite, classic retirement (document only until Leo chooses).
