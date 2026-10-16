@@ -26,7 +26,7 @@ pub const HUD_ACTIONS: [HudAction; HUD_COUNT] = [
 ];
 
 pub fn hud_y() -> i32 {
-    MSG_Y + MSG_H - HUD_H - 8
+    MSG_Y + MSG_H - HUD_H - 4
 }
 
 pub fn hud_rect(index: usize) -> (i32, i32, i32, i32) {

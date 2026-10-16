@@ -1,9 +1,8 @@
-use crate::draw::{MSG_W, MSG_Y};
+use crate::draw::{MSG_W, MSG_Y, SAY_BODY_DY};
 use crate::font::GameFont;
 use crate::hud;
 
 pub const SAY_SIZE: f32 = 40.0;
-pub const SAY_BODY_DY: i32 = 70;
 
 pub fn say_body_y() -> i32 {
     MSG_Y + SAY_BODY_DY
@@ -72,8 +71,8 @@ mod tests {
     }
 
     #[test]
-    fn three_lines_fit_above_hud() {
-        assert_eq!(lines_per_page(), 3);
+    fn two_lines_fit_above_hud() {
+        assert_eq!(lines_per_page(), 2);
     }
 
     #[test]

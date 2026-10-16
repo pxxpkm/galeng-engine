@@ -20,10 +20,17 @@ use crate::menu::{
 };
 use crate::vm::{Phase, View};
 
-pub const MSG_X: i32 = 80;
-pub const MSG_Y: i32 = 780;
-pub const MSG_W: i32 = 1760;
-pub const MSG_H: i32 = 260;
+/// Compact YU-NO–style bottom chrome (logical 1920×1080).
+/// Leaves room above for the Explore action button + inventory chips.
+pub const MSG_X: i32 = 140;
+pub const MSG_Y: i32 = 900;
+pub const MSG_W: i32 = 1640;
+pub const MSG_H: i32 = 168;
+
+/// Speaker line offset inside the message box.
+pub const SAY_SPEAKER_DY: i32 = 10;
+/// Body text offset inside the message box (must leave ≥2×line_h above HUD).
+pub const SAY_BODY_DY: i32 = 32;
 
 pub const CHOICE_H: i32 = 56;
 pub const CHOICE_STRIDE: i32 = 64;
@@ -187,8 +194,8 @@ pub fn draw_view(
             font.draw_text(
                 fb,
                 MSG_X + 32,
-                MSG_Y + 80,
-                40.0,
+                MSG_Y + 56,
+                36.0,
                 &missing_scene_text(ui_locale, id),
                 Rgba::rgb(255, 220, 220),
                 MSG_X + MSG_W - 32,
@@ -199,8 +206,8 @@ pub fn draw_view(
             font.draw_text(
                 fb,
                 MSG_X + 32,
-                MSG_Y + 80,
-                40.0,
+                MSG_Y + 56,
+                36.0,
                 ended_label(ui_locale),
                 Rgba::rgb(255, 255, 255),
                 MSG_X + MSG_W - 32,
@@ -211,8 +218,8 @@ pub fn draw_view(
             font.draw_text(
                 fb,
                 MSG_X + 32,
-                MSG_Y + 36,
-                28.0,
+                MSG_Y + SAY_SPEAKER_DY,
+                24.0,
                 choices_label(ui_locale),
                 Rgba::rgb(255, 230, 160),
                 MSG_X + MSG_W - 32,
@@ -227,8 +234,8 @@ pub fn draw_view(
                 font.draw_text(
                     fb,
                     MSG_X + 32,
-                    MSG_Y + 40,
-                    28.0,
+                    MSG_Y + SAY_SPEAKER_DY,
+                    24.0,
                     speaker_label,
                     Rgba::rgb(255, 220, 140),
                     MSG_X + MSG_W - 32,
@@ -237,7 +244,7 @@ pub fn draw_view(
                     font.draw_text(
                         fb,
                         MSG_X + 32,
-                        MSG_Y + 70,
+                        MSG_Y + SAY_BODY_DY,
                         40.0,
                         text,
                         Rgba::rgb(255, 255, 255),
@@ -248,8 +255,8 @@ pub fn draw_view(
                     font.draw_text(
                         fb,
                         MSG_X + MSG_W - 56,
-                        MSG_Y + 36,
-                        28.0,
+                        MSG_Y + SAY_SPEAKER_DY,
+                        24.0,
                         "▼",
                         Rgba::rgb(255, 230, 160),
                         MSG_X + MSG_W - 16,
@@ -1104,10 +1111,19 @@ mod tests {
         assert!(y >= 0, "action y={y}");
         assert!(y + h <= MSG_Y, "action overlaps message box: bottom={}", y + h);
         assert!(
+            MSG_Y - (y + h) >= 8,
+            "action needs ≥8px gap above msg box, gap={}",
+            MSG_Y - (y + h)
+        );
+        assert!(
             y + h < crate::hud::hud_y(),
             "action overlaps HUD y={}",
             crate::hud::hud_y()
         );
+        // Message box stays on-screen.
+        assert!(MSG_X >= 0 && MSG_Y >= 0);
+        assert!(MSG_X + MSG_W <= WIDTH as i32);
+        assert!(MSG_Y + MSG_H <= HEIGHT as i32);
         assert!(hit_explore_action(x + w / 2, y + h / 2));
         assert!(!hit_explore_action(WIDTH as i32 / 2, HEIGHT as i32 - 72));
     }
