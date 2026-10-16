@@ -7,6 +7,7 @@ import { VarList } from "../VarList";
 import type { Locale } from "../types";
 import { IconX } from "./icons";
 import { FontPanel } from "./FontPanel";
+import { ScriptLibrary } from "./ScriptLibrary";
 import { ProjectFields, ScreenButtonsFields } from "./ProjectFields";
 import { RosterEditor } from "./RosterEditor";
 import { switchUiVersion } from "./uiVersion";
@@ -449,12 +450,23 @@ function Toasts({ ed }: { ed: Editor }) {
   );
 }
 
+
+function ScriptsDialog({ ed }: { ed: Editor }) {
+  if (!ed.scriptsOpen) return null;
+  return (
+    <Modal title={ed.t("editor.scriptsPanel")} onClose={ed.closeScripts} wide>
+      <ScriptLibrary ed={ed} />
+    </Modal>
+  );
+}
+
 export function Dialogs({ ed }: { ed: Editor }) {
   return (
     <>
       <NewSceneDialog ed={ed} />
       <ExportDialog ed={ed} />
       <SettingsDialog ed={ed} />
+      <ScriptsDialog ed={ed} />
       <SearchPalette
         open={ed.searchOpen}
         onClose={ed.closeSearch}

@@ -34,6 +34,7 @@ import { emptyHistory, push, redo, undo } from "../history";
 import { launchPlay } from "../play";
 import { formatPackNote, packWarningsOf, type PackResult } from "../pack";
 import { beatStepAudio } from "../previewState";
+import { dialogueRouteParams } from "../editorRoute";
 import { exportAllScenes, exportScene, type ScriptFile } from "../exportScript";
 import { upsertSceneMeta } from "../route";
 import { clampBeatIndex, loadScenesForSearch, type SearchHit } from "../search";
@@ -96,6 +97,7 @@ export function useEditorState() {
   const [exportFiles, setExportFiles] = useState<ScriptFile[] | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [scriptsOpen, setScriptsOpen] = useState(false);
   const [packOpen, setPackOpen] = useState(false);
   const [packOut, setPackOut] = useState(() => {
     try {
@@ -206,6 +208,8 @@ export function useEditorState() {
       .catch(fail);
   }, [sceneId, fail]);
 
+
+
   const commitScene = useCallback(
     (next: Scene, nextBeat = beatIndex, nextSelected?: number[]) => {
       if (!scene) return;
@@ -300,6 +304,29 @@ export function useEditorState() {
       pushToast("note", tRef.current("editor.saved"));
     }
   }, [project, projectDirty, scene, dirty, pushToast]);
+
+  // Deep link from Explore: #dialogue?scene=id&scripts=1
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || scenes.length === 0) return;
+    const params = dialogueRouteParams(typeof location !== "undefined" ? location.hash : "");
+    if (!params.sceneId && !params.openScripts) return;
+    deepLinkDone.current = true;
+    void (async () => {
+      try {
+        if (params.sceneId) {
+          await flushIfDirty(anyDirty, save);
+          setSceneId(params.sceneId);
+        }
+        if (params.openScripts) setScriptsOpen(true);
+        if (typeof window !== "undefined" && params.sceneId) {
+          window.history.replaceState(null, "", `${location.pathname}${location.search}`);
+        }
+      } catch (err) {
+        fail(err);
+      }
+    })();
+  }, [scenes.length, anyDirty, save, fail]);
 
   const play = useCallback(async () => {
     if (!scene) return;
@@ -925,6 +952,7 @@ export function useEditorState() {
     sceneDialog !== null ||
     exportFiles !== null ||
     settingsOpen ||
+    scriptsOpen ||
     searchOpen ||
     overviewOpen ||
     varsOpen ||
@@ -972,6 +1000,7 @@ export function useEditorState() {
             sceneDialog === null &&
             exportFiles === null &&
             !settingsOpen &&
+            !scriptsOpen &&
             !overviewOpen &&
             !varsOpen &&
             !issuesOpen &&
@@ -1092,6 +1121,14 @@ export function useEditorState() {
     settingsOpen,
     openSettings: () => setSettingsOpen(true),
     closeSettings: () => setSettingsOpen(false),
+    scriptsOpen,
+    openScripts: () => setScriptsOpen(true),
+    closeScripts: () => setScriptsOpen(false),
+    openExportFiles: (files: ScriptFile[]) => {
+      setExportPath(null);
+      setExportFiles(files);
+    },
+
     searchOpen,
     openSearch,
     closeSearch,

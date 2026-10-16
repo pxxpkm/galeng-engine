@@ -1,6 +1,6 @@
 import type { ChoiceOption, Exit } from "./types";
 
-export type ExitKind = "none" | "next" | "choices" | "branch" | "return";
+export type ExitKind = "none" | "next" | "choices" | "branch" | "call" | "return" | "end";
 
 export function exitKind(exit: Exit | undefined): ExitKind {
   if (!exit) return "none";
@@ -23,6 +23,13 @@ export function setExitKind(exit: Exit | undefined, kind: ExitKind): Exit | unde
   if (kind === "return") {
     if (exit && exit.type === "return") return exit;
     return { type: "return" };
+  }
+  if (kind === "call") {
+    if (exit && exit.type === "call") return exit;
+    return { type: "call", scene: "" };
+  }
+  if (kind === "end") {
+    return { type: "end" };
   }
   if (exit && exit.type === "branch") return exit;
   return emptyBranch();

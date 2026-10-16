@@ -215,3 +215,8 @@ Treat dialogue/explore scripts as a **first-class library**: browse, filter, man
 ## MVP status (implemented)
 
 Font Manager MVP landed: `Project.fonts` roles + optional scale, player `FontSet`/`TypeScale`, editor Fonts panel, Preview FontFace, click-room wired to Bold subset for dialogue/ui/title.
+
+
+### Script Manager MVP (implemented)
+
+Script Library panel in v2 (top bar **腳本**): list/filter/manuscript/export; open → timeline; Explore Call/Goto **腳本庫** deep link (`#dialogue?scene=&scripts=1`). Rename-with-rewrite and manuscript import deferred.

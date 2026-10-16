@@ -63,10 +63,16 @@ function exitGotoSites(exit: Exit | undefined): GotoSite[] {
   if (exit.type === "choices") {
     return exit.options.map((opt, choiceIndex) => ({ goto: opt.goto, choiceIndex }));
   }
-  if (exit.type === "return") {
+  if (exit.type === "return" || exit.type === "end") {
     return [];
   }
-  return [{ goto: exit.then }, { goto: exit.else }];
+  if (exit.type === "call") {
+    return [{ goto: exit.scene }];
+  }
+  if (exit.type === "branch") {
+    return [{ goto: exit.then }, { goto: exit.else }];
+  }
+  return [];
 }
 
 function gotoIssues(scene: Scene, ctx: LiveIssueContext): LiveIssue[] {

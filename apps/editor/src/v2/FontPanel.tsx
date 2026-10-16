@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { AssetField } from "../AssetField";
+import { assetLists } from "../assets";
 import { mediaUrl } from "../media";
 import {
   fontDialogueOf,
@@ -12,10 +13,10 @@ import { Field } from "./fields";
 
 /** Dedicated Font Manager surface (MVP): list fonts/, assign dialogue/ui/title roles. */
 export function FontPanel({ ed }: { ed: Editor }) {
-  const { t, project, lists } = ed;
+  const { t, project } = ed;
   if (!project) return null;
 
-  const fonts = lists.fonts;
+  const fonts = assetLists(ed.assets).fonts;
   const dialogue = fontDialogueOf(project) ?? "";
   const ui = fontUiOf(project) ?? "";
   const title = fontTitleOf(project) ?? "";

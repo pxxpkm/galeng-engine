@@ -129,11 +129,17 @@ function recordsOfExit(scene: Scene, out: SearchRecord[]): void {
     }
     return;
   }
-  if (exit.type === "return") {
+  if (exit.type === "return" || exit.type === "end") {
     return;
   }
-  addRecord(out, { ...base, kind: "goto", text: exit.then ?? "" });
-  addRecord(out, { ...base, kind: "goto", text: exit.else ?? "" });
+  if (exit.type === "call") {
+    addRecord(out, { ...base, kind: "goto", text: exit.scene ?? "" });
+    return;
+  }
+  if (exit.type === "branch") {
+    addRecord(out, { ...base, kind: "goto", text: exit.then ?? "" });
+    addRecord(out, { ...base, kind: "goto", text: exit.else ?? "" });
+  }
 }
 
 export function indexScenes(scenes: Scene[], assets: AssetMeta[] = []): SearchRecord[] {

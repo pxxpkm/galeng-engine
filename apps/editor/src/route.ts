@@ -99,8 +99,11 @@ export function exitEdges(exit: Exit | undefined): RouteEdge[] {
       return edge;
     });
   }
-  if (exit.type === "return") {
+  if (exit.type === "return" || exit.type === "end") {
     return [];
+  }
+  if (exit.type === "call") {
+    return [{ kind: "next", to: exit.scene ?? "", label: "", hasIf: false }];
   }
   const ifNote = formatIfKeys(exit.if);
   const thenEdge: RouteEdge = {

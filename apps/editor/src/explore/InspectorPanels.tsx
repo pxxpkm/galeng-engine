@@ -23,6 +23,7 @@ import {
   removeWhen,
   type EditableActionType,
 } from "./inspectorModel";
+import { navigateToDialogueEditor } from "../editorRoute";
 import type {
   ExploreAction,
   ExploreDoc,
@@ -581,18 +582,31 @@ function EditableActionRow({
         </select>
       ) : null}
       {action.type === "call" || action.type === "gotoScene" ? (
-        <SceneSelect
-          testId={`action-scene-${ruleIndex}-${actionIndex}`}
-          value={action.scene}
-          sceneCatalog={sceneCatalog}
-          onChange={(scene) => {
-            const next: ExploreAction =
-              action.type === "call"
-                ? { type: "call", scene, trans: action.trans }
-                : { type: "gotoScene", scene, trans: action.trans };
-            onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
-          }}
-        />
+        <>
+          <SceneSelect
+            testId={`action-scene-${ruleIndex}-${actionIndex}`}
+            value={action.scene}
+            sceneCatalog={sceneCatalog}
+            onChange={(scene) => {
+              const next: ExploreAction =
+                action.type === "call"
+                  ? { type: "call", scene, trans: action.trans }
+                  : { type: "gotoScene", scene, trans: action.trans };
+              onPatch(patchAction(allRules, ruleIndex, actionIndex, next));
+            }}
+          />
+          <button
+            type="button"
+            data-testid={`action-open-script-${ruleIndex}-${actionIndex}`}
+            title="在腳本庫開啟此對話場景"
+            disabled={!action.scene}
+            onClick={() =>
+              navigateToDialogueEditor({ sceneId: action.scene, openScripts: true })
+            }
+          >
+            腳本庫
+          </button>
+        </>
       ) : null}
       {action.type === "call" || action.type === "return" || action.type === "gotoScene" ? (
         <TransSelect
@@ -1088,18 +1102,31 @@ function OnEnterActionRow({
         </select>
       ) : null}
       {action.type === "call" || action.type === "gotoScene" ? (
-        <SceneSelect
-          testId={`onenter-scene-${actionIndex}`}
-          value={action.scene}
-          sceneCatalog={sceneCatalog}
-          onChange={(scene) => {
-            const next: ExploreAction =
-              action.type === "call"
-                ? { type: "call", scene, trans: action.trans }
-                : { type: "gotoScene", scene, trans: action.trans };
-            onPatch(patchActionInList(allActions, actionIndex, next));
-          }}
-        />
+        <>
+          <SceneSelect
+            testId={`onenter-scene-${actionIndex}`}
+            value={action.scene}
+            sceneCatalog={sceneCatalog}
+            onChange={(scene) => {
+              const next: ExploreAction =
+                action.type === "call"
+                  ? { type: "call", scene, trans: action.trans }
+                  : { type: "gotoScene", scene, trans: action.trans };
+              onPatch(patchActionInList(allActions, actionIndex, next));
+            }}
+          />
+          <button
+            type="button"
+            data-testid={`onenter-open-script-${actionIndex}`}
+            title="在腳本庫開啟此對話場景"
+            disabled={!action.scene}
+            onClick={() =>
+              navigateToDialogueEditor({ sceneId: action.scene, openScripts: true })
+            }
+          >
+            腳本庫
+          </button>
+        </>
       ) : null}
       {action.type === "call" || action.type === "return" || action.type === "gotoScene" ? (
         <TransSelect

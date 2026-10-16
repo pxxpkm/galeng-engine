@@ -211,6 +211,14 @@ export function TopBar({ ed }: { ed: Editor }) {
         </button>
         <button
           type="button"
+          className="v2-btn"
+          title={t("editor.scriptsPanel")}
+          onClick={ed.openScripts}
+        >
+          {t("editor.scriptsPanel")}
+        </button>
+        <button
+          type="button"
           className="v2-btn v2-btn-icon"
           title={t("menu.settings")}
           onClick={ed.openSettings}

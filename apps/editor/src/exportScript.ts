@@ -157,10 +157,16 @@ function exportExit(exit: Exit): string[] {
   if (exit.type === "choices") {
     return ["@choice", ...exit.options.map((opt) => `  ${formatChoice(opt)}`)];
   }
-  if (exit.type === "return") {
+  if (exit.type === "return" || exit.type === "end") {
     return [];
   }
-  return [`@if ${summarizeBranchIf(exit.if)} @goto ${exit.then} @else @goto ${exit.else}`];
+  if (exit.type === "call") {
+    return [`@call ${exit.scene}`];
+  }
+  if (exit.type === "branch") {
+    return [`@if ${summarizeBranchIf(exit.if)} @goto ${exit.then} @else @goto ${exit.else}`];
+  }
+  return [];
 }
 
 function formatChoice(opt: ChoiceOption): string {

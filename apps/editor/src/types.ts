@@ -144,7 +144,9 @@ export type Exit =
   | { type: "next"; goto: string }
   | { type: "choices"; options: ChoiceOption[] }
   | { type: "branch"; if: unknown; then: string; else: string }
-  | { type: "return"; trans?: string };
+  | { type: "call"; scene: string; trans?: string }
+  | { type: "return"; trans?: string }
+  | { type: "end" };
 
 export interface SceneMeta {
   id: string;
@@ -155,6 +157,10 @@ export interface SceneMeta {
 export interface Scene {
   id: string;
   title?: string;
+  /** Present on schema v2; omitted → infer from hotspots. */
+  sceneKind?: "dialogue" | "explore";
   beats: Beat[];
   exit?: Exit;
+  hotspots?: unknown[];
+  interactions?: unknown[];
 }
