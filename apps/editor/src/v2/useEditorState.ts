@@ -25,6 +25,7 @@ import {
 import { playAudition, stopAudition } from "../audition";
 import { backupNeedsOffer, clearBackup, readBackup, writeBackup, type BackupSnap } from "../backup";
 import { flushIfDirty, shouldWarnUnload } from "../dirty";
+import { registerShellSession } from "../shellGate";
 import { parseSceneId } from "../goto";
 import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
 import type { LiveIssue } from "../liveIssues";
@@ -1051,6 +1052,18 @@ export function useEditorState() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  const anyDirtyRef = useRef(anyDirty);
+  anyDirtyRef.current = anyDirty;
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
+  useEffect(() => {
+    return registerShellSession({
+      getDirty: () => anyDirtyRef.current,
+      save: () => saveRef.current(),
+    });
+  }, []);
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {

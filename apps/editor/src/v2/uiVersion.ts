@@ -1,3 +1,5 @@
+import { ensureShellCleanForLeave } from "../shellGate";
+
 export type UiVersion = "classic" | "v2";
 
 const KEY = "galeng.uiVersion";
@@ -11,7 +13,10 @@ export function getUiVersion(): UiVersion {
   }
 }
 
-export function switchUiVersion(next: UiVersion): void {
+/** Flush dirty shell (if registered) then reload into classic/v2. */
+export async function switchUiVersion(next: UiVersion): Promise<void> {
+  const ok = await ensureShellCleanForLeave();
+  if (!ok) return;
   try {
     globalThis.localStorage?.setItem(KEY, next);
   } catch {

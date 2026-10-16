@@ -23,6 +23,7 @@ import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive 
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "./saveIssues";
 import { GotoSelect } from "./GotoSelect";
 import { flushIfDirty, shouldWarnUnload } from "./dirty";
+import { registerShellSession } from "./shellGate";
 import { addMusicItem, setOptionalPath, setSkipTitle } from "./project";
 import { launchPlay } from "./play";
 import { formatPackNote, packWarningsOf, type PackResult } from "./pack";
@@ -714,6 +715,17 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  const classicDirtyRef = useRef(false);
+  classicDirtyRef.current = dirty || projectDirty;
+  const classicSaveRef = useRef(save);
+  classicSaveRef.current = save;
+  useEffect(() => {
+    return registerShellSession({
+      getDirty: () => classicDirtyRef.current,
+      save: () => classicSaveRef.current(),
+    });
+  }, []);
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {

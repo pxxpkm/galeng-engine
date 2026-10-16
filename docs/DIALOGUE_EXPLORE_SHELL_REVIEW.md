@@ -142,7 +142,7 @@ Feature work (Script Library, Fonts, timeline polish) lands on v2 first; classic
 
 ## 5. Recommendations（優先序）
 
-1. **P0 — Shell switch save gate:** wrap `navigateToExploreEditor` / `navigateToDialogueEditor` (and TopBar / Explore buttons) with `flushIfDirty` or confirm-discard; optionally block hashchange while dirty.
+1. **P0 — Shell switch save gate:** ✅ implemented (`shellGate.ts` + `main.tsx` hashchange): auto-save when dirty before `#explore` ↔ `#dialogue`; revert hash if save fails; `switchUiVersion` flushes before reload.
 2. **P0 — Boot / hub cue:** after load project, if `startScene` is explore (or project has explore scenes), show a one-shot banner or default hash `#explore` for click-room-like projects; keep `#dialogue?scripts=1` as explicit deep link only.
 3. **P1 — Kind-aware open:** Script Library: explore row → `#explore` (load that scene); dialogue row → Timeline. Refuse or warn when saving beats onto `sceneKind: explore`.
 4. **P1 — Preserve + expose `onEmptyClick`** in Explore persist + small inspector block (YU-NO room look).

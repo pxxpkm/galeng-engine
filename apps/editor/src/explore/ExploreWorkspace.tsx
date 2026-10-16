@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   isPolygon,
   isRect,
@@ -101,6 +101,7 @@ import {
 import { VerbMatrix } from "./VerbMatrix";
 import { getJson } from "../api";
 import { confirmDiscardIfDirty, shouldWarnUnload } from "../dirty";
+import { registerShellSession } from "../shellGate";
 import type { AssetMeta } from "../types";
 import { assetLists } from "../assets";
 
@@ -401,6 +402,17 @@ export function ExploreWorkspace({
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
   }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog]);
+
+  const exploreDirtyRef = useRef(dirty);
+  exploreDirtyRef.current = dirty;
+  const exploreSaveRef = useRef(doSave);
+  exploreSaveRef.current = doSave;
+  useEffect(() => {
+    return registerShellSession({
+      getDirty: () => exploreDirtyRef.current,
+      save: () => exploreSaveRef.current(),
+    });
+  }, []);
 
   const doReload = useCallback(async () => {
     if (!persist) {
