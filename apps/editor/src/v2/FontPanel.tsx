@@ -12,7 +12,7 @@ import {
   patchFontScale,
   type FontScaleKey,
 } from "../project";
-import type { Editor } from "./useEditorState";
+import type { AssetMeta, Project } from "../types";
 import { Field, Section } from "./fields";
 
 const SCALE_LABEL_KEYS: Record<FontScaleKey, string> = {
@@ -26,8 +26,16 @@ const SCALE_LABEL_KEYS: Record<FontScaleKey, string> = {
   settings: "editor.fontScaleSettings",
 };
 
+/** Thin host so Explore Settings can reuse FontPanel without mounting V2 editor. */
+export type FontPanelHost = {
+  t: (key: string) => string;
+  project: Project | null;
+  assets: AssetMeta[];
+  patchProject: (next: Project) => void;
+};
+
 /** Dedicated Font Manager surface: roles + type-scale knobs. */
-export function FontPanel({ ed }: { ed: Editor }) {
+export function FontPanel({ ed }: { ed: FontPanelHost }) {
   const { t, project } = ed;
   const fonts = assetLists(ed.assets).fonts;
   const licenseHints = useMemo(

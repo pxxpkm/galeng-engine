@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateToExploreEditor } from "../editorRoute";
 import type { Editor } from "./useEditorState";
-import type { Locale } from "../types";
 import {
   IconChevronDown,
   IconCopy,
@@ -86,6 +85,10 @@ function ExportMenu({ ed }: { ed: Editor }) {
   );
 }
 
+function TopBarSep() {
+  return <span className="v2-topbar-sep" aria-hidden="true" />;
+}
+
 export function TopBar({ ed }: { ed: Editor }) {
   const { t } = ed;
   return (
@@ -100,7 +103,9 @@ export function TopBar({ ed }: { ed: Editor }) {
           </span>
         ) : null}
       </div>
-      <div className="v2-topbar-group">
+
+      {/* Edit */}
+      <div className="v2-topbar-group" data-testid="topbar-edit">
         <button
           type="button"
           className="v2-btn v2-btn-icon"
@@ -120,8 +125,11 @@ export function TopBar({ ed }: { ed: Editor }) {
           <IconRedo />
         </button>
       </div>
+
       <div className="v2-topbar-spacer" />
-      <div className="v2-topbar-group">
+
+      {/* Scene */}
+      <div className="v2-topbar-group" data-testid="topbar-scene">
         <button
           type="button"
           className="v2-btn"
@@ -141,7 +149,19 @@ export function TopBar({ ed }: { ed: Editor }) {
           <IconCopy />
           {t("editor.dupScene")}
         </button>
+      </div>
+
+      <TopBarSep />
+
+      {/* Export */}
+      <div className="v2-topbar-group" data-testid="topbar-export">
         <ExportMenu ed={ed} />
+      </div>
+
+      <TopBarSep />
+
+      {/* Search + Issues */}
+      <div className="v2-topbar-group" data-testid="topbar-find">
         <button
           type="button"
           className="v2-btn"
@@ -163,6 +183,12 @@ export function TopBar({ ed }: { ed: Editor }) {
             <span className="v2-badge">{ed.currentIssues.length}</span>
           ) : null}
         </button>
+      </div>
+
+      <TopBarSep />
+
+      {/* File */}
+      <div className="v2-topbar-group" data-testid="topbar-file">
         <button
           type="button"
           className={`v2-btn${ed.dirty ? " v2-btn-primary" : ""}`}
@@ -182,32 +208,20 @@ export function TopBar({ ed }: { ed: Editor }) {
           <IconPlay />
           {t("menu.playFromHere")}
         </button>
-        <select
-          className="v2-select v2-locale"
-          value={ed.locale}
-          title={t("editor.language")}
-          onChange={(e) => ed.setLocale(e.target.value as Locale)}
-        >
-          <option value="zh-Hant">{t("locale.zhHant")}</option>
-          <option value="zh-Hans">{t("locale.zhHans")}</option>
-          <option value="en">{t("locale.en")}</option>
-        </select>
+      </div>
+
+      <TopBarSep />
+
+      {/* Shell switch + library + settings */}
+      <div className="v2-topbar-group" data-testid="topbar-shell">
         <button
           type="button"
           className="v2-btn"
           data-testid="open-explore-editor"
-          title="開啟探險編輯器（#explore）"
+          title={t("editor.shellExploreTitle")}
           onClick={() => navigateToExploreEditor()}
         >
-          探險編輯器
-        </button>
-        <button
-          type="button"
-          className="v2-btn v2-btn-icon"
-          title={t("editor.shortcutsTitle")}
-          onClick={ed.openShortcuts}
-        >
-          <IconQuestion />
+          {t("editor.shellExplore")}
         </button>
         <button
           type="button"
@@ -216,6 +230,14 @@ export function TopBar({ ed }: { ed: Editor }) {
           onClick={ed.openScripts}
         >
           {t("editor.scriptsPanel")}
+        </button>
+        <button
+          type="button"
+          className="v2-btn v2-btn-icon"
+          title={t("editor.shortcutsTitle")}
+          onClick={ed.openShortcuts}
+        >
+          <IconQuestion />
         </button>
         <button
           type="button"

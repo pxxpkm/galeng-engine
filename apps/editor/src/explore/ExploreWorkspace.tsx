@@ -60,6 +60,11 @@ import {
 import { loadSceneCatalog } from "./sceneCatalog";
 import { exploreNewSceneIdError, parseNewExploreSceneId } from "./sceneId";
 import { navigateToDialogueEditor } from "../editorRoute";
+import {
+  ExploreSettingsButton,
+  ExploreSettingsDialog,
+} from "./ExploreSettings";
+import "./explore.css";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { TracePanel } from "./TracePanel";
 import { resolveTrace } from "./trace";
@@ -204,7 +209,20 @@ export function ExploreWorkspace({
   const [creatingScene, setCreatingScene] = useState(false);
   const [newSceneIdDraft, setNewSceneIdDraft] = useState("room_2");
   const [createSceneError, setCreateSceneError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const { doc, bus, dirty } = state;
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onDown(event: MouseEvent) {
+      const el = event.target as Element | null;
+      if (el?.closest?.('[data-testid="explore-topbar-more"]')) return;
+      setMoreOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [moreOpen]);
 
   useEffect(() => {
     if (sceneCatalog && sceneCatalog.length > 0) {
@@ -788,266 +806,306 @@ export function ExploreWorkspace({
 
   return (
     <div className="explore-workspace" data-testid="explore-workspace">
-      {/* 頂欄：dirty／存檔／Undo */}
-      <div
-        data-testid="explore-topbar"
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-          padding: "6px 8px",
-          background: "#1a1e28",
-          border: "1px solid #333",
-          borderRadius: 6,
-        }}
-      >
-        <span
-          data-testid="explore-dirty"
-          data-dirty={dirty ? "1" : "0"}
-          style={{
-            fontSize: 12,
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: dirty ? "#532" : "#243",
-            border: `1px solid ${dirty ? "#a64" : "#385"}`,
-          }}
-        >
-          {dirty ? "未儲存 *" : "已同步"}
-        </span>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-          場景
-          <select
-            data-testid="scene-switch"
-            value={doc.scene.id}
-            onChange={(e) => void doSwitchScene(e.target.value)}
-            title="切換探險場景（請先存檔）"
-          >
-            {effectiveCatalog.map((s) => (
-              <option key={s.id} value={s.id} disabled={s.kind === "dialogue"}>
-                {s.title ? `${s.title} (${s.id})` : s.id}
-                {s.kind === "dialogue" ? " ·對話（請用對話編輯器）" : ""}
-              </option>
-            ))}
-            {!effectiveCatalog.some((s) => s.id === doc.scene.id) ? (
-              <option value={doc.scene.id}>{doc.scene.id}</option>
-            ) : null}
-          </select>
-        </label>
-        {creatingScene ? (
-          <span
-            data-testid="scene-create-form"
-            style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}
-          >
-            <input
-              data-testid="scene-create-id"
-              type="text"
-              value={newSceneIdDraft}
-              placeholder="新場景 ID"
-              title="僅可含英數、底線與連字號"
-              onChange={(e) => {
-                setNewSceneIdDraft(e.target.value);
-                setCreateSceneError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void doCreateScene();
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelCreateScene();
-                }
-              }}
-              style={{ width: 120, fontSize: 12 }}
-              autoFocus
-            />
+      {/* 頂欄：chrome 分組 + 畫布工具列 */}
+      <div className="explore-topbar" data-testid="explore-topbar">
+        <div className="explore-topbar-chrome">
+          <div className="explore-topbar-group explore-brand">
+            <span
+              className="explore-dirty"
+              data-testid="explore-dirty"
+              data-dirty={dirty ? "1" : "0"}
+            >
+              {dirty ? "未儲存 *" : "已同步"}
+            </span>
+            <span title={doc.scene.id}>探險 · {doc.scene.id}</span>
+          </div>
+
+          <span className="explore-topbar-sep" aria-hidden="true" />
+
+          <div className="explore-topbar-group" data-testid="explore-topbar-edit">
             <button
               type="button"
-              data-testid="scene-create-confirm"
-              onClick={() => void doCreateScene()}
-              disabled={!persist}
+              className="explore-btn"
+              data-testid="undo"
+              title={undoLabel ? `復原：${undoLabel}` : "復原"}
+              disabled={!canUndo(bus)}
+              onClick={doUndo}
             >
-              建立
+              復原
             </button>
-            <button type="button" data-testid="scene-create-cancel" onClick={cancelCreateScene}>
-              取消
+            <button
+              type="button"
+              className="explore-btn"
+              data-testid="redo"
+              title={redoLabel ? `重做：${redoLabel}` : "重做"}
+              disabled={!canRedo(bus)}
+              onClick={doRedo}
+            >
+              重做
             </button>
-            {createSceneError ? (
-              <span
-                data-testid="scene-create-error"
-                style={{ fontSize: 12, color: "#f88" }}
+          </div>
+
+          <span className="explore-topbar-sep" aria-hidden="true" />
+
+          <div className="explore-topbar-group" data-testid="explore-topbar-scene">
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+              場景
+              <select
+                data-testid="scene-switch"
+                value={doc.scene.id}
+                onChange={(e) => void doSwitchScene(e.target.value)}
+                title="切換探險場景（請先存檔）"
               >
-                {createSceneError}
+                {effectiveCatalog.map((s) => (
+                  <option key={s.id} value={s.id} disabled={s.kind === "dialogue"}>
+                    {s.title ? `${s.title} (${s.id})` : s.id}
+                    {s.kind === "dialogue" ? " ·對話（請用對話編輯器）" : ""}
+                  </option>
+                ))}
+                {!effectiveCatalog.some((s) => s.id === doc.scene.id) ? (
+                  <option value={doc.scene.id}>{doc.scene.id}</option>
+                ) : null}
+              </select>
+            </label>
+            {creatingScene ? (
+              <span
+                data-testid="scene-create-form"
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}
+              >
+                <input
+                  data-testid="scene-create-id"
+                  type="text"
+                  value={newSceneIdDraft}
+                  placeholder="新場景 ID"
+                  title="僅可含英數、底線與連字號"
+                  onChange={(e) => {
+                    setNewSceneIdDraft(e.target.value);
+                    setCreateSceneError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void doCreateScene();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelCreateScene();
+                    }
+                  }}
+                  style={{ width: 120, fontSize: 12 }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="explore-btn"
+                  data-testid="scene-create-confirm"
+                  onClick={() => void doCreateScene()}
+                  disabled={!persist}
+                >
+                  建立
+                </button>
+                <button
+                  type="button"
+                  className="explore-btn"
+                  data-testid="scene-create-cancel"
+                  onClick={cancelCreateScene}
+                >
+                  取消
+                </button>
+                {createSceneError ? (
+                  <span data-testid="scene-create-error" style={{ fontSize: 12, color: "#f88" }}>
+                    {createSceneError}
+                  </span>
+                ) : null}
               </span>
+            ) : (
+              <button
+                type="button"
+                className="explore-btn"
+                data-testid="scene-create"
+                onClick={openCreateSceneForm}
+                disabled={!persist}
+                title={persist ? "新建空白探險場景" : "未接 persist"}
+              >
+                ＋場景
+              </button>
+            )}
+          </div>
+
+          <span className="explore-topbar-sep" aria-hidden="true" />
+
+          <div className="explore-topbar-group" data-testid="explore-topbar-file">
+            {persist ? (
+              <>
+                <button
+                  type="button"
+                  className={`explore-btn${dirty ? " explore-btn-primary" : ""}`}
+                  data-testid="explore-save"
+                  onClick={() => void doSave()}
+                >
+                  存檔{dirty ? " *" : ""}
+                </button>
+                <button
+                  type="button"
+                  className="explore-btn"
+                  data-testid="explore-reload"
+                  onClick={() => void doReload()}
+                >
+                  重載
+                </button>
+                <span className="explore-save-status" data-testid="explore-save-status">
+                  {saveStatus}
+                </span>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="explore-btn"
+                data-testid="explore-save"
+                disabled
+                title="未接 persist"
+              >
+                存檔
+              </button>
+            )}
+          </div>
+
+          <span className="explore-topbar-sep" aria-hidden="true" />
+
+          <div className="explore-topbar-group explore-menu" data-testid="explore-topbar-more">
+            <button
+              type="button"
+              className="explore-btn"
+              data-testid="explore-more"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              更多 ▾
+            </button>
+            {moreOpen ? (
+              <div className="explore-menu-pop" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="explore-pack"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    void doPack();
+                  }}
+                  disabled={resolvedPackApi === null}
+                  title={
+                    resolvedPackApi === null
+                      ? "未接出包 API"
+                      : "呼叫 host POST /api/pack（預設 export/game）"
+                  }
+                >
+                  出包
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="play-placeholder"
+                  disabled
+                  title="需要 SDL／galeng-player（本環境可缺）"
+                >
+                  ▶ 播放
+                </button>
+              </div>
             ) : null}
-          </span>
-        ) : (
+          </div>
+
+          <div className="explore-topbar-spacer" />
+
+          <div className="explore-topbar-group" data-testid="explore-topbar-shell">
+            <button
+              type="button"
+              className="explore-btn"
+              data-testid="open-dialogue-editor"
+              title="開啟對話編輯器（離開 #explore）"
+              onClick={() => navigateToDialogueEditor()}
+            >
+              對話
+            </button>
+            <ExploreSettingsButton onClick={() => setSettingsOpen(true)} />
+          </div>
+        </div>
+
+        <div className="explore-topbar-tools" data-testid="explore-topbar-tools">
           <button
             type="button"
-            data-testid="scene-create"
-            onClick={openCreateSceneForm}
-            disabled={!persist}
-            title={persist ? "新建空白探險場景" : "未接 persist"}
+            className="explore-btn"
+            data-testid="tool-select"
+            data-active={doc.ui.canvasTool === "select" ? "1" : "0"}
+            aria-pressed={doc.ui.canvasTool === "select"}
+            title="選取／移動／調整熱區"
+            onClick={() => setUi({ canvasTool: "select" })}
           >
-            ＋場景
+            選取
           </button>
-        )}
-        <button
-          type="button"
-          data-testid="open-dialogue-editor"
-          title="開啟對話編輯器（離開 #explore）"
-          onClick={() => navigateToDialogueEditor()}
-        >
-          對話編輯器
-        </button>
-        <button
-          type="button"
-          data-testid="undo"
-          title={undoLabel ? `復原：${undoLabel}` : "復原"}
-          disabled={!canUndo(bus)}
-          onClick={doUndo}
-        >
-          復原
-        </button>
-        <button
-          type="button"
-          data-testid="redo"
-          title={redoLabel ? `重做：${redoLabel}` : "重做"}
-          disabled={!canRedo(bus)}
-          onClick={doRedo}
-        >
-          重做
-        </button>
-        {persist ? (
-          <>
-            <button type="button" data-testid="explore-save" onClick={() => void doSave()}>
-              存檔{dirty ? " *" : ""}
-            </button>
-            <button type="button" data-testid="explore-reload" onClick={() => void doReload()}>
-              重載
-            </button>
-            <span data-testid="explore-save-status" style={{ fontSize: 12, opacity: 0.8 }}>
-              {saveStatus}
-            </span>
-          </>
-        ) : (
-          <button type="button" data-testid="explore-save" disabled title="未接 persist">
-            存檔
-          </button>
-        )}
-        <button
-          type="button"
-          data-testid="explore-pack"
-          onClick={() => void doPack()}
-          disabled={resolvedPackApi === null}
-          title={
-            resolvedPackApi === null
-              ? "未接出包 API"
-              : "呼叫 host POST /api/pack（預設 export/game）"
-          }
-        >
-          出包
-        </button>
-        <button
-          type="button"
-          data-testid="play-placeholder"
-          disabled
-          title="需要 SDL／galeng-player（本環境可缺）"
-          style={{ opacity: 0.45 }}
-        >
-          ▶ 播放
-        </button>
-        <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          data-testid="tool-select"
-          data-active={doc.ui.canvasTool === "select" ? "1" : "0"}
-          aria-pressed={doc.ui.canvasTool === "select"}
-          title="選取／移動／調整熱區"
-          onClick={() => setUi({ canvasTool: "select" })}
-          style={
-            doc.ui.canvasTool === "select"
-              ? {
-                  background: "#2a4a6a",
-                  border: "1px solid #6af",
-                  fontWeight: 600,
-                }
-              : undefined
-          }
-        >
-          選取
-        </button>
-        <button
-          type="button"
-          data-testid="tool-draw"
-          data-active={doc.ui.canvasTool === "drawRect" ? "1" : "0"}
-          aria-pressed={doc.ui.canvasTool === "drawRect"}
-          title="繪製矩形熱區（Shift 維持連續繪製）"
-          onClick={() => setUi({ canvasTool: "drawRect" })}
-          style={
-            doc.ui.canvasTool === "drawRect"
-              ? {
-                  background: "#2a4a6a",
-                  border: "1px solid #6af",
-                  fontWeight: 600,
-                }
-              : undefined
-          }
-        >
-          畫熱區
-        </button>
-        <button
-          type="button"
-          data-testid="tool-draw-polygon"
-          data-active={doc.ui.canvasTool === "drawPolygon" ? "1" : "0"}
-          aria-pressed={doc.ui.canvasTool === "drawPolygon"}
-          title="逐點繪製多邊形熱區（雙擊或 Enter 完成；Esc 取消；右鍵撤銷上一點）"
-          onClick={() => {
-            setUi({ canvasTool: "drawPolygon", selectedHotspotId: null, selectedCell: null });
-          }}
-          style={
-            doc.ui.canvasTool === "drawPolygon"
-              ? {
-                  background: "#2a4a6a",
-                  border: "1px solid #6af",
-                  fontWeight: 600,
-                }
-              : undefined
-          }
-        >
-          畫多邊形
-        </button>
-        <button type="button" data-testid="add-hotspot" onClick={() => applyCmd(addHotspot())}>
-          ＋熱區
-        </button>
-        {doc.ui.selectedHotspotId ? (
           <button
             type="button"
-            data-testid="remove-hotspot"
-            onClick={() => deleteSelectedHotspot()}
+            className="explore-btn"
+            data-testid="tool-draw"
+            data-active={doc.ui.canvasTool === "drawRect" ? "1" : "0"}
+            aria-pressed={doc.ui.canvasTool === "drawRect"}
+            title="繪製矩形熱區（Shift 維持連續繪製）"
+            onClick={() => setUi({ canvasTool: "drawRect" })}
           >
-            刪熱區
+            畫熱區
           </button>
-        ) : null}
-        <button
-          type="button"
-          data-testid="matrix-copy"
-          disabled={!doc.ui.selectedCell}
-          onClick={copySelected}
-        >
-          複製格
-        </button>
-        <button
-          type="button"
-          data-testid="matrix-paste"
-          disabled={!doc.ui.selectedCell || !doc.ui.clipboardRules}
-          onClick={pasteSelected}
-        >
-          貼上格
-        </button>
+          <button
+            type="button"
+            className="explore-btn"
+            data-testid="tool-draw-polygon"
+            data-active={doc.ui.canvasTool === "drawPolygon" ? "1" : "0"}
+            aria-pressed={doc.ui.canvasTool === "drawPolygon"}
+            title="逐點繪製多邊形熱區（雙擊或 Enter 完成；Esc 取消；右鍵撤銷上一點）"
+            onClick={() => {
+              setUi({ canvasTool: "drawPolygon", selectedHotspotId: null, selectedCell: null });
+            }}
+          >
+            畫多邊形
+          </button>
+          <button
+            type="button"
+            className="explore-btn"
+            data-testid="add-hotspot"
+            onClick={() => applyCmd(addHotspot())}
+          >
+            ＋熱區
+          </button>
+          {doc.ui.selectedHotspotId ? (
+            <button
+              type="button"
+              className="explore-btn"
+              data-testid="remove-hotspot"
+              onClick={() => deleteSelectedHotspot()}
+            >
+              刪熱區
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="explore-btn"
+            data-testid="matrix-copy"
+            disabled={!doc.ui.selectedCell}
+            onClick={copySelected}
+          >
+            複製格
+          </button>
+          <button
+            type="button"
+            className="explore-btn"
+            data-testid="matrix-paste"
+            disabled={!doc.ui.selectedCell || !doc.ui.clipboardRules}
+            onClick={pasteSelected}
+          >
+            貼上格
+          </button>
+        </div>
       </div>
+
+      <ExploreSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div
         style={{

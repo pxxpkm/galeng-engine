@@ -1,0 +1,157 @@
+/* Explore chrome — light topbar grouping only (not a full theme). */
+
+.explore-topbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: #1a1e28;
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+
+.explore-topbar-chrome,
+.explore-topbar-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.explore-topbar-tools {
+  padding-top: 4px;
+  border-top: 1px solid #2a3140;
+}
+
+.explore-topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.explore-topbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.explore-topbar-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 22px;
+  background: #333a48;
+  margin: 0 2px;
+}
+
+.explore-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #c8ceda;
+}
+
+.explore-dirty {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.explore-dirty[data-dirty="1"] {
+  background: #532;
+  border: 1px solid #a64;
+}
+
+.explore-dirty[data-dirty="0"] {
+  background: #243;
+  border: 1px solid #385;
+}
+
+.explore-btn {
+  font: inherit;
+  font-size: 12px;
+  color: #e8eaf1;
+  background: #242b38;
+  border: 1px solid #3a4457;
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.explore-btn:hover:not(:disabled) {
+  background: #2c3548;
+  border-color: #4a5670;
+}
+
+.explore-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.explore-btn-primary {
+  background: #2a4a6a;
+  border-color: #6af;
+  font-weight: 600;
+}
+
+.explore-btn-icon {
+  padding: 4px 7px;
+}
+
+.explore-btn[data-active="1"],
+.explore-btn[aria-pressed="true"] {
+  background: #2a4a6a;
+  border-color: #6af;
+  font-weight: 600;
+}
+
+.explore-menu {
+  position: relative;
+}
+
+.explore-menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 140px;
+  background: #181c25;
+  border: 1px solid #333c4d;
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.explore-menu-pop button {
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: #e8eaf1;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.explore-menu-pop button:hover:not(:disabled) {
+  background: #242b38;
+}
+
+.explore-menu-pop button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.explore-save-status {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
