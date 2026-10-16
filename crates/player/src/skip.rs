@@ -68,6 +68,7 @@ mod tests {
         assert!(!skip_advances(Phase::Choices));
         assert!(!skip_advances(Phase::Ended));
         assert!(!skip_advances(Phase::MissingScene("x".into())));
+        assert!(!skip_advances(Phase::Explore));
     }
 
     #[test]

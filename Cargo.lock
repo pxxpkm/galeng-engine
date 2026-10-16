@@ -855,6 +855,7 @@ name = "galeng-player"
 version = "0.1.3"
 dependencies = [
  "fontdue",
+ "galeng-explore",
  "galeng-packer",
  "galeng-schema",
  "image",

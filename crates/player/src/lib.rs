@@ -11,6 +11,10 @@ pub mod gallery;
 pub mod hud;
 pub mod interp;
 pub mod menu;
+#[cfg(windows)]
+pub mod movie;
+#[cfg(not(windows))]
+#[path = "movie_stub.rs"]
 pub mod movie;
 pub mod music;
 pub mod save;

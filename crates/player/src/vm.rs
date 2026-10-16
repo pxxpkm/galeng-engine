@@ -6,7 +6,7 @@ use crate::assets::Source;
 use serde::{Deserialize, Serialize};
 use galeng_schema::{
     validate_project_file, validate_scene_str, AutoAdvance, Beat, Camera, CharOnStage, ChoiceOption,
-    Cmp, Condition, ConditionPred, Exit, Project, Scene, SetValue, Trans,
+    Cmp, Condition, ConditionPred, Exit, HotspotShape, Project, Scene, SceneKind, SetValue, Trans,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -21,10 +21,14 @@ pub enum VmError {
     Save(#[from] crate::save::SaveError),
     #[error("pak: {0}")]
     Pak(#[from] galeng_packer::Error),
+    #[error("explore: {0}")]
+    Explore(#[from] galeng_explore::Error),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Phase {
+    /// Point-and-click explore (driven by galeng-explore).
+    Explore,
     Dialogue,
     Choices,
     Ended,
@@ -70,6 +74,8 @@ pub struct Runtime {
     pending_se: Vec<String>,
     carried_bgm: Option<String>,
     backlog: Vec<crate::backlog::BacklogLine>,
+    /// When set, start scene was Explore — Engine owns Call/Return / hit-test.
+    explore: Option<galeng_explore::Engine>,
 }
 
 fn load_dir_project(dir: &Path) -> Result<(Project, HashMap<String, Scene>), VmError> {
@@ -140,6 +146,18 @@ impl Runtime {
             return Err(VmError::MissingStart(start));
         }
 
+        let start_explore = scenes
+            .get(&start)
+            .is_some_and(|s| s.scene_kind == SceneKind::Explore);
+
+        let explore = if start_explore {
+            // Engine enters start_scene (runs onEnter). Scene/beat CLI jump into
+            // explore is not supported yet — always boots at project.start_scene.
+            Some(galeng_explore::Engine::new(project.clone(), scenes.clone())?)
+        } else {
+            None
+        };
+
         let mut rt = Self {
             project,
             scenes,
@@ -154,8 +172,11 @@ impl Runtime {
             pending_se: Vec::new(),
             carried_bgm: None,
             backlog: Vec::new(),
+            explore,
         };
-        rt.settle();
+        if rt.explore.is_none() {
+            rt.settle();
+        }
         Ok(rt)
     }
 
@@ -164,8 +185,72 @@ impl Runtime {
     }
 
     pub fn take_se(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.pending_se)
+        let mut out = std::mem::take(&mut self.pending_se);
+        if let Some(eng) = &mut self.explore {
+            out.extend(eng.take_pending_se());
+        }
+        out
     }
+
+    pub fn uses_explore(&self) -> bool {
+        self.explore.is_some()
+    }
+
+    pub fn select_verb(&mut self, id: Option<&str>) {
+        if let Some(eng) = &mut self.explore {
+            eng.select_verb(id);
+        }
+    }
+
+    pub fn select_item(&mut self, id: Option<&str>) {
+        if let Some(eng) = &mut self.explore {
+            eng.select_item(id);
+        }
+    }
+
+    /// Explore hit-test click (or dismiss say / advance dialogue via Engine).
+    pub fn click_at(&mut self, x: i32, y: i32) {
+        if let Some(eng) = &mut self.explore {
+            let _ = eng.click(x, y);
+        }
+    }
+
+    /// Direct hotspot interact (tests / tools). No-op outside explore.
+    pub fn interact_hotspot(&mut self, hotspot_id: &str) {
+        if let Some(eng) = &mut self.explore {
+            let _ = eng.interact(hotspot_id);
+        }
+    }
+
+    /// Visible hotspot shapes for minimal overlay.
+    pub fn explore_hotspots(&self) -> Vec<(String, HotspotShape)> {
+        match &self.explore {
+            Some(eng) => eng.hotspot_overlay(),
+            None => Vec::new(),
+        }
+    }
+
+    pub fn explore_selected_verb(&self) -> Option<String> {
+        self.explore.as_ref().and_then(|e| e.view().selected_verb)
+    }
+
+    pub fn explore_pending_item(&self) -> Option<String> {
+        self.explore.as_ref().and_then(|e| e.view().pending_item)
+    }
+
+    pub fn explore_inventory(&self) -> Vec<String> {
+        match &self.explore {
+            Some(eng) => eng.view().inventory.into_iter().collect(),
+            None => Vec::new(),
+        }
+    }
+
+    pub fn explore_hit(&self, x: i32, y: i32) -> Option<String> {
+        self.explore
+            .as_ref()
+            .and_then(|e| e.hit_test(x, y).map(str::to_string))
+    }
+
 
     pub fn vars(&self) -> &HashMap<String, i32> {
         &self.vars
@@ -250,6 +335,9 @@ impl Runtime {
     }
 
     pub fn view(&self) -> View {
+        if let Some(eng) = &self.explore {
+            return self.view_from_explore(eng);
+        }
         let visuals = self.visuals_until(self.beat_index);
         let (say_speaker, say_text) = match &self.last_say {
             Some((s, t)) => (Some(s.clone()), Some(t.clone())),
@@ -285,6 +373,36 @@ impl Runtime {
         }
     }
 
+    fn view_from_explore(&self, eng: &galeng_explore::Engine) -> View {
+        let ev = eng.view();
+        let phase = map_explore_phase(&ev.phase);
+        let bg = eng.display_bg_asset();
+        let bgm = ev.bgm.clone().or_else(|| self.carried_bgm.clone());
+        View {
+            bg,
+            chars: Vec::new(),
+            prev_chars: Vec::new(),
+            char_slide_ms: None,
+            cg: None,
+            say_speaker: ev.say_speaker.clone(),
+            say_text: ev.say_text.clone(),
+            bgm,
+            bgm_fade_ms: 0,
+            auto_advance_ms: None,
+            voice: None,
+            choices: ev.choices.clone(),
+            phase,
+            scene_id: ev.scene_id.clone(),
+            beat_index: ev.beat_index,
+            fx_wait_ms: None,
+            fx_shake_ms: None,
+            fx_flash_ms: None,
+            movie: None,
+            amb: None,
+            camera: Camera::default(),
+        }
+    }
+
     pub fn speaker_display(&self, speaker: &str) -> String {
         let locale = &self.project.locale;
         if let Some(chars) = &self.project.characters {
@@ -300,6 +418,10 @@ impl Runtime {
     }
 
     pub fn click_advance(&mut self) {
+        if let Some(eng) = &mut self.explore {
+            let _ = eng.advance();
+            return;
+        }
         if self.phase != Phase::Dialogue {
             return;
         }
@@ -308,6 +430,9 @@ impl Runtime {
     }
 
     pub fn choose(&mut self, index: usize) -> bool {
+        if let Some(eng) = &mut self.explore {
+            return eng.choose(index).unwrap_or(false);
+        }
         if self.phase != Phase::Choices {
             return false;
         }
@@ -344,7 +469,7 @@ impl Runtime {
     fn settle(&mut self) {
         loop {
             match self.phase {
-                Phase::Ended | Phase::MissingScene(_) | Phase::Choices => return,
+                Phase::Ended | Phase::MissingScene(_) | Phase::Choices | Phase::Explore => return,
                 Phase::Dialogue => {}
             }
             let beat_len = self.current_scene().beats.len();
@@ -567,6 +692,17 @@ impl Runtime {
 
     fn visuals_until(&self, beat_index: usize) -> Visuals {
         accumulate_visuals(self.current_scene(), beat_index)
+    }
+}
+
+
+fn map_explore_phase(phase: &galeng_explore::Phase) -> Phase {
+    match phase {
+        galeng_explore::Phase::Explore => Phase::Explore,
+        galeng_explore::Phase::Saying | galeng_explore::Phase::Dialogue => Phase::Dialogue,
+        galeng_explore::Phase::Choices => Phase::Choices,
+        galeng_explore::Phase::Ended => Phase::Ended,
+        galeng_explore::Phase::Error(msg) => Phase::MissingScene(msg.clone()),
     }
 }
 

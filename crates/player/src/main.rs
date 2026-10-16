@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::env;
 use std::process::ExitCode;
@@ -18,12 +18,19 @@ fn main() -> ExitCode {
 }
 
 fn show_error(msg: &str) {
-    use windows::core::HSTRING;
-    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    let text = HSTRING::from(format!("galeng-player: {msg}"));
-    let title = HSTRING::from("Galeng");
-    unsafe {
-        let _ = MessageBoxW(None, &text, &title, MB_OK | MB_ICONERROR);
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        let text = HSTRING::from(format!("galeng-player: {msg}"));
+        let title = HSTRING::from("Galeng");
+        unsafe {
+            let _ = MessageBoxW(None, &text, &title, MB_OK | MB_ICONERROR);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = msg;
     }
 }
 

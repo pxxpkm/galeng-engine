@@ -136,6 +136,7 @@ fn local_offset_secs(unix: u64) -> i64 {
     windows_local_offset_secs(unix).unwrap_or(0)
 }
 
+#[cfg(windows)]
 fn windows_local_offset_secs(unix: u64) -> Option<i64> {
     use windows::Win32::Foundation::FILETIME;
     use windows::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
@@ -151,6 +152,11 @@ fn windows_local_offset_secs(unix: u64) -> Option<i64> {
     let local = (u64::from(local_ft.dwHighDateTime) << 32) | u64::from(local_ft.dwLowDateTime);
     let delta_100ns = local as i64 - utc as i64;
     Some(delta_100ns / 10_000_000)
+}
+
+#[cfg(not(windows))]
+fn windows_local_offset_secs(_unix: u64) -> Option<i64> {
+    None
 }
 
 pub fn format_slot_label(title: &str, saved_at: u64) -> String {

@@ -10,9 +10,9 @@ use crate::assets::Bank;
 use crate::audio::Mixer;
 use crate::backlog::{self, BacklogView};
 use crate::draw::{
-    draw_backlog, draw_cg, draw_choice_buttons, draw_gallery, draw_hud, draw_menu, draw_music,
-    draw_one_choice, draw_settings, draw_slots, draw_movie_skip, draw_title, draw_view, hit_choice,
-    letterbox, window_to_logical,
+    draw_backlog, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_gallery, draw_hud,
+    draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots, draw_movie_skip, draw_title,
+    draw_view, hit_choice, hit_explore_item, hit_explore_verb, letterbox, window_to_logical,
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
@@ -351,7 +351,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             && movie.is_none()
             && title_op.is_none()
             && !title_open
-            && !overlay;
+            && !overlay
+            && view.phase != Phase::Explore;
         let layer_key = SceneLayerKey {
             scene: view.scene_id.clone(),
             beat: view.beat_index,
@@ -463,6 +464,23 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     choice_sel,
                     hover_choice,
                     pressed_choice,
+                );
+            }
+            if !title_open && !ui_hidden && view.phase == Phase::Explore {
+                let verbs = explore_verb_rows(&runtime);
+                let inv = explore_inv_rows(&runtime);
+                let hotspots = runtime.explore_hotspots();
+                let (ww, wh) = canvas.output_size().unwrap_or((1280, 720));
+                let ms = events.mouse_state();
+                let hover_hs = window_to_logical(ms.x(), ms.y(), ww, wh)
+                    .and_then(|(lx, ly)| runtime.explore_hit(lx, ly));
+                draw_explore_chrome(
+                    &mut fb,
+                    &font,
+                    &verbs,
+                    &inv,
+                    &hotspots,
+                    hover_hs.as_deref(),
                 );
             }
         }
@@ -1259,6 +1277,10 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         );
                         continue;
                     }
+                    if view.phase == Phase::Explore {
+                        // Space/Enter does not click hotspots — wait for mouse.
+                        continue;
+                    }
                     advance_reading(&mut runtime, &mut seen);
                 }
                 Event::MouseButtonDown {
@@ -1567,8 +1589,47 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             &mut runtime,
                             &mut seen,
                         );
+                    } else if runtime.view().phase == Phase::Explore {
+                        let verbs = explore_verb_rows(&runtime);
+                        let inv = explore_inv_rows(&runtime);
+                        if let Some(vid) = hit_explore_verb(lx, ly, &verbs) {
+                            let cur = runtime.explore_selected_verb();
+                            if cur.as_deref() == Some(vid.as_str()) {
+                                runtime.select_verb(None);
+                            } else {
+                                runtime.select_verb(Some(&vid));
+                            }
+                        } else if let Some(iid) = hit_explore_item(lx, ly, &inv) {
+                            let cur = runtime.explore_pending_item();
+                            if cur.as_deref() == Some(iid.as_str()) {
+                                runtime.select_item(None);
+                            } else {
+                                runtime.select_item(Some(&iid));
+                            }
+                        } else {
+                            runtime.click_at(lx, ly);
+                        }
                     } else {
                         advance_reading(&mut runtime, &mut seen);
+                    }
+                }
+                Event::KeyDown {
+                    keycode: Some(code),
+                    ..
+                } if !overlay
+                    && !title_open
+                    && runtime.view().phase == Phase::Explore
+                    && digit_from_key(code) >= 1 =>
+                {
+                    let n = digit_from_key(code) as usize;
+                    if let Some(v) = runtime.project.verbs.get(n - 1) {
+                        let id = v.id.clone();
+                        let cur = runtime.explore_selected_verb();
+                        if cur.as_deref() == Some(id.as_str()) {
+                            runtime.select_verb(None);
+                        } else {
+                            runtime.select_verb(Some(&id));
+                        }
                     }
                 }
                 _ => {}
@@ -1861,6 +1922,32 @@ fn apply_numbered_slot(
     }
 }
 
+
+fn explore_verb_rows(runtime: &Runtime) -> Vec<(String, String, bool)> {
+    let selected = runtime.explore_selected_verb();
+    runtime
+        .project
+        .verbs
+        .iter()
+        .map(|v| {
+            let on = selected.as_deref() == Some(v.id.as_str());
+            (v.id.clone(), v.label.clone(), on)
+        })
+        .collect()
+}
+
+fn explore_inv_rows(runtime: &Runtime) -> Vec<(String, bool)> {
+    let pending = runtime.explore_pending_item();
+    runtime
+        .explore_inventory()
+        .into_iter()
+        .map(|id| {
+            let on = pending.as_deref() == Some(id.as_str());
+            (id, on)
+        })
+        .collect()
+}
+
 fn show_hud_now(
     overlay: bool,
     title_open: bool,
@@ -1876,7 +1963,11 @@ fn show_hud_now(
         && !movie
         && matches!(
             view.phase,
-            Phase::Dialogue | Phase::Choices | Phase::Ended | Phase::MissingScene(_)
+            Phase::Explore
+                | Phase::Dialogue
+                | Phase::Choices
+                | Phase::Ended
+                | Phase::MissingScene(_)
         )
         && (view.say_text.is_some() || view.phase != Phase::Dialogue)
 }

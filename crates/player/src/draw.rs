@@ -218,6 +218,9 @@ pub fn draw_view(
                 MSG_X + MSG_W - 32,
             );
         }
+        Phase::Explore => {
+            // BG already drawn; chrome (hotspots / verbs) drawn by draw_explore_chrome.
+        }
         Phase::Dialogue => {
             if view.say_text.is_some() {
                 draw_box(fb, assets, msg_box);
@@ -255,6 +258,157 @@ pub fn draw_view(
             }
         }
     }
+}
+
+/// Verb / inventory chrome + hotspot outlines for Explore phase.
+pub fn draw_explore_chrome(
+    fb: &mut Framebuffer,
+    font: &GameFont,
+    verbs: &[(String, String, bool)],
+    inventory: &[(String, bool)],
+    hotspots: &[(String, galeng_schema::HotspotShape)],
+    hover_hotspot: Option<&str>,
+) {
+    let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
+    let hover = Rgba { r: 255, g: 220, b: 80, a: 160 };
+    for (id, shape) in hotspots {
+        let color = if hover_hotspot == Some(id.as_str()) {
+            hover
+        } else {
+            outline
+        };
+        match shape {
+            galeng_schema::HotspotShape::Rect { x, y, w, h } => {
+                stroke_rect(fb, *x, *y, *w, *h, color, 2);
+            }
+            galeng_schema::HotspotShape::Polygon { points } => {
+                // Minimal: bounding box only (hit-test ignores polygons for now).
+                if let Some((min_x, min_y, max_x, max_y)) = poly_bounds(points) {
+                    stroke_rect(fb, min_x, min_y, max_x - min_x, max_y - min_y, color, 1);
+                }
+            }
+        }
+    }
+
+    let bar_y = HEIGHT as i32 - 96;
+    let btn_w = 140i32;
+    let btn_h = 48i32;
+    let gap = 12i32;
+    let total_w = verbs.len() as i32 * (btn_w + gap) - gap;
+    let mut x = (WIDTH as i32 - total_w) / 2;
+    for (id, label, selected) in verbs {
+        let bg = if *selected {
+            Rgba { r: 60, g: 100, b: 180, a: 220 }
+        } else {
+            Rgba { r: 20, g: 20, b: 30, a: 200 }
+        };
+        fb.fill_rect(x, bar_y, btn_w, btn_h, bg);
+        stroke_rect(fb, x, bar_y, btn_w, btn_h, Rgba::rgb(200, 200, 220), 1);
+        let _ = id;
+        font.draw_text(
+            fb,
+            x + 16,
+            bar_y + 14,
+            28.0,
+            label,
+            Rgba::rgb(255, 255, 255),
+            x + btn_w - 8,
+        );
+        x += btn_w + gap;
+    }
+
+    if !inventory.is_empty() {
+        let inv_y = bar_y - 64;
+        let mut ix = 40i32;
+        font.draw_text(
+            fb,
+            ix,
+            inv_y - 28,
+            24.0,
+            "道具",
+            Rgba::rgb(255, 230, 160),
+            400,
+        );
+        for (item_id, selected) in inventory {
+            let bg = if *selected {
+                Rgba { r: 180, g: 120, b: 40, a: 220 }
+            } else {
+                Rgba { r: 40, g: 40, b: 50, a: 200 }
+            };
+            fb.fill_rect(ix, inv_y, 120, 44, bg);
+            stroke_rect(fb, ix, inv_y, 120, 44, Rgba::rgb(220, 200, 160), 1);
+            font.draw_text(
+                fb,
+                ix + 10,
+                inv_y + 10,
+                24.0,
+                item_id,
+                Rgba::rgb(255, 255, 255),
+                ix + 110,
+            );
+            ix += 132;
+        }
+    }
+}
+
+fn poly_bounds(points: &[[i32; 2]]) -> Option<(i32, i32, i32, i32)> {
+    let mut it = points.iter();
+    let first = it.next()?;
+    let mut min_x = first[0];
+    let mut min_y = first[1];
+    let mut max_x = first[0];
+    let mut max_y = first[1];
+    for p in it {
+        min_x = min_x.min(p[0]);
+        min_y = min_y.min(p[1]);
+        max_x = max_x.max(p[0]);
+        max_y = max_y.max(p[1]);
+    }
+    Some((min_x, min_y, max_x, max_y))
+}
+
+fn stroke_rect(fb: &mut Framebuffer, x: i32, y: i32, w: i32, h: i32, color: Rgba, t: i32) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    fb.fill_rect(x, y, w, t, color);
+    fb.fill_rect(x, y + h - t, w, t, color);
+    fb.fill_rect(x, y, t, h, color);
+    fb.fill_rect(x + w - t, y, t, h, color);
+}
+
+/// Hit-test explore verb bar. Returns verb id.
+pub fn hit_explore_verb(lx: i32, ly: i32, verbs: &[(String, String, bool)]) -> Option<String> {
+    let bar_y = HEIGHT as i32 - 96;
+    let btn_w = 140i32;
+    let btn_h = 48i32;
+    let gap = 12i32;
+    let total_w = verbs.len() as i32 * (btn_w + gap) - gap;
+    let mut x = (WIDTH as i32 - total_w) / 2;
+    for (id, _label, _sel) in verbs {
+        if lx >= x && lx < x + btn_w && ly >= bar_y && ly < bar_y + btn_h {
+            return Some(id.clone());
+        }
+        x += btn_w + gap;
+    }
+    None
+}
+
+/// Hit-test explore inventory strip. Returns item id.
+pub fn hit_explore_item(lx: i32, ly: i32, inventory: &[(String, bool)]) -> Option<String> {
+    if inventory.is_empty() {
+        return None;
+    }
+    let bar_y = HEIGHT as i32 - 96;
+    let inv_y = bar_y - 64;
+    let mut ix = 40i32;
+    for (item_id, _) in inventory {
+        if lx >= ix && lx < ix + 120 && ly >= inv_y && ly < inv_y + 44 {
+            return Some(item_id.clone());
+        }
+        ix += 132;
+    }
+    None
 }
 
 pub fn draw_one_choice(

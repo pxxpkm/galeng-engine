@@ -699,3 +699,46 @@ fn try_to_save_rejects_mid_saying() {
     let save = eng.try_to_save().unwrap();
     assert_eq!(save.scene_id, "r");
 }
+
+#[test]
+fn click_room_examples_clearance() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .expect("examples/click-room");
+
+    // onEnter
+    assert_eq!(eng.phase(), &Phase::Saying);
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.phase(), &Phase::Explore);
+
+    eng.select_verb(Some("open"));
+    eng.interact("desk").unwrap();
+    assert!(eng.view().say_text.as_deref().unwrap().contains("抽屜"));
+    eng.dismiss_say().unwrap();
+
+    eng.select_verb(Some("take"));
+    eng.interact("desk").unwrap();
+    assert!(eng.view().inventory.contains("key"));
+    eng.dismiss_say().unwrap();
+
+    eng.select_item(Some("key"));
+    eng.interact("door").unwrap();
+    assert_eq!(eng.view().switches.get("door_open"), Some(&true));
+    eng.dismiss_say().unwrap();
+
+    eng.select_verb(Some("move"));
+    eng.interact("door").unwrap();
+    assert_eq!(eng.scene_id(), "ending");
+    assert_eq!(eng.phase(), &Phase::Saying);
+}

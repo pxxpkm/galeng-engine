@@ -416,7 +416,48 @@ impl Engine {
         }
     }
 
+    /// Scene whose `bg` should be shown: current if set, else nearest Explore caller.
+    pub fn display_bg_asset(&self) -> Option<String> {
+        let mut candidates = vec![self.scene_id.as_str()];
+        for frame in self.call_stack.iter().rev() {
+            match frame {
+                StackFrame::Explore { scene_id, .. } | StackFrame::Dialogue { scene_id, .. } => {
+                    candidates.push(scene_id.as_str());
+                }
+            }
+        }
+        for id in candidates {
+            if let Some(asset) = self.scenes.get(id).and_then(|s| s.bg.as_ref()).map(|b| b.asset.clone()) {
+                return Some(asset);
+            }
+        }
+        None
+    }
+
+    /// Drain SE assets queued by PlaySe actions (player plays them).
+    pub fn take_pending_se(&mut self) -> Vec<String> {
+
+        std::mem::take(&mut self.pending_se)
+    }
+
+    /// Visible explore hotspots for debug/minimal overlay (id + shape).
+    pub fn hotspot_overlay(&self) -> Vec<(String, galeng_schema::HotspotShape)> {
+        let Some(scene) = self.scenes.get(&self.scene_id) else {
+            return Vec::new();
+        };
+        if scene.scene_kind != SceneKind::Explore {
+            return Vec::new();
+        }
+        scene
+            .hotspots
+            .iter()
+            .filter(|hs| is_visible(scene, hs, &self.world))
+            .map(|hs| (hs.id.clone(), hs.shape.clone()))
+            .collect()
+    }
+
     pub fn load_save(&mut self, save: &ExploreSave) -> Result<(), Error> {
+
         if save.schema_version != self.project.schema_version {
             return Err(Error::SchemaMismatch {
                 expected: self.project.schema_version,
