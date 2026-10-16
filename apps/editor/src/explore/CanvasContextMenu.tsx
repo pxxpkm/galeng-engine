@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { CtxMenuItem } from "./canvasContextMenu";
+import type { CtxMenuItem } from "./ctxMenuModel";
 
 export interface CanvasContextMenuProps {
   x: number;

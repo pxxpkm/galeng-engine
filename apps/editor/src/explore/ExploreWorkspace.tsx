@@ -46,7 +46,7 @@ import {
   rectCenteredAt,
   type CtxMenuActionId,
   type CtxMenuTarget,
-} from "./canvasContextMenu";
+} from "./ctxMenuModel";
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";

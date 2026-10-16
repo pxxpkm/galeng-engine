@@ -26,5 +26,5 @@ export * from "./sceneCatalog";
 
 export * from "./packClient";
 
-export * from "./canvasContextMenu";
+export * from "./ctxMenuModel";
 export { CanvasContextMenu } from "./CanvasContextMenu";

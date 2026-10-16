@@ -1,5 +1,5 @@
 import { defaultHotspotPlacement, roundPolygonPoints, roundRect } from "./canvas";
-import { convertHotspotShape } from "./canvasContextMenu";
+import { convertHotspotShape } from "./ctxMenuModel";
 import type { Command } from "./commandBus";
 import {
   sameOn,

@@ -33,7 +33,7 @@ import {
   canvasContextMenuTarget,
   type CtxMenuActionId,
   type CtxMenuTarget,
-} from "./canvasContextMenu";
+} from "./ctxMenuModel";
 import type { ExploreDoc } from "./types";
 import {
   appendDrawPolygonPoint,

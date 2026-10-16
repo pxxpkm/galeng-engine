@@ -9,11 +9,11 @@ import {
   polygonShapeToRect,
   rectCenteredAt,
   rectShapeToPolygon,
-} from "./canvasContextMenu";
+} from "./ctxMenuModel";
 import { blankExploreDoc } from "./fixture";
 import { hitTestHotspots } from "./canvas";
 
-describe("canvasContextMenu helpers", () => {
+describe("ctxMenuModel helpers", () => {
   it("rectCenteredAt centres and clamps", () => {
     const r = rectCenteredAt(100, 80, { w: 40, h: 20 });
     expect(r).toEqual({ x: 80, y: 70, w: 40, h: 20 });
