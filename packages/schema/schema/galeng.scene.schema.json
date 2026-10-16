@@ -31,6 +31,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/exploreAction" }
     },
+    "onEmptyClick": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exploreAction" }
+    },
     "exit": { "$ref": "#/$defs/exit" }
   },
   "$defs": {

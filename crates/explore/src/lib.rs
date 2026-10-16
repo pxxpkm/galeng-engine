@@ -6,5 +6,5 @@ pub mod engine;
 pub mod hit;
 pub mod save;
 
-pub use engine::{Engine, Error, Phase, StackFrame, TraceLayer, View, BUILTIN_FALLBACK};
+pub use engine::{AvailableAction, Engine, Error, Phase, StackFrame, TraceLayer, View, BUILTIN_FALLBACK};
 pub use save::ExploreSave;

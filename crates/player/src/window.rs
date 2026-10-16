@@ -12,7 +12,7 @@ use crate::backlog::{self, BacklogView};
 use crate::draw::{
     draw_backlog, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_gallery, draw_hud,
     draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots, draw_movie_skip, draw_title,
-    draw_view, hit_choice, hit_explore_item, hit_explore_verb, letterbox, window_to_logical,
+    draw_view, hit_choice, hit_explore_action, hit_explore_item, letterbox, window_to_logical,
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
@@ -146,6 +146,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     let mut ui_hidden = false;
     let mut skip_latch = false;
     let mut choice_sel = 0usize;
+    // Explore focus: Some(hotspot id); explore_focus_room = empty-background (看·房間).
+    let mut explore_focus: Option<String> = None;
+    let mut explore_focus_room: bool = false;
     let mut pressed_title: Option<usize> = None;
     let mut pressed_menu: Option<usize> = None;
     let mut pressed_choice: Option<usize> = None;
@@ -392,9 +395,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             (Some(start), Some(ms))
                 if start.elapsed() < Duration::from_millis(u64::from(ms))
         );
-        if scene_hit && chrome_hit && shake_started.is_none() && flash_started.is_none() && !sliding {
+        if scene_hit && chrome_hit && shake_started.is_none() && flash_started.is_none() && !sliding
+            && view.phase != Phase::Explore
+        {
             full_upload = false;
-        } else if scene_hit && shake_started.is_none() && flash_started.is_none() && !sliding {
+        } else if scene_hit && shake_started.is_none() && flash_started.is_none() && !sliding
+            && view.phase != Phase::Explore
+        {
             full_upload = false;
             if view.phase == Phase::Choices {
                 if let Some(prev) = &last_chrome {
@@ -474,23 +481,55 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 );
             }
             if !title_open && !ui_hidden && view.phase == Phase::Explore {
-                let verbs = explore_verb_rows(&runtime);
                 let inv = explore_inv_rows(&runtime);
                 let hotspots = runtime.explore_hotspots();
                 let (ww, wh) = canvas.output_size().unwrap_or((1280, 720));
                 let ms = events.mouse_state();
                 let logical = window_to_logical(ms.x(), ms.y(), ww, wh);
                 let hover_hs = logical.and_then(|(lx, ly)| runtime.explore_hit(lx, ly));
-                let hover_verb = logical.and_then(|(lx, ly)| hit_explore_verb(lx, ly, &verbs));
+                let on_action = logical
+                    .map(|(lx, ly)| hit_explore_action(lx, ly))
+                    .unwrap_or(false);
                 let hover_item = logical.and_then(|(lx, ly)| hit_explore_item(lx, ly, &inv));
+                // Keep focus when pointer moves onto the action button.
+                if let Some(id) = hover_hs.clone() {
+                    if explore_focus.as_deref() != Some(id.as_str()) || explore_focus_room {
+                        explore_focus = Some(id.clone());
+                        explore_focus_room = false;
+                        sync_explore_primary(&mut runtime, Some(&id));
+                    }
+                } else if on_action && (explore_focus.is_some() || explore_focus_room) {
+                    // keep
+                } else if hover_item.is_some() {
+                    // keep inventory hover without clearing room/hotspot focus
+                } else if logical.is_some() {
+                    // Empty scene background: room look.
+                    if !explore_focus_room || explore_focus.is_some() {
+                        explore_focus = None;
+                        explore_focus_room = true;
+                        // Don't clear pending_item here — only on click empty.
+                        if runtime.explore_pending_item().is_none() {
+                            runtime.select_verb(Some("look"));
+                        }
+                    }
+                }
+                let action_label = if let Some(id) = explore_focus.as_deref() {
+                    runtime
+                        .explore_primary_action(id)
+                        .map(|a| a.label)
+                } else if explore_focus_room {
+                    runtime.explore_empty_action().map(|a| a.label)
+                } else {
+                    None
+                };
                 draw_explore_chrome(
                     &mut fb,
                     &font,
-                    &verbs,
+                    action_label.as_deref(),
+                    on_action && action_label.is_some(),
                     &inv,
                     &hotspots,
-                    hover_hs.as_deref(),
-                    hover_verb.as_deref(),
+                    explore_focus.as_deref(),
                     hover_item.as_deref(),
                 );
             }
@@ -1610,14 +1649,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             &mut seen,
                         );
                     } else if runtime.view().phase == Phase::Explore {
-                        let verbs = explore_verb_rows(&runtime);
                         let inv = explore_inv_rows(&runtime);
-                        if let Some(vid) = hit_explore_verb(lx, ly, &verbs) {
-                            let cur = runtime.explore_selected_verb();
-                            if cur.as_deref() == Some(vid.as_str()) {
-                                runtime.select_verb(None);
-                            } else {
-                                runtime.select_verb(Some(&vid));
+                        if hit_explore_action(lx, ly) {
+                            if let Some(id) = explore_focus.clone() {
+                                sync_explore_primary(&mut runtime, Some(&id));
+                                runtime.interact_hotspot(&id);
+                            } else if explore_focus_room {
+                                runtime.interact_empty();
                             }
                         } else if let Some(iid) = hit_explore_item(lx, ly, &inv) {
                             let cur = runtime.explore_pending_item();
@@ -1626,30 +1664,18 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             } else {
                                 runtime.select_item(Some(&iid));
                             }
+                        } else if let Some(hs) = runtime.explore_hit(lx, ly) {
+                            explore_focus = Some(hs.clone());
+                            explore_focus_room = false;
+                            sync_explore_primary(&mut runtime, Some(&hs));
+                            runtime.interact_hotspot(&hs);
                         } else {
-                            runtime.click_at(lx, ly);
+                            explore_focus = None;
+                            explore_focus_room = true;
+                            runtime.interact_empty();
                         }
                     } else {
                         advance_reading(&mut runtime, &mut seen);
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(code),
-                    ..
-                } if !overlay
-                    && !title_open
-                    && runtime.view().phase == Phase::Explore
-                    && digit_from_key(code) >= 1 =>
-                {
-                    let n = digit_from_key(code) as usize;
-                    if let Some(v) = runtime.project.verbs.get(n - 1) {
-                        let id = v.id.clone();
-                        let cur = runtime.explore_selected_verb();
-                        if cur.as_deref() == Some(id.as_str()) {
-                            runtime.select_verb(None);
-                        } else {
-                            runtime.select_verb(Some(&id));
-                        }
                     }
                 }
                 _ => {}
@@ -1943,17 +1969,18 @@ fn apply_numbered_slot(
 }
 
 
-fn explore_verb_rows(runtime: &Runtime) -> Vec<(String, String, bool)> {
-    let selected = runtime.explore_selected_verb();
-    runtime
-        .project
-        .verbs
-        .iter()
-        .map(|v| {
-            let on = selected.as_deref() == Some(v.id.as_str());
-            (v.id.clone(), v.label.clone(), on)
-        })
-        .collect()
+fn sync_explore_primary(runtime: &mut Runtime, hotspot_id: Option<&str>) {
+    if runtime.explore_pending_item().is_some() {
+        return;
+    }
+    let Some(id) = hotspot_id else {
+        return;
+    };
+    if let Some(action) = runtime.explore_primary_action(id) {
+        if let Some(verb) = action.verb.as_deref() {
+            runtime.select_verb(Some(verb));
+        }
+    }
 }
 
 fn explore_inv_rows(runtime: &Runtime) -> Vec<(String, String, bool)> {

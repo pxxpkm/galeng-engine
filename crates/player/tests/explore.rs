@@ -80,3 +80,30 @@ fn dialogue_only_project_skips_explore() {
     assert!(!rt.uses_explore());
     assert_eq!(rt.view().phase, Phase::Dialogue);
 }
+
+
+#[test]
+fn desk_primary_via_runtime() {
+    let mut rt = load_click_room();
+    dismiss_say(&mut rt);
+    let a = rt.explore_primary_action("desk").expect("desk");
+    assert_eq!(a.verb.as_deref(), Some("open"));
+
+    rt.select_verb(Some("open"));
+    rt.interact_hotspot("desk");
+    dismiss_say(&mut rt);
+
+    let a = rt.explore_primary_action("desk").expect("desk2");
+    assert_eq!(a.verb.as_deref(), Some("take"));
+}
+
+#[test]
+fn empty_click_via_runtime() {
+    let mut rt = load_click_room();
+    dismiss_say(&mut rt);
+    let a = rt.explore_empty_action().expect("empty");
+    assert!(a.label.contains("看"));
+    rt.interact_empty();
+    assert!(rt.view().say_text.as_deref().unwrap_or("").contains("書房")
+        || rt.view().say_text.as_deref().unwrap_or("").contains("靜謐"));
+}

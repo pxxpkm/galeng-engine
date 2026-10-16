@@ -791,6 +791,9 @@ pub struct Scene {
     pub interactions: Vec<Interaction>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_enter: Vec<ExploreAction>,
+    /// YU-NO-style room look when clicking empty background (Explore).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_empty_click: Vec<ExploreAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit: Option<Exit>,
 }

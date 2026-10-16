@@ -69,6 +69,17 @@ pub enum TraceLayer {
     None,
 }
 
+/// One YU-NO-style action candidate for a hotspot (P0 shows primary only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvailableAction {
+    /// Verb id; `None` when this is a pending-item use.
+    pub verb: Option<String>,
+    /// Item id when using inventory on the hotspot.
+    pub item: Option<String>,
+    /// Button label, e.g. `開 · 書桌`.
+    pub label: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
     pub scene_id: String,
@@ -245,7 +256,7 @@ impl Engine {
             Phase::Explore => {}
         }
         let Some(id) = self.hit_test(x, y).map(str::to_string) else {
-            return Ok(());
+            return self.interact_empty();
         };
         self.interact(&id)
     }
@@ -299,6 +310,42 @@ impl Engine {
         let _ = consumed_item_attempt;
 
         self.enqueue_and_run(actions)
+    }
+
+    /// Room/background look when clicking empty space (YU-NO style).
+    pub fn interact_empty(&mut self) -> Result<(), Error> {
+        if self.phase != Phase::Explore {
+            return Ok(());
+        }
+        // Cancel pending item use on background click.
+        self.pending_item = None;
+        let actions = self.resolve_empty_click_actions();
+        self.last_trace = TraceLayer::Interaction;
+        self.enqueue_and_run(actions)
+    }
+
+    fn resolve_empty_click_actions(&self) -> Vec<ExploreAction> {
+        if let Some(scene) = self.scenes.get(&self.scene_id) {
+            if !scene.on_empty_click.is_empty() {
+                return scene.on_empty_click.clone();
+            }
+        }
+        if let Some(text) = self.project.fallback.per_verb.get("look") {
+            return vec![ExploreAction::Say {
+                text: text.clone(),
+                speaker: None,
+            }];
+        }
+        if let Some(text) = &self.project.fallback.global {
+            return vec![ExploreAction::Say {
+                text: text.clone(),
+                speaker: None,
+            }];
+        }
+        vec![ExploreAction::Say {
+            text: BUILTIN_FALLBACK.to_string(),
+            speaker: None,
+        }]
     }
 
     pub fn dismiss_say(&mut self) -> Result<(), Error> {
@@ -454,6 +501,95 @@ impl Engine {
             .filter(|hs| is_visible(scene, hs, &self.world))
             .map(|hs| (hs.id.clone(), hs.shape.clone()))
             .collect()
+    }
+
+    /// Verbs/items that currently match this hotspot (`when` preds hold).
+    ///
+    /// Pending-item use wins when set. Otherwise productive rules (any non-`Say`
+    /// action) rank above say-only matches; within a group prefer `default_verb`,
+    /// else project verb order. P0 UI takes index 0 as the inevitable action.
+    pub fn available_actions(&self, hotspot_id: &str) -> Vec<AvailableAction> {
+        let Some(scene) = self.scenes.get(&self.scene_id) else {
+            return Vec::new();
+        };
+        let Some(hs) = scene.hotspots.iter().find(|h| h.id == hotspot_id) else {
+            return Vec::new();
+        };
+        if !is_visible(scene, hs, &self.world) || !is_enabled(scene, hs, &self.world) {
+            return Vec::new();
+        }
+
+        if let Some(item_id) = self.pending_item.clone() {
+            let use_label = verb_label(&self.project, "use");
+            return vec![AvailableAction {
+                verb: None,
+                item: Some(item_id),
+                label: format!("{use_label} · {}", hs.name),
+            }];
+        }
+
+        let mut productive: Vec<String> = Vec::new();
+        let mut soft: Vec<String> = Vec::new();
+        for inter in &scene.interactions {
+            if inter.hotspot != hotspot_id {
+                continue;
+            }
+            let InteractionOn::Verb(v) = &inter.on else {
+                continue;
+            };
+            let Some(rule) = inter.rules.iter().find(|r| preds_hold(&r.when, &self.world)) else {
+                continue;
+            };
+            let id = v.verb.clone();
+            if actions_productive(&rule.actions) {
+                if !productive.contains(&id) {
+                    productive.push(id);
+                }
+            } else if !productive.contains(&id) && !soft.contains(&id) {
+                soft.push(id);
+            }
+        }
+
+        let default = hs.default_verb.as_deref();
+        let mut ordered: Vec<String> = Vec::new();
+        order_verb_group(&mut ordered, &productive, default, &self.project);
+        if ordered.is_empty() {
+            order_verb_group(&mut ordered, &soft, default, &self.project);
+        }
+        if ordered.is_empty() {
+            ordered.push(
+                hs.default_verb
+                    .clone()
+                    .unwrap_or_else(|| "look".to_string()),
+            );
+        }
+
+        ordered
+            .into_iter()
+            .map(|verb| AvailableAction {
+                label: format!("{} · {}", verb_label(&self.project, &verb), hs.name),
+                verb: Some(verb),
+                item: None,
+            })
+            .collect()
+    }
+
+    pub fn primary_action(&self, hotspot_id: &str) -> Option<AvailableAction> {
+        self.available_actions(hotspot_id).into_iter().next()
+    }
+
+    /// Inevitable action for empty background: always a look at the room.
+    pub fn empty_click_action(&self) -> AvailableAction {
+        let room_name = self
+            .scenes
+            .get(&self.scene_id)
+            .and_then(|s| s.title.clone().or_else(|| Some(s.id.clone())))
+            .unwrap_or_else(|| self.scene_id.clone());
+        AvailableAction {
+            verb: Some("look".to_string()),
+            item: None,
+            label: format!("{} · {}", verb_label(&self.project, "look"), room_name),
+        }
     }
 
     pub fn load_save(&mut self, save: &ExploreSave) -> Result<(), Error> {
@@ -825,6 +961,44 @@ impl Engine {
             None => self.phase = Phase::Ended,
         }
         Ok(())
+    }
+}
+
+fn verb_label(project: &Project, verb_id: &str) -> String {
+    project
+        .verbs
+        .iter()
+        .find(|v| v.id == verb_id)
+        .map(|v| v.label.clone())
+        .unwrap_or_else(|| verb_id.to_string())
+}
+
+fn actions_productive(actions: &[ExploreAction]) -> bool {
+    actions
+        .iter()
+        .any(|a| !matches!(a, ExploreAction::Say { .. }))
+}
+
+fn order_verb_group(
+    out: &mut Vec<String>,
+    group: &[String],
+    default: Option<&str>,
+    project: &Project,
+) {
+    if let Some(d) = default {
+        if group.iter().any(|id| id == d) && !out.iter().any(|id| id == d) {
+            out.push(d.to_string());
+        }
+    }
+    for v in &project.verbs {
+        if group.iter().any(|id| id == &v.id) && !out.iter().any(|id| id == &v.id) {
+            out.push(v.id.clone());
+        }
+    }
+    for id in group {
+        if !out.iter().any(|x| x == id) {
+            out.push(id.clone());
+        }
     }
 }
 

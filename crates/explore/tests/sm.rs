@@ -742,3 +742,100 @@ fn click_room_examples_clearance() {
     assert_eq!(eng.scene_id(), "ending");
     assert_eq!(eng.phase(), &Phase::Saying);
 }
+
+
+#[test]
+fn desk_primary_open_then_take() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .unwrap();
+    eng.dismiss_say().unwrap();
+
+    let a = eng.primary_action("desk").expect("desk action");
+    assert_eq!(a.verb.as_deref(), Some("open"));
+    assert!(a.label.contains("開"));
+    assert!(a.label.contains("書桌"));
+
+    eng.select_verb(Some("open"));
+    eng.interact("desk").unwrap();
+    eng.dismiss_say().unwrap();
+
+    let a = eng.primary_action("desk").expect("desk after open");
+    assert_eq!(a.verb.as_deref(), Some("take"));
+    assert!(a.label.contains("拎"));
+}
+
+#[test]
+fn empty_click_says_room_look() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .unwrap();
+    eng.dismiss_say().unwrap();
+
+    let empty = eng.empty_click_action();
+    assert_eq!(empty.verb.as_deref(), Some("look"));
+    assert!(empty.label.contains("看"));
+    assert!(empty.label.contains("書房"));
+
+    // Miss all hotspots
+    eng.click(10, 10).unwrap();
+    assert_eq!(eng.phase(), &Phase::Saying);
+    assert!(
+        eng.view()
+            .say_text
+            .as_deref()
+            .unwrap_or("")
+            .contains("書房")
+            || eng
+                .view()
+                .say_text
+                .as_deref()
+                .unwrap_or("")
+                .contains("靜謐"),
+        "got {:?}",
+        eng.view().say_text
+    );
+}
+
+#[test]
+fn butler_primary_is_talk() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .unwrap();
+    eng.dismiss_say().unwrap();
+    let a = eng.primary_action("butler").unwrap();
+    assert_eq!(a.verb.as_deref(), Some("talk"));
+}

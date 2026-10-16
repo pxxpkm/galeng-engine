@@ -251,6 +251,20 @@ impl Runtime {
             .and_then(|e| e.hit_test(x, y).map(str::to_string))
     }
 
+    pub fn explore_primary_action(&self, hotspot_id: &str) -> Option<galeng_explore::AvailableAction> {
+        self.explore.as_ref().and_then(|e| e.primary_action(hotspot_id))
+    }
+
+    pub fn explore_empty_action(&self) -> Option<galeng_explore::AvailableAction> {
+        self.explore.as_ref().map(|e| e.empty_click_action())
+    }
+
+    pub fn interact_empty(&mut self) {
+        if let Some(eng) = &mut self.explore {
+            let _ = eng.interact_empty();
+        }
+    }
+
 
     pub fn vars(&self) -> &HashMap<String, i32> {
         &self.vars

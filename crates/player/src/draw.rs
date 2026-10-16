@@ -260,43 +260,32 @@ pub fn draw_view(
     }
 }
 
-pub const EXPLORE_VERB_W: i32 = 140;
-pub const EXPLORE_VERB_H: i32 = 48;
-pub const EXPLORE_VERB_GAP: i32 = 12;
 pub const EXPLORE_ITEM_W: i32 = 168;
 pub const EXPLORE_ITEM_H: i32 = 44;
 pub const EXPLORE_ITEM_GAP: i32 = 12;
 
-/// Verb row sits above the message-box band (same idea as [`choice_rect`]).
-pub fn explore_verb_rect(index: usize, count: usize) -> (i32, i32, i32, i32) {
-    let n = count.max(1) as i32;
-    let total_w = n * (EXPLORE_VERB_W + EXPLORE_VERB_GAP) - EXPLORE_VERB_GAP;
-    let x0 = (WIDTH as i32 - total_w) / 2;
-    let y = MSG_Y - 16 - EXPLORE_VERB_H;
-    (
-        x0 + index as i32 * (EXPLORE_VERB_W + EXPLORE_VERB_GAP),
-        y,
-        EXPLORE_VERB_W,
-        EXPLORE_VERB_H,
-    )
+/// Single YU-NO action button above the message box (same geometry as one choice).
+pub fn explore_action_rect() -> (i32, i32, i32, i32) {
+    choice_rect(0, 1)
 }
 
-/// Inventory chips sit above the verb row.
+/// Inventory chips sit above the action button.
 pub fn explore_item_rect(index: usize) -> (i32, i32, i32, i32) {
-    let y = MSG_Y - 16 - EXPLORE_VERB_H - 16 - EXPLORE_ITEM_H;
+    let (_ax, ay, _, _) = explore_action_rect();
+    let y = ay - 16 - EXPLORE_ITEM_H;
     let x = 40 + index as i32 * (EXPLORE_ITEM_W + EXPLORE_ITEM_GAP);
     (x, y, EXPLORE_ITEM_W, EXPLORE_ITEM_H)
 }
 
-/// Verb / inventory chrome + hotspot outlines for Explore phase.
+/// Hotspot outlines + optional single action button + inventory chips.
 pub fn draw_explore_chrome(
     fb: &mut Framebuffer,
     font: &GameFont,
-    verbs: &[(String, String, bool)],
+    action_label: Option<&str>,
+    action_hover: bool,
     inventory: &[(String, String, bool)],
     hotspots: &[(String, galeng_schema::HotspotShape)],
     hover_hotspot: Option<&str>,
-    hover_verb: Option<&str>,
     hover_item: Option<&str>,
 ) {
     let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
@@ -320,14 +309,14 @@ pub fn draw_explore_chrome(
         }
     }
 
-    for (i, (id, label, selected)) in verbs.iter().enumerate() {
-        let (x, y, w, h) = explore_verb_rect(i, verbs.len());
-        let state = if hover_verb == Some(id.as_str()) || *selected {
+    if let Some(label) = action_label {
+        let (x, y, w, h) = explore_action_rect();
+        let state = if action_hover {
             ButtonState::Hover
         } else {
             ButtonState::Idle
         };
-        draw_button(fb, font, x, y, w, h, label, 28.0, state);
+        draw_button(fb, font, x, y, w, h, label, 32.0, state);
     }
 
     if !inventory.is_empty() {
@@ -379,15 +368,10 @@ fn stroke_rect(fb: &mut Framebuffer, x: i32, y: i32, w: i32, h: i32, color: Rgba
     fb.fill_rect(x + w - t, y, t, h, color);
 }
 
-/// Hit-test explore verb bar. Returns verb id.
-pub fn hit_explore_verb(lx: i32, ly: i32, verbs: &[(String, String, bool)]) -> Option<String> {
-    for (i, (id, _label, _sel)) in verbs.iter().enumerate() {
-        let (x, y, w, h) = explore_verb_rect(i, verbs.len());
-        if lx >= x && lx < x + w && ly >= y && ly < y + h {
-            return Some(id.clone());
-        }
-    }
-    None
+/// Hit-test the single YU-NO action button.
+pub fn hit_explore_action(lx: i32, ly: i32) -> bool {
+    let (x, y, w, h) = explore_action_rect();
+    lx >= x && lx < x + w && ly >= y && ly < y + h
 }
 
 /// Hit-test explore inventory strip. Returns item id.
@@ -1115,38 +1099,25 @@ mod tests {
     }
 
     #[test]
-    fn explore_verb_bar_stays_above_message_box() {
-        let verbs = vec![
-            ("look".into(), "看".into(), false),
-            ("open".into(), "開".into(), true),
-            ("take".into(), "拎".into(), false),
-            ("use".into(), "用".into(), false),
-            ("move".into(), "去".into(), false),
-        ];
-        for i in 0..verbs.len() {
-            let (x, y, w, h) = explore_verb_rect(i, verbs.len());
-            assert!(y >= 0, "verb {i} y={y}");
-            assert!(y + h <= MSG_Y, "verb {i} overlaps message box: bottom={}", y + h);
-            assert!(
-                y + h < crate::hud::hud_y(),
-                "verb {i} overlaps HUD y={}",
-                crate::hud::hud_y()
-            );
-            assert_eq!(
-                hit_explore_verb(x + w / 2, y + h / 2, &verbs).as_deref(),
-                Some(verbs[i].0.as_str())
-            );
-        }
-        // Old bottom-chrome region must not hit verbs.
-        assert_eq!(hit_explore_verb(WIDTH as i32 / 2, HEIGHT as i32 - 72, &verbs), None);
+    fn explore_action_button_stays_above_message_box() {
+        let (x, y, w, h) = explore_action_rect();
+        assert!(y >= 0, "action y={y}");
+        assert!(y + h <= MSG_Y, "action overlaps message box: bottom={}", y + h);
+        assert!(
+            y + h < crate::hud::hud_y(),
+            "action overlaps HUD y={}",
+            crate::hud::hud_y()
+        );
+        assert!(hit_explore_action(x + w / 2, y + h / 2));
+        assert!(!hit_explore_action(WIDTH as i32 / 2, HEIGHT as i32 - 72));
     }
 
     #[test]
-    fn explore_item_strip_above_verb_bar() {
+    fn explore_item_strip_above_action_button() {
         let inv = vec![("key".into(), "黃銅鎖匙".into(), true)];
-        let (_vx, vy, _vw, _vh) = explore_verb_rect(0, 1);
+        let (_ax, ay, _aw, _ah) = explore_action_rect();
         let (x, y, w, h) = explore_item_rect(0);
-        assert!(y + h <= vy, "inventory overlaps verb bar");
+        assert!(y + h <= ay, "inventory overlaps action button");
         assert!(y + h <= MSG_Y);
         assert_eq!(
             hit_explore_item(x + w / 2, y + h / 2, &inv).as_deref(),
