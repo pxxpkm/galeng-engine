@@ -3,24 +3,33 @@ import { AssetField } from "../AssetField";
 import { assetLists } from "../assets";
 import { mediaUrl } from "../media";
 import {
+  FONT_SCALE_DEFAULTS,
+  FONT_SCALE_KEYS,
   fontDialogueOf,
   fontTitleOf,
   fontUiOf,
   patchFontRole,
+  patchFontScale,
+  type FontScaleKey,
 } from "../project";
 import type { Editor } from "./useEditorState";
-import { Field } from "./fields";
+import { Field, Section } from "./fields";
 
-/** Dedicated Font Manager surface (MVP): list fonts/, assign dialogue/ui/title roles. */
+const SCALE_LABEL_KEYS: Record<FontScaleKey, string> = {
+  dialogueBody: "editor.fontScaleDialogueBody",
+  speaker: "editor.fontScaleSpeaker",
+  explorePill: "editor.fontScaleExplorePill",
+  inventory: "editor.fontScaleInventory",
+  hud: "editor.fontScaleHud",
+  title: "editor.fontScaleTitle",
+  menu: "editor.fontScaleMenu",
+  settings: "editor.fontScaleSettings",
+};
+
+/** Dedicated Font Manager surface: roles + type-scale knobs. */
 export function FontPanel({ ed }: { ed: Editor }) {
   const { t, project } = ed;
-  if (!project) return null;
-
   const fonts = assetLists(ed.assets).fonts;
-  const dialogue = fontDialogueOf(project) ?? "";
-  const ui = fontUiOf(project) ?? "";
-  const title = fontTitleOf(project) ?? "";
-
   const licenseHints = useMemo(
     () =>
       fonts.filter(
@@ -28,6 +37,12 @@ export function FontPanel({ ed }: { ed: Editor }) {
       ),
     [fonts],
   );
+  if (!project) return null;
+
+  const dialogue = fontDialogueOf(project) ?? "";
+  const ui = fontUiOf(project) ?? "";
+  const title = fontTitleOf(project) ?? "";
+  const scale = project.fonts?.scale;
 
   return (
     <div className="v2-modal-body">
@@ -60,6 +75,34 @@ export function FontPanel({ ed }: { ed: Editor }) {
           onChange={(value) => ed.patchProject(patchFontRole(project, "title", value))}
         />
       </Field>
+
+      <Section title={t("editor.fontScale")}>
+        <p className="v2-hint">{t("editor.fontScaleHint")}</p>
+        <div className="v2-field-row v2-font-scale">
+          {FONT_SCALE_KEYS.map((key) => (
+            <Field key={key} label={t(SCALE_LABEL_KEYS[key])}>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={scale?.[key] ?? ""}
+                placeholder={String(FONT_SCALE_DEFAULTS[key])}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw === "") {
+                    ed.patchProject(patchFontScale(project, key, undefined));
+                    return;
+                  }
+                  const n = Number(raw);
+                  ed.patchProject(
+                    patchFontScale(project, key, Number.isNaN(n) ? undefined : n),
+                  );
+                }}
+              />
+            </Field>
+          ))}
+        </div>
+      </Section>
 
       <div className="v2-field">
         <label>{t("editor.fontLibrary")}</label>

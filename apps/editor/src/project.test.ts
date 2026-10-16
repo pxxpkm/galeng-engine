@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMusicItem, setHideGameTitle, setOptionalPath, setPauseButton, setSkipTitle, setTitleButton } from "./project";
+import { addMusicItem, patchFontRole, patchFontScale, setHideGameTitle, setOptionalPath, setPauseButton, setSkipTitle, setTitleButton } from "./project";
 import type { Project } from "./types";
 
 const base: Project = {
@@ -99,5 +99,40 @@ describe("addMusicItem", () => {
     const next = addMusicItem(base);
     expect(next.musicGallery).toEqual([{ id: "bgm_1", asset: "bgm/track" }]);
     expect(next.titleBgm).toBe("bgm/park");
+  });
+});
+
+describe("patchFontScale", () => {
+  it("sets a scale key under fonts.scale", () => {
+    const next = patchFontScale(base, "dialogueBody", 40);
+    expect(next.fonts?.scale).toEqual({ dialogueBody: 40 });
+    expect(next.titleBgm).toBe("bgm/park");
+  });
+
+  it("clears a key and omits empty fonts object", () => {
+    const set = patchFontScale(base, "speaker", 30);
+    const cleared = patchFontScale(set, "speaker", undefined);
+    expect(cleared.fonts).toBeUndefined();
+  });
+
+  it("clears via NaN the same as undefined", () => {
+    const set = patchFontScale(base, "hud", 20);
+    const cleared = patchFontScale(set, "hud", Number.NaN);
+    expect(cleared.fonts).toBeUndefined();
+  });
+
+  it("keeps other roles when clearing the last scale key", () => {
+    const withRole = patchFontRole(base, "dialogue", "fonts/mplus");
+    const withScale = patchFontScale(withRole, "title", 80);
+    const cleared = patchFontScale(withScale, "title", undefined);
+    expect(cleared.fonts?.scale).toBeUndefined();
+    expect(cleared.fonts?.dialogue).toBe("fonts/mplus");
+    expect(cleared.font).toBe("fonts/mplus");
+  });
+
+  it("merges multiple scale keys", () => {
+    const a = patchFontScale(base, "dialogueBody", 36);
+    const b = patchFontScale(a, "menu", 30);
+    expect(b.fonts?.scale).toEqual({ dialogueBody: 36, menu: 30 });
   });
 });

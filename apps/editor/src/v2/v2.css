@@ -921,6 +921,16 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+.v2 .v2-font-scale {
+  margin-top: 4px;
+}
+.v2 .v2-font-scale .v2-field {
+  margin-bottom: 6px;
+}
+.v2 .v2-font-scale input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}
 .v2 .v2-stage-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

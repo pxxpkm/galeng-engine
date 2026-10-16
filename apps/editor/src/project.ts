@@ -1,5 +1,6 @@
 import type {
   FontConfig,
+  FontScale,
   GalleryItem,
   PauseButtonKey,
   PauseButtons,
@@ -167,6 +168,47 @@ export function patchFontRole(
     if (!trimmed) delete next.font;
     else next.font = trimmed;
   }
+  if (!fonts.dialogue && !fonts.ui && !fonts.title && !fonts.scale) {
+    delete next.fonts;
+  }
+  return next;
+}
+
+/** Player TypeScale defaults (logical px). Shown as placeholders when unset. */
+export const FONT_SCALE_DEFAULTS: Required<FontScale> = {
+  dialogueBody: 34,
+  speaker: 28,
+  explorePill: 30,
+  inventory: 26,
+  hud: 24,
+  title: 72,
+  menu: 32,
+  settings: 28,
+};
+
+export const FONT_SCALE_KEYS = Object.keys(FONT_SCALE_DEFAULTS) as (keyof FontScale)[];
+
+export type FontScaleKey = keyof FontScale;
+
+/** Set or clear one type-scale size. Empty/NaN omits the key (player uses default). */
+export function patchFontScale(
+  project: Project,
+  key: FontScaleKey,
+  value: number | undefined,
+): Project {
+  const fonts: FontConfig = { ...(project.fonts ?? {}) };
+  const scale: FontScale = { ...(fonts.scale ?? {}) };
+  if (value === undefined || Number.isNaN(value)) {
+    delete scale[key];
+  } else {
+    scale[key] = value;
+  }
+  if (Object.keys(scale).length === 0) {
+    delete fonts.scale;
+  } else {
+    fonts.scale = scale;
+  }
+  const next: Project = { ...project, fonts };
   if (!fonts.dialogue && !fonts.ui && !fonts.title && !fonts.scale) {
     delete next.fonts;
   }
