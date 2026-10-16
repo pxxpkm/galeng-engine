@@ -10,10 +10,11 @@ use crate::assets::Bank;
 use crate::audio::Mixer;
 use crate::backlog::{self, BacklogView};
 use crate::draw::{
-    draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_gallery,
-    draw_hud, draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots, draw_movie_skip,
-    draw_title, draw_view, hit_choice, hit_explore_action, hit_explore_item, letterbox,
-    window_to_logical, ButtonState, EXPLORE_ITEM_H, EXPLORE_ITEM_W,
+    draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_explore_cursor,
+    draw_gallery, draw_hud, draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots,
+    draw_movie_skip, draw_title, draw_view, explore_cursor_kind, hit_choice, hit_explore_action,
+    hit_explore_item, letterbox, window_to_logical, ButtonState, EXPLORE_ITEM_H,
+    EXPLORE_ITEM_W,
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
@@ -103,6 +104,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     mixer.set_settings(settings);
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
+    let mouse_util = sdl.mouse();
+    let mut os_cursor_hidden = false;
     let mut window = video
         .window(&game_window_title(&runtime.project.title), 1280, 720)
         .position_centered()
@@ -541,6 +544,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 } else {
                     None
                 };
+                let debug_hs = std::env::var_os("GALENG_EXPLORE_DEBUG_HOTSPOTS").is_some();
                 draw_explore_chrome(
                     &mut fb,
                     &font,
@@ -550,6 +554,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     &hotspots,
                     explore_focus.as_deref(),
                     hover_item.as_deref(),
+                    debug_hs,
                 );
                 // Drag ghost: floating inventory chip under cursor.
                 if let InvDrag::Drag { item } = &inv_drag {
@@ -572,7 +577,41 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         );
                     }
                 }
+                // YU-NO P2: software cursor by primary action; hide OS pointer in Explore.
+                let over_ui = (on_action && action_label.is_some()) || hover_item.is_some();
+                let pending = runtime.explore_pending_item().is_some()
+                    || matches!(inv_drag, InvDrag::Drag { .. });
+                let verb = if pending {
+                    None
+                } else if let Some(id) = explore_focus.as_deref() {
+                    let actions = runtime.explore_available_actions(id);
+                    if actions.is_empty() {
+                        None
+                    } else {
+                        let i = explore_action_index % actions.len();
+                        actions[i].verb.as_deref().map(|s| s.to_string())
+                    }
+                } else if explore_focus_room {
+                    Some("look".to_string())
+                } else {
+                    Some("look".to_string())
+                };
+                let kind = explore_cursor_kind(over_ui, pending, verb.as_deref());
+                if let Some((lx, ly)) = logical {
+                    draw_explore_cursor(&mut fb, kind, lx, ly);
+                }
             }
+        }
+        // Hide OS cursor while Explore chrome owns the software cursor.
+        let hide_os = !title_open
+            && !overlay
+            && !ui_hidden
+            && view.phase == Phase::Explore
+            && title_op.is_none()
+            && movie.is_none();
+        if hide_os != os_cursor_hidden {
+            mouse_util.show_cursor(!hide_os);
+            os_cursor_hidden = hide_os;
         }
         last_chrome = Some(chrome);
         if let Some(play) = title_op.as_ref().or(movie.as_ref()) {

@@ -329,7 +329,282 @@ pub fn explore_item_rect(index: usize) -> (i32, i32, i32, i32) {
     (x, y, EXPLORE_ITEM_W, EXPLORE_ITEM_H)
 }
 
-/// Hotspot outlines + optional single action button + inventory chips.
+/// YU-NO Explore software cursor glyph (drawn into FB; OS cursor hidden in Explore).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExploreCursorKind {
+    /// Default pointer — over action pill / inventory / non-scene UI.
+    Arrow,
+    /// Magnifying glass — look / empty background 「查看」.
+    Look,
+    /// Footsteps — move.
+    Move,
+    /// Speech bubble — talk.
+    Talk,
+    /// Hand — take / open.
+    Hand,
+    /// Hand + use mark — pending item aim/drag.
+    Use,
+}
+
+/// Map primary explore verb (or item-use) to a cursor glyph.
+///
+/// `over_ui`: pointer is on the action pill or inventory strip → always Arrow.
+/// `pending_item`: Aim/Drag item mode → Use regardless of hovered verb.
+pub fn explore_cursor_kind(
+    over_ui: bool,
+    pending_item: bool,
+    verb: Option<&str>,
+) -> ExploreCursorKind {
+    if over_ui {
+        return ExploreCursorKind::Arrow;
+    }
+    if pending_item {
+        return ExploreCursorKind::Use;
+    }
+    explore_cursor_from_verb(verb)
+}
+
+/// Verb id → cursor (no UI / item overrides). Unknown → Look (investigate default).
+pub fn explore_cursor_from_verb(verb: Option<&str>) -> ExploreCursorKind {
+    match verb {
+        Some("move") => ExploreCursorKind::Move,
+        Some("talk") => ExploreCursorKind::Talk,
+        Some("take") | Some("open") => ExploreCursorKind::Hand,
+        Some("use") => ExploreCursorKind::Use,
+        Some("look") | None => ExploreCursorKind::Look,
+        Some(_) => ExploreCursorKind::Look,
+    }
+}
+
+const CURSOR_SIZE: i32 = 28;
+
+fn cursor_hotspot(kind: ExploreCursorKind) -> (i32, i32) {
+    match kind {
+        ExploreCursorKind::Arrow => (1, 1),
+        ExploreCursorKind::Look => (10, 10),
+        ExploreCursorKind::Move => (14, 22),
+        ExploreCursorKind::Talk => (14, 22),
+        ExploreCursorKind::Hand | ExploreCursorKind::Use => (8, 2),
+    }
+}
+
+/// Blit a procedural Explore cursor at logical mouse position.
+pub fn draw_explore_cursor(fb: &mut Framebuffer, kind: ExploreCursorKind, lx: i32, ly: i32) {
+    let (hx, hy) = cursor_hotspot(kind);
+    let ox = lx - hx;
+    let oy = ly - hy;
+    let mut buf = [0u8; (CURSOR_SIZE * CURSOR_SIZE * 4) as usize];
+    paint_cursor_glyph(&mut buf, kind);
+    fb.blit_nearest(
+        CURSOR_SIZE as u32,
+        CURSOR_SIZE as u32,
+        &buf,
+        ox,
+        oy,
+        CURSOR_SIZE,
+        CURSOR_SIZE,
+    );
+}
+
+fn buf_put(buf: &mut [u8], x: i32, y: i32, c: Rgba) {
+    if x < 0 || y < 0 || x >= CURSOR_SIZE || y >= CURSOR_SIZE {
+        return;
+    }
+    let i = ((y * CURSOR_SIZE + x) * 4) as usize;
+    if c.a == 0 {
+        return;
+    }
+    if c.a == 255 || buf[i + 3] == 0 {
+        buf[i] = c.r;
+        buf[i + 1] = c.g;
+        buf[i + 2] = c.b;
+        buf[i + 3] = c.a;
+        return;
+    }
+    let a = u32::from(c.a);
+    let ia = 255 - a;
+    buf[i] = ((u32::from(c.r) * a + u32::from(buf[i]) * ia) / 255) as u8;
+    buf[i + 1] = ((u32::from(c.g) * a + u32::from(buf[i + 1]) * ia) / 255) as u8;
+    buf[i + 2] = ((u32::from(c.b) * a + u32::from(buf[i + 2]) * ia) / 255) as u8;
+    buf[i + 3] = 255;
+}
+
+fn buf_fill_rect(buf: &mut [u8], x: i32, y: i32, w: i32, h: i32, c: Rgba) {
+    for yy in y..(y + h) {
+        for xx in x..(x + w) {
+            buf_put(buf, xx, yy, c);
+        }
+    }
+}
+
+fn buf_circle(buf: &mut [u8], cx: i32, cy: i32, r: i32, c: Rgba, fill: bool) {
+    let r2 = r * r;
+    let r_in = (r - 2).max(0);
+    let r_in2 = r_in * r_in;
+    for y in (cy - r)..=(cy + r) {
+        for x in (cx - r)..=(cx + r) {
+            let d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+            if fill {
+                if d <= r2 {
+                    buf_put(buf, x, y, c);
+                }
+            } else if d <= r2 && d >= r_in2 {
+                buf_put(buf, x, y, c);
+            }
+        }
+    }
+}
+
+fn paint_cursor_glyph(buf: &mut [u8], kind: ExploreCursorKind) {
+    let white = Rgba::rgb(255, 255, 255);
+    let black = Rgba::rgb(20, 20, 28);
+    let gold = Rgba::rgb(255, 220, 120);
+    let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
+    match kind {
+        ExploreCursorKind::Arrow => {
+            // Classic pointer: filled triangle with dark outline.
+            let pts = [
+                (0, 0), (0, 22), (6, 17), (11, 27), (15, 25), (10, 15), (18, 15),
+            ];
+            // Crude fill: scan bbox and point-in-polygon via ray... use simple poly raster.
+            fill_poly(buf, &pts, white);
+            stroke_poly(buf, &pts, outline);
+        }
+        ExploreCursorKind::Look => {
+            // Magnifying glass: ring + handle.
+            buf_circle(buf, 10, 10, 9, outline, false);
+            buf_circle(buf, 10, 10, 8, white, false);
+            buf_circle(buf, 10, 10, 7, outline, false);
+            // glass tint
+            buf_circle(buf, 10, 10, 5, Rgba { r: 180, g: 220, b: 255, a: 90 }, true);
+            // handle
+            for i in 0..8 {
+                let x = 16 + i;
+                let y = 16 + i;
+                buf_fill_rect(buf, x, y, 3, 3, outline);
+                buf_fill_rect(buf, x + 1, y + 1, 1, 1, gold);
+            }
+        }
+        ExploreCursorKind::Move => {
+            // Two footprints.
+            for (ox, oy) in [(6, 6), (14, 12)] {
+                buf_fill_rect(buf, ox, oy, 6, 10, outline);
+                buf_fill_rect(buf, ox + 1, oy + 1, 4, 8, white);
+                // toes
+                buf_fill_rect(buf, ox - 1, oy - 2, 2, 3, white);
+                buf_fill_rect(buf, ox + 2, oy - 3, 2, 3, white);
+                buf_fill_rect(buf, ox + 5, oy - 2, 2, 3, white);
+            }
+        }
+        ExploreCursorKind::Talk => {
+            // Speech bubble.
+            buf_fill_rect(buf, 3, 2, 20, 14, outline);
+            buf_fill_rect(buf, 5, 4, 16, 10, white);
+            // dots
+            buf_fill_rect(buf, 8, 7, 2, 2, black);
+            buf_fill_rect(buf, 13, 7, 2, 2, black);
+            buf_fill_rect(buf, 18, 7, 2, 2, black);
+            // tail
+            fill_poly(buf, &[(8, 15), (12, 15), (6, 24)], outline);
+            fill_poly(buf, &[(9, 15), (11, 15), (7, 21)], white);
+        }
+        ExploreCursorKind::Hand => {
+            paint_hand(buf, false);
+        }
+        ExploreCursorKind::Use => {
+            paint_hand(buf, true);
+        }
+    }
+}
+
+fn paint_hand(buf: &mut [u8], use_mark: bool) {
+    let white = Rgba::rgb(255, 255, 255);
+    let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
+    let gold = Rgba::rgb(255, 200, 80);
+    // Palm
+    buf_fill_rect(buf, 6, 10, 14, 12, outline);
+    buf_fill_rect(buf, 7, 11, 12, 10, white);
+    // Fingers up
+    for (fx, fh) in [(7, 10), (11, 12), (15, 11), (19, 8)] {
+        buf_fill_rect(buf, fx, 10 - fh, 3, fh + 2, outline);
+        buf_fill_rect(buf, fx + 1, 11 - fh, 1, fh, white);
+    }
+    if use_mark {
+        // Small spark / item diamond near fingertip.
+        fill_poly(buf, &[(20, 2), (24, 6), (20, 10), (16, 6)], outline);
+        fill_poly(buf, &[(20, 4), (22, 6), (20, 8), (18, 6)], gold);
+    }
+}
+
+fn fill_poly(buf: &mut [u8], pts: &[(i32, i32)], c: Rgba) {
+    if pts.len() < 3 {
+        return;
+    }
+    let min_y = pts.iter().map(|p| p.1).min().unwrap();
+    let max_y = pts.iter().map(|p| p.1).max().unwrap();
+    for y in min_y..=max_y {
+        let mut nodes = Vec::new();
+        let mut j = pts.len() - 1;
+        for i in 0..pts.len() {
+            let (xi, yi) = pts[i];
+            let (xj, yj) = pts[j];
+            if (yi < y && yj >= y) || (yj < y && yi >= y) {
+                let denom = yj - yi;
+                if denom != 0 {
+                    nodes.push(xi + (y - yi) * (xj - xi) / denom);
+                }
+            }
+            j = i;
+        }
+        nodes.sort_unstable();
+        let mut k = 0;
+        while k + 1 < nodes.len() {
+            let x0 = nodes[k];
+            let x1 = nodes[k + 1];
+            if x1 >= x0 {
+                buf_fill_rect(buf, x0, y, (x1 - x0).max(1), 1, c);
+            }
+            k += 2;
+        }
+    }
+}
+
+fn stroke_poly(buf: &mut [u8], pts: &[(i32, i32)], c: Rgba) {
+    if pts.is_empty() {
+        return;
+    }
+    for i in 0..pts.len() {
+        let (x0, y0) = pts[i];
+        let (x1, y1) = pts[(i + 1) % pts.len()];
+        line_pix(buf, x0, y0, x1, y1, c);
+    }
+}
+
+fn line_pix(buf: &mut [u8], mut x0: i32, mut y0: i32, x1: i32, y1: i32, c: Rgba) {
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    loop {
+        buf_put(buf, x0, y0, c);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+/// Action pill + inventory. Hotspot outlines are off by default (YU-NO discovery);
+/// pass `show_hotspot_outlines` (e.g. `GALENG_EXPLORE_DEBUG_HOTSPOTS`) to stroke them.
 pub fn draw_explore_chrome(
     fb: &mut Framebuffer,
     font: &GameFont,
@@ -339,23 +614,25 @@ pub fn draw_explore_chrome(
     hotspots: &[(String, galeng_schema::HotspotShape)],
     hover_hotspot: Option<&str>,
     hover_item: Option<&str>,
+    show_hotspot_outlines: bool,
 ) {
-    let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
-    let hover = Rgba { r: 255, g: 220, b: 80, a: 160 };
-    for (id, shape) in hotspots {
-        let color = if hover_hotspot == Some(id.as_str()) {
-            hover
-        } else {
-            outline
-        };
-        match shape {
-            galeng_schema::HotspotShape::Rect { x, y, w, h } => {
-                stroke_rect(fb, *x, *y, *w, *h, color, 2);
-            }
-            galeng_schema::HotspotShape::Polygon { points } => {
-                // Minimal: bounding box only (hit-test ignores polygons for now).
-                if let Some((min_x, min_y, max_x, max_y)) = poly_bounds(points) {
-                    stroke_rect(fb, min_x, min_y, max_x - min_x, max_y - min_y, color, 1);
+    if show_hotspot_outlines {
+        let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
+        let hover = Rgba { r: 255, g: 220, b: 80, a: 160 };
+        for (id, shape) in hotspots {
+            let color = if hover_hotspot == Some(id.as_str()) {
+                hover
+            } else {
+                outline
+            };
+            match shape {
+                galeng_schema::HotspotShape::Rect { x, y, w, h } => {
+                    stroke_rect(fb, *x, *y, *w, *h, color, 2);
+                }
+                galeng_schema::HotspotShape::Polygon { points } => {
+                    if let Some((min_x, min_y, max_x, max_y)) = poly_bounds(points) {
+                        stroke_rect(fb, min_x, min_y, max_x - min_x, max_y - min_y, color, 1);
+                    }
                 }
             }
         }
@@ -1217,5 +1494,114 @@ mod tests {
             hit_explore_item(x + w / 2, y + h / 2, &inv).as_deref(),
             Some("key")
         );
+    }
+
+    #[test]
+    fn explore_cursor_kind_from_verb_id() {
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("look")),
+            ExploreCursorKind::Look
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("move")),
+            ExploreCursorKind::Move
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("talk")),
+            ExploreCursorKind::Talk
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("take")),
+            ExploreCursorKind::Hand
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("open")),
+            ExploreCursorKind::Hand
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, Some("use")),
+            ExploreCursorKind::Use
+        );
+        assert_eq!(
+            explore_cursor_kind(false, false, None),
+            ExploreCursorKind::Look
+        );
+        // UI chrome always arrow.
+        assert_eq!(
+            explore_cursor_kind(true, false, Some("move")),
+            ExploreCursorKind::Arrow
+        );
+        // Pending item wins over verb.
+        assert_eq!(
+            explore_cursor_kind(false, true, Some("look")),
+            ExploreCursorKind::Use
+        );
+        // UI wins over pending item too.
+        assert_eq!(
+            explore_cursor_kind(true, true, Some("look")),
+            ExploreCursorKind::Arrow
+        );
+    }
+
+    #[test]
+    fn explore_chrome_hides_hotspot_outlines_by_default() {
+        let font = GameFont::load_system()
+            .or_else(|_| {
+                let p = std::path::PathBuf::from(
+                    "/usr/share/fonts/truetype/sand-box/google/Sen/Sen-VariableFont_wght.ttf",
+                );
+                let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+                GameFont::from_bytes(bytes, p)
+            })
+            .expect("font");
+        let mut fb = Framebuffer::new();
+        fb.fill(Rgba::rgb(0, 0, 0));
+        let hotspots = vec![(
+            "desk".into(),
+            galeng_schema::HotspotShape::Rect {
+                x: 200,
+                y: 200,
+                w: 300,
+                h: 200,
+            },
+        )];
+        draw_explore_chrome(
+            &mut fb,
+            &font,
+            None,
+            false,
+            &[],
+            &hotspots,
+            Some("desk"),
+            None,
+            false,
+        );
+        // Top edge of hotspot rect must stay black (no cyan/yellow stroke).
+        let edge = fb.count_nonblack_in(200, 200, 300, 2);
+        assert_eq!(edge, 0, "expected no hotspot outline stroke, got {edge} lit px");
+
+        // Debug flag still paints outlines.
+        draw_explore_chrome(
+            &mut fb,
+            &font,
+            None,
+            false,
+            &[],
+            &hotspots,
+            Some("desk"),
+            None,
+            true,
+        );
+        let edge_dbg = fb.count_nonblack_in(200, 200, 300, 2);
+        assert!(edge_dbg > 10, "debug outlines should light the stroke");
+    }
+
+    #[test]
+    fn explore_cursor_blits_nonblack_pixels() {
+        let mut fb = Framebuffer::new();
+        fb.fill(Rgba::rgb(0, 0, 0));
+        draw_explore_cursor(&mut fb, ExploreCursorKind::Look, 400, 300);
+        let n = fb.count_nonblack_in(380, 280, 50, 50);
+        assert!(n > 20, "look cursor should paint pixels, got {n}");
     }
 }
