@@ -34,5 +34,5 @@ cargo run -p galeng-packer -- --project examples/click-room --out /tmp/click-roo
 
 ## Fonts & UI skin
 
-- `font`: `fonts/noto-sans-tc-demo` — OFL subset of **Noto Sans CJK TC** (see `assets/fonts/OFL-NotoSans.txt`). Covers Click Room + common UI glyphs only; not the full typeface.
+- `font`: `fonts/noto-sans-tc-demo` — OFL subset of **Noto Sans CJK TC Bold** (see `assets/fonts/OFL-NotoSans.txt`). Covers Click Room + common UI glyphs only; not the full typeface.
 - `msgBox`: `ui/msgbox` — simple translucent panel PNG.

@@ -317,7 +317,7 @@ pub fn draw_explore_action_button(
     fb.fill_rect(x, y + h - 2, w, 2, border);
     fb.fill_rect(x, y, 2, h, border);
     fb.fill_rect(x + w - 2, y, 2, h, border);
-    font.draw_text_in_box(fb, x, y, w, h, 16, 27.0, text, label);
+    font.draw_text_in_box(fb, x, y, w, h, 16, 30.0, text, label);
 }
 
 /// Inventory chips sit above the action button.
