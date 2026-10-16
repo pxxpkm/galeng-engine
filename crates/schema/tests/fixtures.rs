@@ -3,7 +3,7 @@ use std::fs;
 use galeng_schema::{
     repo_root, validate_project_file, validate_project_str, validate_project_value,
     validate_scene_file, validate_scene_str, validate_scene_value, Exit, ExploreAction,
-    HotspotShape, InteractionOn, Pred, SceneKind, SetValue,
+    HotspotShape, InteractionOn, ItemOn, ItemUseMode, Pred, SceneKind, SetValue,
 };
 
 #[test]
@@ -624,4 +624,20 @@ fn project_rejects_wrong_resolution() {
         }"#
     )
     .is_err());
+}
+
+#[test]
+fn item_use_mode_defaults_aim_and_parses_drag() {
+    let aim: ItemOn = serde_json::from_str(r#"{"item":"key"}"#).unwrap();
+    assert_eq!(aim.item, "key");
+    assert_eq!(aim.use_mode, ItemUseMode::Aim);
+    let drag: ItemOn = serde_json::from_str(r#"{"item":"key","useMode":"drag"}"#).unwrap();
+    assert_eq!(drag.use_mode, ItemUseMode::Drag);
+    let on: InteractionOn = serde_json::from_str(r#"{"item":"key","useMode":"drag"}"#).unwrap();
+    assert!(matches!(on, InteractionOn::Item(i) if i.use_mode == ItemUseMode::Drag));
+    // serialize skips default aim
+    let s = serde_json::to_string(&aim).unwrap();
+    assert!(!s.contains("useMode"), "{s}");
+    let s = serde_json::to_string(&drag).unwrap();
+    assert!(s.contains("useMode"), "{s}");
 }

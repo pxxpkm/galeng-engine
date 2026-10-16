@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::assets::Source;
 use serde::{Deserialize, Serialize};
+use galeng_explore::ItemUseMode;
 use galeng_schema::{
     validate_project_file, validate_scene_str, AutoAdvance, Beat, Camera, CharOnStage, ChoiceOption,
     Cmp, Condition, ConditionPred, Exit, HotspotShape, Project, Scene, SceneKind, SetValue, Trans,
@@ -222,6 +223,13 @@ impl Runtime {
         }
     }
 
+    /// Use inventory item on hotspot with Aim or Drag gesture.
+    pub fn interact_with_item(&mut self, hotspot_id: &str, item_id: &str, mode: ItemUseMode) {
+        if let Some(eng) = &mut self.explore {
+            let _ = eng.interact_with_item(hotspot_id, item_id, mode);
+        }
+    }
+
     /// Visible hotspot shapes for minimal overlay.
     pub fn explore_hotspots(&self) -> Vec<(String, HotspotShape)> {
         match &self.explore {
@@ -253,6 +261,13 @@ impl Runtime {
 
     pub fn explore_primary_action(&self, hotspot_id: &str) -> Option<galeng_explore::AvailableAction> {
         self.explore.as_ref().and_then(|e| e.primary_action(hotspot_id))
+    }
+
+    pub fn explore_available_actions(&self, hotspot_id: &str) -> Vec<galeng_explore::AvailableAction> {
+        match &self.explore {
+            Some(eng) => eng.available_actions(hotspot_id),
+            None => Vec::new(),
+        }
     }
 
     pub fn explore_empty_action(&self) -> Option<galeng_explore::AvailableAction> {

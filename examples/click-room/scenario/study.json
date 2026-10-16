@@ -297,6 +297,24 @@
           ]
         }
       ]
+    },
+    {
+      "hotspot": "window",
+      "on": {
+        "item": "key",
+        "useMode": "drag"
+      },
+      "rules": [
+        {
+          "when": [],
+          "do": [
+            {
+              "type": "say",
+              "text": "你把鎖匙敲喺窗上——叮。冇用。"
+            }
+          ]
+        }
+      ]
     }
   ],
   "onEnter": [

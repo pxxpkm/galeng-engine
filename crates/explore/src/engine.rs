@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use galeng_schema::{
     validate_project_str, validate_scene_str, ChoiceOption, Condition, ConditionPred, Exit,
-    ExploreAction, InteractionOn, ItemDef, Project, Scene, SceneKind, SetValue,
+    ExploreAction, InteractionOn, ItemDef, ItemUseMode, Project, Scene, SceneKind, SetValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -261,7 +261,29 @@ impl Engine {
         self.interact(&id)
     }
 
+    /// Interact using selected verb, or pending item in **Aim** mode.
     pub fn interact(&mut self, hotspot_id: &str) -> Result<(), Error> {
+        self.interact_impl(hotspot_id, None, ItemUseMode::Aim)
+    }
+
+    /// Use an inventory item on a hotspot with an explicit gesture mode (Aim / Drag).
+    ///
+    /// Does not require `pending_item`; clears any pending Aim selection afterward.
+    pub fn interact_with_item(
+        &mut self,
+        hotspot_id: &str,
+        item_id: &str,
+        mode: ItemUseMode,
+    ) -> Result<(), Error> {
+        self.interact_impl(hotspot_id, Some(item_id), mode)
+    }
+
+    fn interact_impl(
+        &mut self,
+        hotspot_id: &str,
+        force_item: Option<&str>,
+        item_mode: ItemUseMode,
+    ) -> Result<(), Error> {
         if self.phase != Phase::Explore {
             return Ok(());
         }
@@ -280,7 +302,9 @@ impl Engine {
             return Ok(());
         }
 
-        let pending_item = self.pending_item.clone();
+        let pending_item = force_item
+            .map(str::to_string)
+            .or_else(|| self.pending_item.clone());
         let verb = if pending_item.is_none() {
             Some(
                 self.selected_verb
@@ -292,11 +316,18 @@ impl Engine {
             None
         };
 
-        let (actions, trace, consumed_item_attempt) =
-            resolve_interaction(&scene, hotspot_id, verb.as_deref(), pending_item.as_deref(), &self.project, &self.world);
+        let (actions, trace, consumed_item_attempt) = resolve_interaction(
+            &scene,
+            hotspot_id,
+            verb.as_deref(),
+            pending_item.as_deref(),
+            item_mode,
+            &self.project,
+            &self.world,
+        );
 
         self.last_trace = trace;
-        // clear pending item after any click attempt
+        // clear pending item after any click / drop attempt
         let item_for_consume = pending_item.clone();
         self.pending_item = None;
 
@@ -1011,6 +1042,7 @@ fn resolve_interaction(
     hotspot_id: &str,
     verb: Option<&str>,
     item: Option<&str>,
+    item_mode: ItemUseMode,
     project: &Project,
     world: &WorldState,
 ) -> (Vec<ExploreAction>, TraceLayer, bool) {
@@ -1018,7 +1050,7 @@ fn resolve_interaction(
         if inter.hotspot != hotspot_id {
             continue;
         }
-        if !on_matches(&inter.on, verb, item) {
+        if !on_matches(&inter.on, verb, item, item_mode) {
             continue;
         }
         for rule in &inter.rules {
@@ -1073,10 +1105,17 @@ fn resolve_interaction(
     )
 }
 
-fn on_matches(on: &InteractionOn, verb: Option<&str>, item: Option<&str>) -> bool {
+fn on_matches(
+    on: &InteractionOn,
+    verb: Option<&str>,
+    item: Option<&str>,
+    item_mode: ItemUseMode,
+) -> bool {
     match on {
         InteractionOn::Verb(v) => verb == Some(v.verb.as_str()),
-        InteractionOn::Item(i) => item == Some(i.item.as_str()),
+        InteractionOn::Item(i) => {
+            item == Some(i.item.as_str()) && i.use_mode == item_mode
+        }
     }
 }
 

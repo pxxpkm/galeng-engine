@@ -676,10 +676,27 @@ pub struct VerbOn {
     pub verb: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemUseMode {
+    /// Click inventory then click hotspot (default / backward compatible).
+    #[default]
+    Aim,
+    /// Drag inventory chip onto hotspot.
+    Drag,
+}
+
+fn is_default_aim(m: &ItemUseMode) -> bool {
+    matches!(m, ItemUseMode::Aim)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ItemOn {
     pub item: String,
+    /// Gesture required to fire this rule. Omitted = Aim.
+    #[serde(default, rename = "useMode", skip_serializing_if = "is_default_aim")]
+    pub use_mode: ItemUseMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

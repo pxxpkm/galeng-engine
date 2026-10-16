@@ -25,3 +25,9 @@ cargo run -p galeng-packer -- --project examples/click-room --out /tmp/click-roo
 ## 編輯器
 
 可用 Explore 編輯器載入本專案 `galeng.json`＋`scenario/*.json`（HTTP persist 或 FS）。本目錄 JSON 結構對齊 editor `persist`／schema v2。
+
+## Item use gestures (YU-NO P1)
+
+- **Aim** (default): click an inventory chip, then click a hotspot. Door + key uses Aim (`"on": { "item": "key" }` ≡ `useMode: "aim"`).
+- **Drag**: press an inventory chip, drag onto a hotspot, release. Demo: drag key onto the window for a different line (`"useMode": "drag"`).
+- Hover a hotspot with multiple verbs and scroll the mouse wheel to cycle the single action button.

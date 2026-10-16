@@ -28,6 +28,7 @@ pub mod vm;
 pub mod window;
 
 pub use interp::interpolate_text;
+pub use galeng_explore::ItemUseMode;
 pub use vm::{preview_snapshot, Phase, PreviewSnap, Runtime, View, VmError};
 
 #[cfg(test)]

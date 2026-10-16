@@ -402,7 +402,8 @@
           "additionalProperties": false,
           "required": ["item"],
           "properties": {
-            "item": { "$ref": "#/$defs/nonEmptyString" }
+            "item": { "$ref": "#/$defs/nonEmptyString" },
+            "useMode": { "type": "string", "enum": ["aim", "drag"] }
           }
         }
       ]

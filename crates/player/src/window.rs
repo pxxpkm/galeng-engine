@@ -10,9 +10,10 @@ use crate::assets::Bank;
 use crate::audio::Mixer;
 use crate::backlog::{self, BacklogView};
 use crate::draw::{
-    draw_backlog, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_gallery, draw_hud,
-    draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots, draw_movie_skip, draw_title,
-    draw_view, hit_choice, hit_explore_action, hit_explore_item, letterbox, window_to_logical,
+    draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_gallery,
+    draw_hud, draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots, draw_movie_skip,
+    draw_title, draw_view, hit_choice, hit_explore_action, hit_explore_item, letterbox,
+    window_to_logical, ButtonState, EXPLORE_ITEM_H, EXPLORE_ITEM_W,
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
@@ -41,12 +42,22 @@ use crate::saypage::{self, ConfirmSay};
 use crate::skip::{ctrl_skips, SkipClock};
 use crate::typewriter::Typewriter;
 use crate::vm::{Phase, Runtime};
+use galeng_explore::ItemUseMode;
 
 struct Fade {
     from: Vec<u8>,
     started: Instant,
     ms: u32,
 }
+
+/// Inventory chip gesture: click = Aim select; drag past threshold = Drag use.
+enum InvDrag {
+    Idle,
+    Press { item: String, x: i32, y: i32 },
+    Drag { item: String },
+}
+
+const INV_DRAG_PX: i32 = 10;
 
 #[derive(Clone, PartialEq, Eq)]
 struct SceneLayerKey {
@@ -149,6 +160,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     // Explore focus: Some(hotspot id); explore_focus_room = empty-background (看·房間).
     let mut explore_focus: Option<String> = None;
     let mut explore_focus_room: bool = false;
+    let mut explore_action_index: usize = 0;
+    let mut inv_drag = InvDrag::Idle;
     let mut pressed_title: Option<usize> = None;
     let mut pressed_menu: Option<usize> = None;
     let mut pressed_choice: Option<usize> = None;
@@ -496,17 +509,19 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     if explore_focus.as_deref() != Some(id.as_str()) || explore_focus_room {
                         explore_focus = Some(id.clone());
                         explore_focus_room = false;
-                        sync_explore_primary(&mut runtime, Some(&id));
+                        explore_action_index = 0;
+                        sync_explore_action(&mut runtime, Some(&id), 0);
                     }
                 } else if on_action && (explore_focus.is_some() || explore_focus_room) {
                     // keep
-                } else if hover_item.is_some() {
-                    // keep inventory hover without clearing room/hotspot focus
+                } else if hover_item.is_some() || !matches!(inv_drag, InvDrag::Idle) {
+                    // keep inventory / drag without clearing room/hotspot focus
                 } else if logical.is_some() {
                     // Empty scene background: room look.
                     if !explore_focus_room || explore_focus.is_some() {
                         explore_focus = None;
                         explore_focus_room = true;
+                        explore_action_index = 0;
                         // Don't clear pending_item here — only on click empty.
                         if runtime.explore_pending_item().is_none() {
                             runtime.select_verb(Some("look"));
@@ -514,9 +529,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     }
                 }
                 let action_label = if let Some(id) = explore_focus.as_deref() {
-                    runtime
-                        .explore_primary_action(id)
-                        .map(|a| a.label)
+                    let actions = runtime.explore_available_actions(id);
+                    if actions.is_empty() {
+                        None
+                    } else {
+                        let i = explore_action_index % actions.len();
+                        Some(actions[i].label.clone())
+                    }
                 } else if explore_focus_room {
                     runtime.explore_empty_action().map(|a| a.label)
                 } else {
@@ -532,6 +551,27 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     explore_focus.as_deref(),
                     hover_item.as_deref(),
                 );
+                // Drag ghost: floating inventory chip under cursor.
+                if let InvDrag::Drag { item } = &inv_drag {
+                    if let Some((lx, ly)) = logical {
+                        let label = inv
+                            .iter()
+                            .find(|(id, _, _)| id == item)
+                            .map(|(_, l, _)| l.as_str())
+                            .unwrap_or(item.as_str());
+                        draw_button(
+                            &mut fb,
+                            &font,
+                            lx - EXPLORE_ITEM_W / 2,
+                            ly - EXPLORE_ITEM_H / 2,
+                            EXPLORE_ITEM_W,
+                            EXPLORE_ITEM_H,
+                            label,
+                            24.0,
+                            ButtonState::Pressed,
+                        );
+                    }
+                }
             }
         }
         last_chrome = Some(chrome);
@@ -920,6 +960,28 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         sdl2::mouse::MouseWheelDirection::Flipped => -y,
                         _ => y,
                     };
+                    // YU-NO P1: cycle multi-action button when hovering a hotspot.
+                    if !backlog.open
+                        && !ui_hidden
+                        && runtime.view().phase == Phase::Explore
+                    {
+                        if let Some(id) = explore_focus.clone() {
+                            let n = runtime.explore_available_actions(&id).len();
+                            if n > 1 && dy != 0 {
+                                if dy > 0 {
+                                    explore_action_index = (explore_action_index + n - 1) % n;
+                                } else {
+                                    explore_action_index = (explore_action_index + 1) % n;
+                                }
+                                sync_explore_action(
+                                    &mut runtime,
+                                    Some(&id),
+                                    explore_action_index,
+                                );
+                                continue;
+                            }
+                        }
+                    }
                     if dy > 0 {
                         backlog.wheel_up(runtime.backlog().len());
                     } else if dy < 0 {
@@ -1333,6 +1395,66 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     }
                     advance_reading(&mut runtime, &mut seen);
                 }
+                Event::MouseMotion { x, y, .. } => {
+                    if let InvDrag::Press {
+                        item,
+                        x: sx,
+                        y: sy,
+                    } = &inv_drag
+                    {
+                        let (ww, wh) = canvas.output_size()?;
+                        if let Some((lx, ly)) = window_to_logical(x, y, ww, wh) {
+                            if (lx - *sx).abs() >= INV_DRAG_PX || (ly - *sy).abs() >= INV_DRAG_PX {
+                                let item = item.clone();
+                                inv_drag = InvDrag::Drag { item };
+                                // Drag must not also leave Aim pending.
+                                runtime.select_item(None);
+                            }
+                        }
+                    }
+                }
+                Event::MouseButtonUp {
+                    mouse_btn: MouseButton::Left,
+                    x,
+                    y,
+                    ..
+                } => {
+                    let (ww, wh) = canvas.output_size()?;
+                    let logical = window_to_logical(x, y, ww, wh);
+                    let gesture = std::mem::replace(&mut inv_drag, InvDrag::Idle);
+                    match gesture {
+                        InvDrag::Drag { item } => {
+                            if runtime.view().phase == Phase::Explore {
+                                if let Some((lx, ly)) = logical {
+                                    if let Some(hs) = runtime.explore_hit(lx, ly) {
+                                        runtime.interact_with_item(
+                                            &hs,
+                                            &item,
+                                            ItemUseMode::Drag,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        InvDrag::Press { item, .. } => {
+                            // Click without drag → Aim select / toggle.
+                            if runtime.view().phase == Phase::Explore
+                                && !overlay
+                                && !title_open
+                                && !menu_open
+                                && !ui_hidden
+                            {
+                                let cur = runtime.explore_pending_item();
+                                if cur.as_deref() == Some(item.as_str()) {
+                                    runtime.select_item(None);
+                                } else {
+                                    runtime.select_item(Some(&item));
+                                }
+                            }
+                        }
+                        InvDrag::Idle => {}
+                    }
+                }
                 Event::MouseButtonDown {
                     mouse_btn: MouseButton::Right,
                     ..
@@ -1650,28 +1772,34 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         );
                     } else if runtime.view().phase == Phase::Explore {
                         let inv = explore_inv_rows(&runtime);
-                        if hit_explore_action(lx, ly) {
+                        if let Some(iid) = hit_explore_item(lx, ly, &inv) {
+                            // Defer Aim toggle / Drag to MouseButtonUp.
+                            inv_drag = InvDrag::Press {
+                                item: iid,
+                                x: lx,
+                                y: ly,
+                            };
+                        } else if hit_explore_action(lx, ly) {
                             if let Some(id) = explore_focus.clone() {
-                                sync_explore_primary(&mut runtime, Some(&id));
+                                sync_explore_action(
+                                    &mut runtime,
+                                    Some(&id),
+                                    explore_action_index,
+                                );
                                 runtime.interact_hotspot(&id);
                             } else if explore_focus_room {
                                 runtime.interact_empty();
                             }
-                        } else if let Some(iid) = hit_explore_item(lx, ly, &inv) {
-                            let cur = runtime.explore_pending_item();
-                            if cur.as_deref() == Some(iid.as_str()) {
-                                runtime.select_item(None);
-                            } else {
-                                runtime.select_item(Some(&iid));
-                            }
                         } else if let Some(hs) = runtime.explore_hit(lx, ly) {
                             explore_focus = Some(hs.clone());
                             explore_focus_room = false;
-                            sync_explore_primary(&mut runtime, Some(&hs));
+                            explore_action_index = 0;
+                            sync_explore_action(&mut runtime, Some(&hs), 0);
                             runtime.interact_hotspot(&hs);
                         } else {
                             explore_focus = None;
                             explore_focus_room = true;
+                            explore_action_index = 0;
                             runtime.interact_empty();
                         }
                     } else {
@@ -1969,17 +2097,20 @@ fn apply_numbered_slot(
 }
 
 
-fn sync_explore_primary(runtime: &mut Runtime, hotspot_id: Option<&str>) {
+fn sync_explore_action(runtime: &mut Runtime, hotspot_id: Option<&str>, index: usize) {
     if runtime.explore_pending_item().is_some() {
         return;
     }
     let Some(id) = hotspot_id else {
         return;
     };
-    if let Some(action) = runtime.explore_primary_action(id) {
-        if let Some(verb) = action.verb.as_deref() {
-            runtime.select_verb(Some(verb));
-        }
+    let actions = runtime.explore_available_actions(id);
+    if actions.is_empty() {
+        return;
+    }
+    let action = &actions[index % actions.len()];
+    if let Some(verb) = action.verb.as_deref() {
+        runtime.select_verb(Some(verb));
     }
 }
 

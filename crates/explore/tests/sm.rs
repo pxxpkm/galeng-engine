@@ -839,3 +839,145 @@ fn butler_primary_is_talk() {
     let a = eng.primary_action("butler").unwrap();
     assert_eq!(a.verb.as_deref(), Some("talk"));
 }
+
+
+#[test]
+fn available_actions_multi_cycles_by_index() {
+    // examples/click-room door: look + move (both soft before unlock) → wheel UI.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .unwrap();
+    eng.dismiss_say().unwrap();
+    let actions = eng.available_actions("door");
+    assert!(
+        actions.len() > 1,
+        "expected multi actions on door, got {:?}",
+        actions
+    );
+    for a in &actions {
+        if let Some(verb) = a.verb.as_deref() {
+            eng.select_verb(Some(verb));
+            assert_eq!(eng.view().selected_verb.as_deref(), Some(verb));
+        }
+    }
+    let first = actions[0].verb.clone();
+    eng.select_verb(first.as_deref());
+    assert_eq!(eng.view().selected_verb, first);
+}
+
+#[test]
+fn item_aim_vs_drag_match_different_rules() {
+    use galeng_explore::ItemUseMode;
+    let project = r#"{
+      "id": "modes",
+      "title": "Modes",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "r",
+      "locale": "zh-Hant",
+      "skipTitle": true,
+      "items": [{ "id": "key", "name": "Key", "consumeOnUse": false }],
+      "fallback": { "itemOnHotspot": "唔啱。" }
+    }"#;
+    let scene = r#"{
+      "id": "r",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "box", "name": "Box", "shape": { "type": "rect", "x": 0, "y": 0, "w": 100, "h": 100 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "box",
+          "on": { "item": "key", "useMode": "aim" },
+          "rules": [{ "when": [], "do": [{ "type": "say", "text": "AIM_HIT" }] }]
+        },
+        {
+          "hotspot": "box",
+          "on": { "item": "key", "useMode": "drag" },
+          "rules": [{ "when": [], "do": [{ "type": "say", "text": "DRAG_HIT" }] }]
+        }
+      ]
+    }"#;
+    let mut eng = Engine::from_json(project, &[("r", scene)]).unwrap();
+    eng.give_item_for_test("key");
+
+    eng.select_item(Some("key"));
+    eng.interact("box").unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("AIM_HIT"));
+    eng.dismiss_say().unwrap();
+
+    eng.interact_with_item("box", "key", ItemUseMode::Drag).unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("DRAG_HIT"));
+    eng.dismiss_say().unwrap();
+
+    // Mode-less item interaction = Aim (backward compatible).
+    let scene2 = r#"{
+      "id": "r",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "box", "name": "Box", "shape": { "type": "rect", "x": 0, "y": 0, "w": 100, "h": 100 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "box",
+          "on": { "item": "key" },
+          "rules": [{ "when": [], "do": [{ "type": "say", "text": "DEFAULT_AIM" }] }]
+        }
+      ]
+    }"#;
+    let mut eng = Engine::from_json(project, &[("r", scene2)]).unwrap();
+    eng.give_item_for_test("key");
+    eng.select_item(Some("key"));
+    eng.interact("box").unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("DEFAULT_AIM"));
+    eng.dismiss_say().unwrap();
+    eng.interact_with_item("box", "key", ItemUseMode::Drag).unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("唔啱。"));
+}
+
+#[test]
+fn examples_click_room_drag_key_on_window() {
+    use galeng_explore::ItemUseMode;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
+    let project = fs::read_to_string(root.join("galeng.json")).unwrap();
+    let study = fs::read_to_string(root.join("scenario/study.json")).unwrap();
+    let dlg = fs::read_to_string(root.join("scenario/dlg_butler.json")).unwrap();
+    let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", &study),
+            ("dlg_butler", &dlg),
+            ("ending", &ending),
+        ],
+    )
+    .unwrap();
+    eng.dismiss_say().unwrap();
+    eng.give_item_for_test("key");
+    eng.interact_with_item("window", "key", ItemUseMode::Drag).unwrap();
+    assert!(
+        eng.view()
+            .say_text
+            .as_deref()
+            .unwrap_or("")
+            .contains("窗"),
+        "got {:?}",
+        eng.view().say_text
+    );
+    eng.dismiss_say().unwrap();
+    // Aim path on door still works
+    eng.select_item(Some("key"));
+    eng.interact("door").unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("鎖匙對上，門開咗。"));
+}

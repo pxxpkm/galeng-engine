@@ -107,3 +107,32 @@ fn empty_click_via_runtime() {
     assert!(rt.view().say_text.as_deref().unwrap_or("").contains("書房")
         || rt.view().say_text.as_deref().unwrap_or("").contains("靜謐"));
 }
+
+#[test]
+fn door_available_actions_multi() {
+    let mut rt = load_click_room();
+    dismiss_say(&mut rt);
+    let actions = rt.explore_available_actions("door");
+    assert!(actions.len() > 1, "{:?}", actions);
+}
+
+#[test]
+fn drag_key_window_via_runtime() {
+    use galeng_player::ItemUseMode;
+    let mut rt = load_click_room();
+    dismiss_say(&mut rt);
+    // give key without opening desk
+    rt.select_verb(Some("open"));
+    rt.interact_hotspot("desk");
+    dismiss_say(&mut rt);
+    rt.select_verb(Some("take"));
+    rt.interact_hotspot("desk");
+    dismiss_say(&mut rt);
+    assert!(rt.explore_inventory().iter().any(|i| i == "key"));
+    rt.interact_with_item("window", "key", ItemUseMode::Drag);
+    assert!(
+        rt.view().say_text.as_deref().unwrap_or("").contains("窗"),
+        "{:?}",
+        rt.view().say_text
+    );
+}
