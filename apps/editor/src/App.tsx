@@ -251,6 +251,12 @@ export function App() {
     if (!dirty) {
       return;
     }
+    if (scene.sceneKind === "explore") {
+      const ok = window.confirm(t("editor.warnSaveExploreFromDialogue"));
+      if (!ok) {
+        throw new Error(t("editor.saveCancelled"));
+      }
+    }
     const saved = await putJson<Scene>(`/api/scenes/${scene.id}`, scene);
     setScene(saved);
     setScenes((list) => upsertSceneMeta(list, saved));

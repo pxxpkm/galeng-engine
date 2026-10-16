@@ -10,6 +10,7 @@ import {
   type ScriptFilters,
   type ScriptRow,
 } from "../scriptLibrary";
+import { navigateToExploreEditor } from "../editorRoute";
 import type { Scene, SceneMeta } from "../types";
 import type { Editor } from "./useEditorState";
 
@@ -103,6 +104,12 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
     setSelectedId(row.id);
     if (row.archived) {
       await ed.unarchiveScene(row.id);
+    }
+    // Explore rooms open in #explore — never load into dialogue Timeline.
+    if (row.sceneKind === "explore") {
+      ed.closeScripts();
+      navigateToExploreEditor({ sceneId: row.id });
+      return;
     }
     await ed.selectScene(row.id);
     ed.closeScripts();

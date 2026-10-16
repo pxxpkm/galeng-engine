@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { dialogueRouteParams, editorRouteFromHash } from "./editorRoute";
+import {
+  dialogueRouteParams,
+  editorRouteFromHash,
+  exploreRouteParams,
+} from "./editorRoute";
 
 describe("editorRouteFromHash", () => {
   it("maps #explore to explore", () => {
     expect(editorRouteFromHash("#explore")).toBe("explore");
     expect(editorRouteFromHash("explore")).toBe("explore");
+    expect(editorRouteFromHash("#explore?scene=study")).toBe("explore");
   });
 
   it("maps empty / other hashes to dialogue", () => {
@@ -23,5 +28,14 @@ describe("dialogueRouteParams", () => {
     });
     expect(dialogueRouteParams("#?scene=study")).toEqual({ sceneId: "study" });
     expect(dialogueRouteParams("#explore")).toEqual({});
+    expect(dialogueRouteParams("#explore?scene=study")).toEqual({});
+  });
+});
+
+describe("exploreRouteParams", () => {
+  it("reads scene from #explore query", () => {
+    expect(exploreRouteParams("#explore?scene=study")).toEqual({ sceneId: "study" });
+    expect(exploreRouteParams("#explore")).toEqual({});
+    expect(exploreRouteParams("#dialogue?scene=x")).toEqual({});
   });
 });

@@ -8,6 +8,11 @@ export type DialogueRouteParams = {
   openScripts?: boolean;
 };
 
+export type ExploreRouteParams = {
+  /** Open this explore scene after landing on #explore. */
+  sceneId?: string;
+};
+
 function hashBody(hash: string): string {
   return hash.startsWith("#") ? hash.slice(1) : hash;
 }
@@ -34,6 +39,17 @@ export function dialogueRouteParams(hash: string): DialogueRouteParams {
   return { sceneId, openScripts: openScripts || undefined };
 }
 
+/** Parse `#explore?scene=id`. */
+export function exploreRouteParams(hash: string): ExploreRouteParams {
+  const h = hashBody(hash);
+  if (!h.startsWith("explore")) return {};
+  const qIndex = h.indexOf("?");
+  if (qIndex < 0) return {};
+  const params = new URLSearchParams(h.slice(qIndex + 1));
+  const sceneId = params.get("scene")?.trim() || undefined;
+  return { sceneId };
+}
+
 /** Leave Explore → dialogue / classic editor. Optional deep link into a scene + Script Library. */
 export function navigateToDialogueEditor(opts?: {
   sceneId?: string;
@@ -47,10 +63,11 @@ export function navigateToDialogueEditor(opts?: {
   location.hash = q ? `dialogue?${q}` : "";
 }
 
-/** Open Explore shell via #explore (hashchange swaps root). */
-export function navigateToExploreEditor(): void {
+/** Open Explore shell via #explore (hashchange swaps root). Optional scene deep link. */
+export function navigateToExploreEditor(opts?: { sceneId?: string }): void {
   if (typeof location === "undefined") return;
-  if (editorRouteFromHash(location.hash) !== "explore") {
-    location.hash = "explore";
-  }
+  const params = new URLSearchParams();
+  if (opts?.sceneId?.trim()) params.set("scene", opts.sceneId.trim());
+  const q = params.toString();
+  location.hash = q ? `explore?${q}` : "explore";
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExploreWorkspace } from "./ExploreWorkspace";
+import { exploreRouteParams } from "../editorRoute";
 import { bootExplore } from "./exploreBoot";
 import { createHttpPersistApi, type ExplorePersistApi } from "./persist";
 import type { ExploreDoc, SceneCatalogEntry } from "./types";
@@ -15,7 +16,8 @@ export function ExploreApp() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await bootExplore(persist);
+      const hash = typeof location !== "undefined" ? location.hash : "";
+      const result = await bootExplore(persist, exploreRouteParams(hash));
       if (cancelled) return;
       if (result.ok) {
         setDoc(result.doc);

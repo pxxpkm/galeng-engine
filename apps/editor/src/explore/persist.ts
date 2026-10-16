@@ -96,17 +96,17 @@ export function exploreSceneToApi(
   s: ExploreScene,
   raw?: Record<string, unknown>,
 ): Record<string, unknown> {
+  // Omit beats from owned — preserve any dialogue beats on disk (Script Library / dual-shell).
   const owned: Record<string, unknown> = {
     id: s.id,
     ...(s.title !== undefined && s.title !== "" ? { title: s.title } : {}),
     sceneKind: "explore",
     ...(s.bg ? { bg: s.bg } : {}),
-    beats: [],
     hotspots: s.hotspots,
     interactions: s.interactions,
     ...(s.onEnter && s.onEnter.length > 0 ? { onEnter: s.onEnter } : {}),
   };
-  // Overlay must not delete exit / unknown keys — omit them from owned.
+  // Overlay must not delete exit / beats / unknown keys — omit them from owned.
   const merged: Record<string, unknown> = { ...(raw ?? {}), ...owned };
   // Cleared Explore-owned optional fields must not resurrect from raw.
   if (s.title === undefined || s.title === "") {
@@ -117,6 +117,10 @@ export function exploreSceneToApi(
   }
   if (!s.onEnter || s.onEnter.length === 0) {
     delete merged.onEnter;
+  }
+  // Host schema expects beats array; keep raw beats or default empty (never wipe raw).
+  if (!Array.isArray(merged.beats)) {
+    merged.beats = [];
   }
   return merged;
 }

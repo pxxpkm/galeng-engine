@@ -356,5 +356,9 @@
   "editor.scriptsManuscriptEmpty": "揀一列以預覽稿紙。",
   "editor.scriptsOpen": "開啟",
   "editor.scriptsCopy": "複製",
-  "editor.scriptsOpenHint": "「開啟」會跳去現有時間軸／檢查器（腳本庫只係路由器）。"
+  "editor.scriptsOpenHint": "「開啟」會跳去現有時間軸／檢查器（腳本庫只係路由器）。",
+  "editor": {
+    "warnSaveExploreFromDialogue": "此場景為探險（explore）。在對白編輯器寫入 beats 可能與探險殼衝突。仍要儲存？",
+    "saveCancelled": "已取消儲存"
+  }
 }

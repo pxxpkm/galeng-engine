@@ -356,5 +356,9 @@
   "editor.scriptsManuscriptEmpty": "Select a row to preview the manuscript.",
   "editor.scriptsOpen": "Open",
   "editor.scriptsCopy": "Copy",
-  "editor.scriptsOpenHint": "Open jumps to the existing timeline/inspector (library is only a router)."
+  "editor.scriptsOpenHint": "Open jumps to the existing timeline/inspector (library is only a router).",
+  "editor": {
+    "warnSaveExploreFromDialogue": "This scene is explore (room). Saving beats from the dialogue editor can conflict with the Explore shell. Save anyway?",
+    "saveCancelled": "Save cancelled"
+  }
 }

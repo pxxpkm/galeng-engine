@@ -55,10 +55,15 @@ function catalogWithIds(
  * 2. loadExploreDoc(startScene) + loadSceneCatalog.
  * Does not call saveProject / saveScene.
  */
-export async function bootExplore(persist: ExplorePersistApi): Promise<ExploreBootResult> {
+export async function bootExplore(
+  persist: ExplorePersistApi,
+  opts?: { sceneId?: string },
+): Promise<ExploreBootResult> {
   try {
     const projectRaw = await persist.loadProject();
-    const startScene = exploreBootSceneId(projectRaw);
+    const override = opts?.sceneId?.trim();
+    const startScene =
+      override && override.length > 0 ? override : exploreBootSceneId(projectRaw);
     const [loaded, catalog] = await Promise.all([
       loadExploreDoc(persist, startScene),
       loadSceneCatalog(persist),

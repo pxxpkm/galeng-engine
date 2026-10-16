@@ -93,7 +93,7 @@ describe("Explore persist (real file path)", () => {
     expect(say).toEqual({ type: "say", text: "from-disk" });
   });
 
-  it("exploreSceneToApi includes empty beats for host compatibility", () => {
+  it("exploreSceneToApi defaults beats to [] when raw has none", () => {
     const scene = blankExploreDoc("r").scene;
     const api = exploreSceneToApi(scene);
     expect(api.beats).toEqual([]);
@@ -101,6 +101,18 @@ describe("Explore persist (real file path)", () => {
     const back = apiToExploreScene(api);
     expect(back.sceneKind).toBe("explore");
     expect(back.id).toBe("r");
+  });
+
+  it("exploreSceneToApi preserves raw beats (does not wipe)", () => {
+    const scene = blankExploreDoc("r").scene;
+    const api = exploreSceneToApi(scene, {
+      id: "r",
+      sceneKind: "explore",
+      beats: [{ say: { speaker: "X", text: "keep-me" } }],
+      exit: { type: "return" },
+    });
+    expect(api.beats).toEqual([{ say: { speaker: "X", text: "keep-me" } }]);
+    expect(api.exit).toEqual({ type: "return" });
   });
 
   it("exploreProjectToApi does not hard-write skipTitle", () => {
@@ -138,7 +150,7 @@ describe("Explore persist (real file path)", () => {
       id: "study",
       title: "書房",
       sceneKind: "explore",
-      beats: [{ say: { speaker: "X", text: "should-clear" } }],
+      beats: [{ say: { speaker: "X", text: "keep-beats" } }],
       exit: { type: "return" },
       hotspots: [
         {
@@ -197,7 +209,7 @@ describe("Explore persist (real file path)", () => {
     expect((projectOnDisk.items as { id: string }[])[0]?.id).toBe("key");
 
     expect(sceneOnDisk.exit).toEqual({ type: "return" });
-    expect(sceneOnDisk.beats).toEqual([]);
+    expect(sceneOnDisk.beats).toEqual([{ say: { speaker: "X", text: "keep-beats" } }]);
     expect(sceneOnDisk.sceneKind).toBe("explore");
   });
 
