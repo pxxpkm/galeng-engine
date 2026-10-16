@@ -376,15 +376,24 @@ pub fn explore_cursor_from_verb(verb: Option<&str>) -> ExploreCursorKind {
     }
 }
 
-const CURSOR_SIZE: i32 = 28;
+/// Logical size of procedural Explore cursors (readable on 1280×720).
+/// Glyph art is authored at [`CURSOR_ART`] and scaled via [`cs`].
+const CURSOR_SIZE: i32 = 52;
+const CURSOR_ART: i32 = 28;
+
+/// Scale a coordinate / thickness from the 28×28 art space into [`CURSOR_SIZE`].
+#[inline]
+fn cs(v: i32) -> i32 {
+    (v * CURSOR_SIZE + CURSOR_ART / 2) / CURSOR_ART
+}
 
 fn cursor_hotspot(kind: ExploreCursorKind) -> (i32, i32) {
     match kind {
-        ExploreCursorKind::Arrow => (1, 1),
-        ExploreCursorKind::Look => (10, 10),
-        ExploreCursorKind::Move => (14, 22),
-        ExploreCursorKind::Talk => (14, 22),
-        ExploreCursorKind::Hand | ExploreCursorKind::Use => (8, 2),
+        ExploreCursorKind::Arrow => (cs(1), cs(1)),
+        ExploreCursorKind::Look => (cs(10), cs(10)),
+        ExploreCursorKind::Move => (cs(14), cs(22)),
+        ExploreCursorKind::Talk => (cs(14), cs(22)),
+        ExploreCursorKind::Hand | ExploreCursorKind::Use => (cs(8), cs(2)),
     }
 }
 
@@ -437,9 +446,9 @@ fn buf_fill_rect(buf: &mut [u8], x: i32, y: i32, w: i32, h: i32, c: Rgba) {
     }
 }
 
-fn buf_circle(buf: &mut [u8], cx: i32, cy: i32, r: i32, c: Rgba, fill: bool) {
+fn buf_circle(buf: &mut [u8], cx: i32, cy: i32, r: i32, stroke: i32, c: Rgba, fill: bool) {
     let r2 = r * r;
-    let r_in = (r - 2).max(0);
+    let r_in = (r - stroke).max(0);
     let r_in2 = r_in * r_in;
     for y in (cy - r)..=(cy + r) {
         for x in (cx - r)..=(cx + r) {
@@ -462,51 +471,86 @@ fn paint_cursor_glyph(buf: &mut [u8], kind: ExploreCursorKind) {
     let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
     match kind {
         ExploreCursorKind::Arrow => {
-            // Classic pointer: filled triangle with dark outline.
+            // Classic pointer: filled triangle with dark outline (art-space pts → cs).
             let pts = [
-                (0, 0), (0, 22), (6, 17), (11, 27), (15, 25), (10, 15), (18, 15),
+                (cs(0), cs(0)),
+                (cs(0), cs(22)),
+                (cs(6), cs(17)),
+                (cs(11), cs(27)),
+                (cs(15), cs(25)),
+                (cs(10), cs(15)),
+                (cs(18), cs(15)),
             ];
-            // Crude fill: scan bbox and point-in-polygon via ray... use simple poly raster.
             fill_poly(buf, &pts, white);
             stroke_poly(buf, &pts, outline);
         }
         ExploreCursorKind::Look => {
             // Magnifying glass: ring + handle.
-            buf_circle(buf, 10, 10, 9, outline, false);
-            buf_circle(buf, 10, 10, 8, white, false);
-            buf_circle(buf, 10, 10, 7, outline, false);
+            let cx = cs(10);
+            let cy = cs(10);
+            let stroke = cs(1).max(1);
+            buf_circle(buf, cx, cy, cs(9), stroke, outline, false);
+            buf_circle(buf, cx, cy, cs(8), stroke, white, false);
+            buf_circle(buf, cx, cy, cs(7), stroke, outline, false);
             // glass tint
-            buf_circle(buf, 10, 10, 5, Rgba { r: 180, g: 220, b: 255, a: 90 }, true);
+            buf_circle(
+                buf,
+                cx,
+                cy,
+                cs(5),
+                stroke,
+                Rgba {
+                    r: 180,
+                    g: 220,
+                    b: 255,
+                    a: 90,
+                },
+                true,
+            );
             // handle
-            for i in 0..8 {
-                let x = 16 + i;
-                let y = 16 + i;
-                buf_fill_rect(buf, x, y, 3, 3, outline);
-                buf_fill_rect(buf, x + 1, y + 1, 1, 1, gold);
+            let handle_n = cs(8);
+            let thick = cs(3).max(2);
+            let gold_t = cs(1).max(1);
+            for i in 0..handle_n {
+                let x = cs(16) + i;
+                let y = cs(16) + i;
+                buf_fill_rect(buf, x, y, thick, thick, outline);
+                buf_fill_rect(buf, x + gold_t, y + gold_t, gold_t, gold_t, gold);
             }
         }
         ExploreCursorKind::Move => {
             // Two footprints.
-            for (ox, oy) in [(6, 6), (14, 12)] {
-                buf_fill_rect(buf, ox, oy, 6, 10, outline);
-                buf_fill_rect(buf, ox + 1, oy + 1, 4, 8, white);
+            for (ox0, oy0) in [(6, 6), (14, 12)] {
+                let ox = cs(ox0);
+                let oy = cs(oy0);
+                buf_fill_rect(buf, ox, oy, cs(6), cs(10), outline);
+                buf_fill_rect(buf, ox + cs(1), oy + cs(1), cs(4), cs(8), white);
                 // toes
-                buf_fill_rect(buf, ox - 1, oy - 2, 2, 3, white);
-                buf_fill_rect(buf, ox + 2, oy - 3, 2, 3, white);
-                buf_fill_rect(buf, ox + 5, oy - 2, 2, 3, white);
+                buf_fill_rect(buf, ox - cs(1), oy - cs(2), cs(2), cs(3), white);
+                buf_fill_rect(buf, ox + cs(2), oy - cs(3), cs(2), cs(3), white);
+                buf_fill_rect(buf, ox + cs(5), oy - cs(2), cs(2), cs(3), white);
             }
         }
         ExploreCursorKind::Talk => {
             // Speech bubble.
-            buf_fill_rect(buf, 3, 2, 20, 14, outline);
-            buf_fill_rect(buf, 5, 4, 16, 10, white);
+            buf_fill_rect(buf, cs(3), cs(2), cs(20), cs(14), outline);
+            buf_fill_rect(buf, cs(5), cs(4), cs(16), cs(10), white);
             // dots
-            buf_fill_rect(buf, 8, 7, 2, 2, black);
-            buf_fill_rect(buf, 13, 7, 2, 2, black);
-            buf_fill_rect(buf, 18, 7, 2, 2, black);
+            let ds = cs(2).max(2);
+            buf_fill_rect(buf, cs(8), cs(7), ds, ds, black);
+            buf_fill_rect(buf, cs(13), cs(7), ds, ds, black);
+            buf_fill_rect(buf, cs(18), cs(7), ds, ds, black);
             // tail
-            fill_poly(buf, &[(8, 15), (12, 15), (6, 24)], outline);
-            fill_poly(buf, &[(9, 15), (11, 15), (7, 21)], white);
+            fill_poly(
+                buf,
+                &[(cs(8), cs(15)), (cs(12), cs(15)), (cs(6), cs(24))],
+                outline,
+            );
+            fill_poly(
+                buf,
+                &[(cs(9), cs(15)), (cs(11), cs(15)), (cs(7), cs(21))],
+                white,
+            );
         }
         ExploreCursorKind::Hand => {
             paint_hand(buf, false);
@@ -522,17 +566,38 @@ fn paint_hand(buf: &mut [u8], use_mark: bool) {
     let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
     let gold = Rgba::rgb(255, 200, 80);
     // Palm
-    buf_fill_rect(buf, 6, 10, 14, 12, outline);
-    buf_fill_rect(buf, 7, 11, 12, 10, white);
+    buf_fill_rect(buf, cs(6), cs(10), cs(14), cs(12), outline);
+    buf_fill_rect(buf, cs(7), cs(11), cs(12), cs(10), white);
     // Fingers up
-    for (fx, fh) in [(7, 10), (11, 12), (15, 11), (19, 8)] {
-        buf_fill_rect(buf, fx, 10 - fh, 3, fh + 2, outline);
-        buf_fill_rect(buf, fx + 1, 11 - fh, 1, fh, white);
+    for (fx0, fh0) in [(7, 10), (11, 12), (15, 11), (19, 8)] {
+        let fx = cs(fx0);
+        let fh = cs(fh0);
+        let base = cs(10);
+        buf_fill_rect(buf, fx, base - fh, cs(3), fh + cs(2), outline);
+        buf_fill_rect(buf, fx + cs(1), base + cs(1) - fh, cs(1).max(1), fh, white);
     }
     if use_mark {
         // Small spark / item diamond near fingertip.
-        fill_poly(buf, &[(20, 2), (24, 6), (20, 10), (16, 6)], outline);
-        fill_poly(buf, &[(20, 4), (22, 6), (20, 8), (18, 6)], gold);
+        fill_poly(
+            buf,
+            &[
+                (cs(20), cs(2)),
+                (cs(24), cs(6)),
+                (cs(20), cs(10)),
+                (cs(16), cs(6)),
+            ],
+            outline,
+        );
+        fill_poly(
+            buf,
+            &[
+                (cs(20), cs(4)),
+                (cs(22), cs(6)),
+                (cs(20), cs(8)),
+                (cs(18), cs(6)),
+            ],
+            gold,
+        );
     }
 }
 
@@ -1601,7 +1666,18 @@ mod tests {
         let mut fb = Framebuffer::new();
         fb.fill(Rgba::rgb(0, 0, 0));
         draw_explore_cursor(&mut fb, ExploreCursorKind::Look, 400, 300);
-        let n = fb.count_nonblack_in(380, 280, 50, 50);
-        assert!(n > 20, "look cursor should paint pixels, got {n}");
+        // CURSOR_SIZE is 52; sample a window large enough for scaled glyphs.
+        let n = fb.count_nonblack_in(360, 260, 80, 80);
+        assert!(n > 40, "look cursor should paint pixels, got {n}");
+    }
+
+    #[test]
+    fn explore_cursor_size_is_readable() {
+        assert!(
+            CURSOR_SIZE >= 48 && CURSOR_SIZE <= 56,
+            "CURSOR_SIZE={CURSOR_SIZE} should be ~48–56 for 1280×720"
+        );
+        assert_eq!(cs(28), CURSOR_SIZE);
+        assert_eq!(cs(14), CURSOR_SIZE / 2);
     }
 }
