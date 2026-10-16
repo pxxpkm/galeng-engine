@@ -378,7 +378,7 @@ pub fn explore_cursor_from_verb(verb: Option<&str>) -> ExploreCursorKind {
 
 /// Logical size of procedural Explore cursors (readable on 1280×720).
 /// Glyph art is authored at [`CURSOR_ART`] and scaled via [`cs`].
-const CURSOR_SIZE: i32 = 72;
+const CURSOR_SIZE: i32 = 68;
 const CURSOR_ART: i32 = 28;
 
 /// Scale a coordinate / thickness from the 28×28 art space into [`CURSOR_SIZE`].
