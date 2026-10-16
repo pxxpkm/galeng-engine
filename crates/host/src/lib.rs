@@ -156,6 +156,7 @@ impl ProjectDir {
             hotspots: Vec::new(),
             interactions: Vec::new(),
             on_enter: Vec::new(),
+            on_empty_click: Vec::new(),
         };
         let json = serde_json::to_string_pretty(&scene).map_err(|e| HostError::Msg(e.to_string()))?;
         validate_scene_str(&json)?;
