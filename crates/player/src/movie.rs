@@ -181,7 +181,12 @@ fn movie_file(source: &Source, logical: &str) -> Option<(PathBuf, Option<PathBuf
     }
 }
 
-fn ensure_mf() -> windows::core::Result<()> {
+/// Media Foundation availability only — does not open a file or start Play.
+pub fn probe() -> Result<(), String> {
+    ensure_mf().map_err(|e| e.to_string())
+}
+
+pub(crate) fn ensure_mf() -> windows::core::Result<()> {
     static START: Once = Once::new();
     static mut RESULT: Option<windows::core::HRESULT> = None;
     START.call_once(|| {

@@ -188,3 +188,44 @@ fn is_sibling_rejects_relative_game_pak() {
     assert!(!is_sibling_game_pak(std::path::Path::new("game.pak"), &exe));
     let _ = fs::remove_dir_all(&exe);
 }
+
+#[test]
+fn resolve_invocation_allows_diag_alone_and_with_pak() {
+    use galeng_player::cli::resolve_invocation;
+
+    let tmp = std::env::temp_dir().join(format!(
+        "galeng-pr7-inv-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    let alone = resolve_invocation(&["--diag".into()], &tmp).unwrap();
+    assert!(alone.diag);
+    assert!(alone.launch.is_none());
+
+    fs::write(tmp.join("game.pak"), b"x").unwrap();
+    let with_pak = resolve_invocation(
+        &["--diag".into(), "--pak".into(), tmp.join("game.pak").to_string_lossy().into()],
+        &tmp,
+    )
+    .unwrap();
+    assert!(with_pak.diag);
+    assert!(matches!(with_pak.launch, Some(Launch::Pak { .. })));
+
+    let both = resolve_invocation(
+        &[
+            "--diag".into(),
+            "--project".into(),
+            "a".into(),
+            "--pak".into(),
+            "b".into(),
+        ],
+        &tmp,
+    )
+    .unwrap();
+    assert!(both.diag);
+    assert!(both.diag_note.is_some());
+
+    let _ = fs::remove_dir_all(&tmp);
+}

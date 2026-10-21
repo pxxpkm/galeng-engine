@@ -43,3 +43,9 @@ pub fn skip_hint(locale: &str) -> &'static str {
         _ => "點擊跳過",
     }
 }
+
+/// Stub platforms: movies unsupported.
+pub fn probe() -> Result<(), String> {
+    Err("unsupported".into())
+}
+

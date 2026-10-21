@@ -161,12 +161,16 @@ impl InputMap {
     }
 
     /// Built-in defaults, then optional player override at `path`.
-    pub fn load(path: &Path) -> Self {
+    /// When `log` is set, warnings are also appended to `galeng.log`.
+    pub fn load(path: &Path, log: Option<&Path>) -> Self {
         let mut map = Self::defaults();
         let mut warnings = Vec::new();
         map.merge_path(path, &mut warnings);
         for w in &warnings {
             emit_input_line(w);
+            if let Some(log_path) = log {
+                crate::diag::append_log_line(log_path, w);
+            }
         }
         map
     }

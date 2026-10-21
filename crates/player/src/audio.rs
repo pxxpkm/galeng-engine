@@ -75,6 +75,10 @@ impl Mixer {
         }
     }
 
+    pub fn has_device(&self) -> bool {
+        self._stream.is_some()
+    }
+
     pub fn set_settings(&mut self, settings: Settings) {
         self.settings = settings;
         self.apply_volumes();

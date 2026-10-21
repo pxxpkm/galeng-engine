@@ -99,7 +99,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
     let mut mixer = Mixer::try_new();
     mixer.set_settings(settings);
     let sdl = sdl2::init()?;
-    let input_map = InputMap::load(&paths.input);
+    let input_map = InputMap::load(&paths.input, Some(&paths.log));
     let video = sdl.video()?;
     let mouse_util = sdl.mouse();
     let mut os_cursor_hidden = false;
@@ -119,7 +119,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
         set_desktop_fullscreen(&mut canvas, true);
     }
     if let Err(e) = set_vsync(&canvas, settings.vsync) {
-        emit_debug_line(&format!("vsync: {e}"));
+        emit_debug_line(&format!("vsync: {e}"), Some(&paths.log));
     }
     let _exec_guard = ExecutionStateGuard;
     set_execution_awake(true);
@@ -1237,6 +1237,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                     &mut canvas,
                                     &mut fb,
                                     &config_path,
+                                    &paths.log,
                                 );
                             }
                         }
@@ -1250,6 +1251,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                     &mut canvas,
                                     &mut fb,
                                     &config_path,
+                                    &paths.log,
                                 );
                             }
                         }
@@ -1665,6 +1667,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                 &mut canvas,
                                 &mut fb,
                                 &config_path,
+                                &paths.log,
                             );
                         }
                         continue;
@@ -2070,6 +2073,7 @@ fn apply_setting_delta(
     canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
     fb: &mut Framebuffer,
     config_path: &std::path::Path,
+    log_path: &std::path::Path,
 ) {
     if index == FULLSCREEN_ROW {
         settings.fullscreen = !settings.fullscreen;
@@ -2085,7 +2089,7 @@ fn apply_setting_delta(
         let next = !settings.vsync;
         match set_vsync(canvas, next) {
             Ok(()) => settings.vsync = next,
-            Err(e) => emit_debug_line(&format!("vsync: {e}")),
+            Err(e) => emit_debug_line(&format!("vsync: {e}"), Some(log_path)),
         }
     } else if index == EFFECTS_ROW {
         settings.effects = !settings.effects;
@@ -2482,52 +2486,9 @@ fn set_vsync(
 }
 
 fn sanitize_diag_line(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        // Drive path: X:\...
-        if i + 2 < bytes.len()
-            && bytes[i].is_ascii_alphabetic()
-            && bytes[i + 1] == b':'
-            && (bytes[i + 2] == b'\\' || bytes[i + 2] == b'/')
-        {
-            out.push('?');
-            i += 3;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        // UNC \\
-        if i + 1 < bytes.len() && bytes[i] == b'\\' && bytes[i + 1] == b'\\' {
-            out.push('?');
-            i += 2;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        // \Users\ or /Users/
-        let rest = &line[i..];
-        if rest.len() >= 7
-            && (rest[..7].eq_ignore_ascii_case("\\Users\\")
-                || rest[..7].eq_ignore_ascii_case("/Users/"))
-        {
-            out.push('?');
-            i += 7;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-    out
+    crate::diag::sanitize_diag_line(line)
 }
-
-fn emit_debug_line(line: &str) {
+fn emit_debug_line(line: &str, log: Option<&std::path::Path>) {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;
@@ -2544,6 +2505,9 @@ fn emit_debug_line(line: &str) {
     #[cfg(not(windows))]
     {
         eprintln!("{line}");
+    }
+    if let Some(path) = log {
+        crate::diag::append_log_line(path, line);
     }
 }
 

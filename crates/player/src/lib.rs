@@ -3,6 +3,7 @@ pub mod audio;
 pub mod backlog;
 pub mod camera;
 pub mod cli;
+pub mod diag;
 pub mod draw;
 pub mod fb;
 pub mod font;
