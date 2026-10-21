@@ -45,7 +45,7 @@ fn mix_midpoint_is_between() {
 fn blit_changes_pixels() {
     let mut fb = Framebuffer::new();
     let src = [255u8, 0, 0, 255];
-    fb.blit_nearest(1, 1, &src, 10, 10, 4, 4);
+    fb.blit_nearest(1, 1, &src, 10, 10, 4, 4, true);
     assert!(fb.count_nonblack_in(10, 10, 4, 4) > 0);
 }
 
@@ -108,4 +108,27 @@ fn default_budget_is_320_mib() {
         galeng_player::assets::BUDGET_BYTES,
         320 * 1024 * 1024
     );
+}
+
+
+#[test]
+fn picture_opaque_matches_alpha_scan() {
+    let mut bank = Bank::new(repo_root().join("examples/prologue"));
+    let smile = bank.character("sora", "smile").expect("smile");
+    let expected = smile.rgba.chunks_exact(4).all(|px| px[3] == 255);
+    assert_eq!(smile.opaque, expected);
+    let bg = bank.get("bg/park_afternoon").expect("park");
+    let expected_bg = bg.rgba.chunks_exact(4).all(|px| px[3] == 255);
+    assert_eq!(bg.opaque, expected_bg);
+}
+
+#[test]
+fn mix_rgba_into_matches_allocating_wrapper() {
+    use galeng_player::fb::mix_rgba_into;
+    let from = [0u8, 0, 0, 255];
+    let to = [255u8, 0, 0, 255];
+    let m = mix_rgba(&from, &to, 0.5);
+    let mut out = [0u8; 4];
+    mix_rgba_into(&from, &to, 0.5, &mut out);
+    assert_eq!(m.as_slice(), &out);
 }

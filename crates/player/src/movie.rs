@@ -144,6 +144,7 @@ impl Play {
             0,
             WIDTH as i32,
             HEIGHT as i32,
+            false,
         );
     }
 }

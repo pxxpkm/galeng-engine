@@ -156,7 +156,7 @@ pub fn draw_view(
     if let Some(bg) = &view.bg {
         let (dx, dy, dw, dh) = map_rect(cam, 0, 0, WIDTH as i32, HEIGHT as i32);
         if let Some(pic) = assets.get(bg) {
-            fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh);
+            fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh, pic.opaque);
         } else {
             fb.fill_rect(dx, dy, dw, dh, hash_rgb(bg));
         }
@@ -175,7 +175,7 @@ pub fn draw_view(
         };
         let (dx, dy, dw, dh) = map_rect(cam, x, y, w, h);
         if let Some(pic) = assets.character(&ch.id, &ch.face) {
-            fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh);
+            fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh, pic.opaque);
         } else {
             let key = format!("{}:{}", ch.id, ch.face);
             fb.fill_rect(dx, dy, dw, dh, hash_rgb(&key));
@@ -413,6 +413,7 @@ pub fn draw_explore_cursor(fb: &mut Framebuffer, kind: ExploreCursorKind, lx: i3
         oy,
         CURSOR_SIZE,
         CURSOR_SIZE,
+        false,
     );
 }
 
@@ -843,6 +844,7 @@ pub fn draw_title(
                 0,
                 WIDTH as i32,
                 HEIGHT as i32,
+                pic.opaque,
             );
         } else {
             fb.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, hash_rgb(logical));
@@ -866,7 +868,7 @@ pub fn draw_title(
         let hot = hover == Some(i) || pressed == Some(i) || (hover.is_none() && selected == i);
         if let Some(logical) = title_face(spec, hot) {
             if let Some(pic) = assets.get(logical) {
-                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h);
+                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h, pic.opaque);
             } else {
                 fb.fill_rect(x, y, w, h, hash_rgb(logical));
             }
@@ -1031,7 +1033,7 @@ fn blit_logical_cam(
 ) {
     let (dx, dy, dw, dh) = map_rect(cam, 0, 0, WIDTH as i32, HEIGHT as i32);
     if let Some(pic) = assets.get(logical) {
-        fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh);
+        fb.blit_nearest(pic.width, pic.height, &pic.rgba, dx, dy, dw, dh, pic.opaque);
     } else {
         fb.fill_rect(dx, dy, dw, dh, hash_rgb(logical));
     }
@@ -1193,7 +1195,7 @@ pub fn draw_menu(
         let hot = hover == Some(i) || pressed == Some(i) || (hover.is_none() && selected == i);
         if let Some(logical) = title_face(spec, hot) {
             if let Some(pic) = assets.get(logical) {
-                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h);
+                fb.blit_nearest(pic.width, pic.height, &pic.rgba, x, y, w, h, pic.opaque);
             } else {
                 fb.fill_rect(x, y, w, h, hash_rgb(logical));
             }
@@ -1270,7 +1272,7 @@ pub fn draw_slots(
             button_state(i, selected, None, None),
         );
         let text_x = if let Some((tw, th, rgba)) = &thumbs[i] {
-            fb.blit_nearest(*tw, *th, rgba, x + 8, y + 4, 80, 44);
+            fb.blit_nearest(*tw, *th, rgba, x + 8, y + 4, 80, 44, false);
             x + 96
         } else {
             x + 20
@@ -1391,6 +1393,7 @@ fn draw_box(fb: &mut Framebuffer, assets: &mut Bank, msg_box: Option<&str>) {
                 MSG_Y,
                 MSG_W,
                 MSG_H,
+                pic.opaque,
             );
             return;
         }

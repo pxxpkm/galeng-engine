@@ -42,6 +42,8 @@ pub struct Picture {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    /// True iff every pixel alpha is 255 (computed once at load).
+    pub opaque: bool,
 }
 
 impl Picture {
@@ -262,10 +264,13 @@ pub fn load_png_bytes(bytes: &[u8]) -> Result<Picture, String> {
         .map_err(|e| e.to_string())?
         .to_rgba8();
     let (width, height) = img.dimensions();
+    let rgba = img.into_raw();
+    let opaque = rgba.chunks_exact(4).all(|px| px[3] == 255);
     Ok(Picture {
         width,
         height,
-        rgba: img.into_raw(),
+        rgba,
+        opaque,
     })
 }
 

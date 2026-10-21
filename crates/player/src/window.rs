@@ -25,7 +25,7 @@ use crate::gallery;
 use crate::title::{
     game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
 };
-use crate::fb::{mix_rgba, Framebuffer, HEIGHT, WIDTH};
+use crate::fb::{mix_rgba_into, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
 use crate::font::{FontSet, TypeScale};
 use crate::save::{
     check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, write_slot, write_thumb,
@@ -168,8 +168,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     let mut pressed_hud: Option<usize> = None;
     let mut movie: Option<movie::Play> = None;
     let mut last_thumb: Option<Vec<u8>> = None;
-    let mut last_present: Vec<u8> = Vec::new();
-    let mut layer_cache: Option<(SceneLayerKey, Vec<u8>)> = None;
+    let mut scratch: Vec<u8> = vec![0u8; FB_BYTES];
+    let mut layer_cache: Option<SceneLayerKey> = None;
+    let blit_stats = std::env::var_os("GALENG_BLIT_STATS").is_some();
+    let mut blit_stats_last = Instant::now();
+    let mut blit_us_accum: u128 = 0;
     let mut last_chrome: Option<ChromeSnap> = None;
     let mut title_op: Option<movie::Play> = None;
     let mut events = sdl.event_pump()?;
@@ -202,16 +205,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         {
             fade = None;
         }
-        if !title_open {
+        if !title_open && fade.is_none() {
             if let Some(ms) = runtime.take_transition() {
                 if skipping {
                     fade = None;
                 } else {
-                    let from = if last_present.len() == fb.pixels.len() {
-                        last_present.clone()
-                    } else {
-                        vec![0u8; fb.pixels.len()]
-                    };
+                    // Copy current upload mirror once; never copy fb.pixels / texture.
+                    let from = scratch.clone();
                     fade = Some(Fade {
                         from,
                         started: Instant::now(),
@@ -386,7 +386,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             more: say_more,
             locale: ui_locale.clone(),
         };
-        let scene_hit = can_cache_layer && layer_cache.as_ref().is_some_and(|(k, _)| k == &layer_key);
+        let scene_hit = can_cache_layer && layer_cache.as_ref() == Some(&layer_key);
         let chrome = ChromeSnap {
             choice: choice_sel,
             hover_choice,
@@ -468,22 +468,28 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 }
             }
         } else {
-            draw_view(
-                &mut fb,
-                &fonts.dialogue,
-                &scale,
-                &view,
-                &speaker,
-                &mut assets,
-                say_shown,
-                ui_hidden,
-                say_more,
-                &ui_locale,
-                runtime.project.msg_box.as_deref(),
-                slide_started.map(|s| s.elapsed().as_millis().min(u128::from(u32::MAX)) as u32),
-            );
+            {
+                let t0 = if blit_stats { Some(Instant::now()) } else { None };
+                draw_view(
+                    &mut fb,
+                    &fonts.dialogue,
+                    &scale,
+                    &view,
+                    &speaker,
+                    &mut assets,
+                    say_shown,
+                    ui_hidden,
+                    say_more,
+                    &ui_locale,
+                    runtime.project.msg_box.as_deref(),
+                    slide_started.map(|s| s.elapsed().as_millis().min(u128::from(u32::MAX)) as u32),
+                );
+                if let Some(t0) = t0 {
+                    blit_us_accum = blit_us_accum.saturating_add(t0.elapsed().as_micros());
+                }
+            }
             if can_cache_layer {
-                layer_cache = Some((layer_key, fb.pixels.clone()));
+                layer_cache = Some(layer_key);
             } else {
                 layer_cache = None;
             }
@@ -817,23 +823,31 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         if skip_present {
             std::thread::sleep(Duration::from_millis(1));
         } else if let Some(state) = &fade {
+            let t0 = if blit_stats { Some(Instant::now()) } else { None };
             let t = state.started.elapsed().as_secs_f32() * 1000.0 / state.ms as f32;
-            let mixed = mix_rgba(&state.from, &fb.pixels, t);
-            last_present.clone_from(&mixed);
+            // Mix into scratch only; Fade.from stays the pre-fade frame.
+            mix_rgba_into(&state.from, &fb.pixels, t, &mut scratch);
             texture
-                .update(None, &mixed, (WIDTH * 4) as usize)
+                .update(None, &scratch, (WIDTH * 4) as usize)
                 .map_err(|e| e.to_string())?;
+            if let Some(t0) = t0 {
+                blit_us_accum = blit_us_accum.saturating_add(t0.elapsed().as_micros());
+            }
             present_frame(&mut canvas, &texture, 0, 0)?;
         } else {
+            let t0 = if blit_stats { Some(Instant::now()) } else { None };
             if full_upload || overlay || title_open {
-                last_present.clone_from(&fb.pixels);
                 texture
                     .update(None, &fb.pixels, (WIDTH * 4) as usize)
                     .map_err(|e| e.to_string())?;
+                scratch.copy_from_slice(&fb.pixels);
             } else {
-                for (x, y, w, h) in dirty {
-                    upload_rect(&mut texture, &fb, x, y, w, h)?;
+                for (x, y, w, h) in &dirty {
+                    upload_rect(&mut texture, &fb, &mut scratch, *x, *y, *w, *h)?;
                 }
+            }
+            if let Some(t0) = t0 {
+                blit_us_accum = blit_us_accum.saturating_add(t0.elapsed().as_micros());
             }
             let (ox, oy) = if overlay {
                 (0, 0)
@@ -844,6 +858,12 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 (0, 0)
             };
             present_frame(&mut canvas, &texture, ox, oy)?;
+        }
+        if blit_stats && blit_stats_last.elapsed() >= Duration::from_secs(1) {
+            let line = format!("blit us={blit_us_accum}");
+            emit_blit_stats(&line);
+            blit_us_accum = 0;
+            blit_stats_last = Instant::now();
         }
 
         let wait = wait_ms(
@@ -2206,6 +2226,7 @@ fn show_hud_now(
 fn upload_rect(
     texture: &mut sdl2::render::Texture,
     fb: &Framebuffer,
+    scratch: &mut [u8],
     x: i32,
     y: i32,
     w: i32,
@@ -2229,7 +2250,49 @@ fn upload_rect(
             &fb.pixels[offset..last],
             pitch,
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Mirror logical pixels into scratch (stride WIDTH*4; no driver padding).
+    let row_bytes = (rw as usize) * 4;
+    for row in 0..rh as usize {
+        let off = offset + row * pitch;
+        scratch[off..off + row_bytes].copy_from_slice(&fb.pixels[off..off + row_bytes]);
+    }
+    Ok(())
+}
+
+fn emit_blit_stats(line: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        // OutputDebugStringW expects a NUL-terminated wide string.
+        let wide: Vec<u16> = std::ffi::OsStr::new(&format!("{line}\n"))
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
+                windows::core::PCWSTR(wide.as_ptr()),
+            );
+        }
+    }
+    // Best-effort append <exe_dir>/blit-stats.txt; never fail the frame.
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let path = dir.join("blit-stats.txt");
+    let truncate = std::fs::metadata(&path)
+        .map(|m| m.len() > 256 * 1024)
+        .unwrap_or(false);
+    let mut body = format!("{line}\n");
+    if !truncate {
+        if let Ok(prev) = std::fs::read_to_string(&path) {
+            body = prev + &body;
+        }
+    }
+    let _ = std::fs::write(&path, body);
 }
 
 fn present_frame(
