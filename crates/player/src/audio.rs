@@ -141,6 +141,38 @@ impl Mixer {
         }
     }
 
+    /// Pause or resume every sink without seeking. Focus-loss mute.
+    pub fn set_suspended(&mut self, suspended: bool) {
+        let pause_or_play = |sink: &rodio::Sink| {
+            if suspended {
+                sink.pause();
+            } else {
+                sink.play();
+            }
+        };
+        if let Some(sink) = &self.bgm {
+            pause_or_play(sink);
+        }
+        if let Some(sink) = &self.outgoing {
+            pause_or_play(sink);
+        }
+        if let Some(sink) = &self.voice {
+            pause_or_play(sink);
+        }
+        if let Some(sink) = &self.voice_outgoing {
+            pause_or_play(sink);
+        }
+        for sink in &self.se {
+            pause_or_play(sink);
+        }
+        if let Some(sink) = &self.amb {
+            pause_or_play(sink);
+        }
+        if let Some(sink) = &self.movie {
+            pause_or_play(sink);
+        }
+    }
+
     pub fn push_movie_pcm(&mut self, channels: u16, sample_rate: u32, samples: Vec<i16>) {
         let Some(sink) = &self.movie else {
             return;

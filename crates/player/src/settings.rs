@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub const CHANNEL_COUNT: usize = 4;
-pub const SETTINGS_ROWS: usize = 11;
+pub const SETTINGS_ROWS: usize = 13;
 pub const FULLSCREEN_ROW: usize = 4;
 pub const AUTO_PLAY_ROW: usize = 5;
 pub const AUTO_DELAY_ROW: usize = 6;
@@ -12,6 +12,8 @@ pub const TEXT_SPEED_ROW: usize = 7;
 pub const UI_LANG_ROW: usize = 8;
 pub const SKIP_UNREAD_ROW: usize = 9;
 pub const SIMD_ROW: usize = 10;
+pub const VSYNC_ROW: usize = 11;
+pub const EFFECTS_ROW: usize = 12;
 pub const STEP: i32 = 10;
 pub const DELAY_STEP: u32 = 200;
 pub const DELAY_MIN: u32 = 200;
@@ -99,6 +101,10 @@ pub struct Settings {
     pub skip_unread: bool,
     #[serde(default = "default_true")]
     pub simd: bool,
+    #[serde(default = "default_true")]
+    pub vsync: bool,
+    #[serde(default = "default_true")]
+    pub effects: bool,
 }
 
 fn hundred() -> u8 {
@@ -131,6 +137,8 @@ impl Default for Settings {
             ui_language: UiLang::Follow,
             skip_unread: false,
             simd: true,
+            vsync: true,
+            effects: true,
         }
     }
 }
@@ -151,6 +159,8 @@ impl Settings {
             ui_language: self.ui_language,
             skip_unread: self.skip_unread,
             simd: self.simd,
+            vsync: self.vsync,
+            effects: self.effects,
         }
     }
 
@@ -289,6 +299,22 @@ pub fn simd_label(locale: &str) -> &'static str {
     }
 }
 
+pub fn vsync_label(locale: &str) -> &'static str {
+    match locale {
+        "en" => "Vsync",
+        "zh-Hans" => "垂直同步",
+        _ => "垂直同步",
+    }
+}
+
+pub fn effects_label(locale: &str) -> &'static str {
+    match locale {
+        "en" => "Effects",
+        "zh-Hans" => "特效",
+        _ => "特效",
+    }
+}
+
 pub fn on_off(locale: &str, on: bool) -> &'static str {
     match (locale, on) {
         ("en", true) => "On",
@@ -402,6 +428,8 @@ mod tests {
         assert!(!loaded.fullscreen);
         assert!(!loaded.skip_unread);
         assert!(loaded.simd);
+        assert!(loaded.vsync);
+        assert!(loaded.effects);
         assert_eq!(loaded.ui_language, UiLang::Follow);
         assert_eq!(loaded.master, 80);
         let _ = fs::remove_dir_all(&dir);

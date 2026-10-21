@@ -6,8 +6,8 @@ use crate::fb::{hash_rgb, Framebuffer, Rgba, HEIGHT, WIDTH};
 use crate::font::{GameFont, TypeScale};
 use crate::backlog;
 use crate::settings::{
-    self, Settings, AUTO_DELAY_ROW, AUTO_PLAY_ROW, FULLSCREEN_ROW, SETTINGS_ROWS, SIMD_ROW,
-    SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW,
+    self, Settings, AUTO_DELAY_ROW, AUTO_PLAY_ROW, EFFECTS_ROW, FULLSCREEN_ROW, SETTINGS_ROWS,
+    SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
 };
 use crate::gallery;
 use crate::music;
@@ -1081,15 +1081,25 @@ pub fn draw_settings(
             scale.settings,
             button_state(i, selected, None, None),
         );
-        if i == FULLSCREEN_ROW || i == AUTO_PLAY_ROW || i == SKIP_UNREAD_ROW || i == SIMD_ROW {
+        if i == FULLSCREEN_ROW
+            || i == AUTO_PLAY_ROW
+            || i == SKIP_UNREAD_ROW
+            || i == SIMD_ROW
+            || i == VSYNC_ROW
+            || i == EFFECTS_ROW
+        {
             let on = if i == FULLSCREEN_ROW {
                 settings.fullscreen
             } else if i == AUTO_PLAY_ROW {
                 settings.auto_play
             } else if i == SKIP_UNREAD_ROW {
                 settings.skip_unread
-            } else {
+            } else if i == SIMD_ROW {
                 settings.simd
+            } else if i == VSYNC_ROW {
+                settings.vsync
+            } else {
+                settings.effects
             };
             let name = if i == FULLSCREEN_ROW {
                 settings::fullscreen_label(locale)
@@ -1097,8 +1107,12 @@ pub fn draw_settings(
                 settings::auto_play_label(locale)
             } else if i == SKIP_UNREAD_ROW {
                 settings::skip_unread_label(locale)
-            } else {
+            } else if i == SIMD_ROW {
                 settings::simd_label(locale)
+            } else if i == VSYNC_ROW {
+                settings::vsync_label(locale)
+            } else {
+                settings::effects_label(locale)
             };
             let label = format!("{}  {}", name, settings::on_off(locale, on));
             font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));

@@ -132,6 +132,13 @@ impl Typewriter {
         self.done = true;
     }
 
+    /// Push `started` forward by `d` after a focus pause (wall clock does not stop).
+    pub fn shift(&mut self, d: Duration) {
+        if let Some(t) = self.started.as_mut() {
+            *t += d;
+        }
+    }
+
     pub fn visible<'a>(&self, text: &'a str) -> &'a str {
         if self.done {
             text
@@ -330,5 +337,26 @@ mod tests {
         assert_eq!(text_rate_of(&project, None), 100);
         project.characters.as_mut().unwrap()[0].text_rate = Some(10);
         assert_eq!(text_rate_of(&project, Some("sora")), 25);
+    }
+
+    #[test]
+    fn shift_delays_completion() {
+        let mut tw = Typewriter::new();
+        let t0 = Instant::now();
+        tw.tick("s", 0, 0, "今天風真好。", 5, 100, t0, true);
+        assert!(!tw.is_done());
+        // Pause 10s then shift started forward so elapsed stays small.
+        tw.shift(Duration::from_secs(10));
+        tw.tick(
+            "s",
+            0,
+            0,
+            "今天風真好。",
+            5,
+            100,
+            t0 + Duration::from_secs(10) + Duration::from_millis(1),
+            true,
+        );
+        assert!(!tw.is_done(), "shift must prevent instant completion after pause");
     }
 }

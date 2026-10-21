@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use sdl2::event::Event;
+use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{Keycode, Mod, Scancode};
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::PixelFormatEnum;
@@ -34,8 +34,8 @@ use crate::save::{
 use crate::seen::{default_seen_path, Seen};
 use crate::settings::{
     default_config_path, hit_row as hit_setting, read_config, wait_ms, write_config, STEP,
-    AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, FULLSCREEN_ROW, SETTINGS_ROWS, SIMD_ROW,
-    SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW,
+    AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, EFFECTS_ROW, FULLSCREEN_ROW,
+    SETTINGS_ROWS, SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
 };
 use crate::fx::{flash_alpha, flash_white, shake_offset};
 use crate::movie;
@@ -118,6 +118,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     if settings.fullscreen {
         set_desktop_fullscreen(&mut canvas, true);
     }
+    if let Err(e) = set_vsync(&canvas, settings.vsync) {
+        emit_debug_line(&format!("vsync: {e}"));
+    }
+    let _exec_guard = ExecutionStateGuard;
+    set_execution_awake(true);
     let creator = canvas.texture_creator();
     let mut texture = creator
         .create_texture_streaming(PixelFormatEnum::ABGR8888, WIDTH, HEIGHT)
@@ -177,6 +182,12 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     let mut last_chrome: Option<ChromeSnap> = None;
     let mut title_op: Option<movie::Play> = None;
     let mut events = sdl.event_pump()?;
+    let mut focused = true;
+    let mut minimized = false;
+    let mut hidden = false;
+    let mut paused = false;
+    let mut pause_started: Option<Instant> = None;
+    let mut last_present_at: Option<Instant> = None;
 
     'running: loop {
         let view = runtime.view();
@@ -200,6 +211,66 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             && (events.keyboard_state().is_scancode_pressed(Scancode::LCtrl)
                 || events.keyboard_state().is_scancode_pressed(Scancode::RCtrl));
         let skipping = ctrl || skip_latch;
+
+        let want_pause = !focused || minimized || hidden;
+        if want_pause && !paused {
+            paused = true;
+            pause_started = Some(Instant::now());
+            mixer.set_suspended(true);
+            set_execution_awake(false);
+        } else if !want_pause && paused {
+            let dur = pause_started
+                .take()
+                .map(|t| Instant::now().saturating_duration_since(t))
+                .unwrap_or_default();
+            shift_pause_clocks(
+                &mut typewriter,
+                &mut fade,
+                &mut auto_until,
+                &mut fx_until,
+                &mut shake_started,
+                &mut flash_started,
+                &mut slide_started,
+                &mut skip,
+                dur,
+            );
+            mixer.set_suspended(false);
+            paused = false;
+            set_execution_awake(true);
+        }
+
+        if paused {
+            let mut need_present = false;
+            let mut quit = false;
+            if let Some(event) = events.wait_event_timeout(500) {
+                handle_pause_event(
+                    event,
+                    &mut focused,
+                    &mut minimized,
+                    &mut hidden,
+                    &mut need_present,
+                    &mut quit,
+                );
+            }
+            for event in events.poll_iter() {
+                handle_pause_event(
+                    event,
+                    &mut focused,
+                    &mut minimized,
+                    &mut hidden,
+                    &mut need_present,
+                    &mut quit,
+                );
+            }
+            if quit {
+                break 'running;
+            }
+            if need_present {
+                present_frame(&mut canvas, &texture, 0, 0)?;
+            }
+            continue;
+        }
+
         if fade
             .as_ref()
             .is_some_and(|s| s.started.elapsed().as_secs_f32() * 1000.0 >= s.ms as f32)
@@ -208,7 +279,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         }
         if !title_open && fade.is_none() {
             if let Some(ms) = runtime.take_transition() {
-                if skipping {
+                if skipping || !settings.effects {
                     fade = None;
                 } else {
                     // Copy current upload mirror once; never copy fb.pixels / texture.
@@ -821,6 +892,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             && flash_started.is_none()
             && !sliding
             && fade.is_none();
+        let mut did_present = false;
         if skip_present {
             std::thread::sleep(Duration::from_millis(1));
         } else if let Some(state) = &fade {
@@ -835,6 +907,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 blit_us_accum = blit_us_accum.saturating_add(t0.elapsed().as_micros());
             }
             present_frame(&mut canvas, &texture, 0, 0)?;
+            did_present = true;
         } else {
             let t0 = if blit_stats { Some(Instant::now()) } else { None };
             if full_upload || overlay || title_open {
@@ -859,6 +932,21 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 (0, 0)
             };
             present_frame(&mut canvas, &texture, ox, oy)?;
+            did_present = true;
+        }
+        if did_present && !settings.vsync {
+            let now = Instant::now();
+            if let Some(prev) = last_present_at {
+                let min = Duration::from_millis(16);
+                if let Some(remain) = min.checked_sub(now.saturating_duration_since(prev)) {
+                    if !remain.is_zero() {
+                        std::thread::sleep(remain);
+                    }
+                }
+            }
+            last_present_at = Some(Instant::now());
+        } else if did_present {
+            last_present_at = Some(Instant::now());
         }
         if blit_stats && blit_stats_last.elapsed() >= Duration::from_secs(1) {
             let line = format!("blit us={blit_us_accum}");
@@ -893,8 +981,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         if fx_key.as_ref() != Some(&fxk) {
             fx_key = Some(fxk);
             fx_until = None;
-            shake_started = view.fx_shake_ms.map(|_| Instant::now());
-            flash_started = view.fx_flash_ms.map(|_| Instant::now());
+            if settings.effects {
+                shake_started = view.fx_shake_ms.map(|_| Instant::now());
+                flash_started = view.fx_flash_ms.map(|_| Instant::now());
+            } else {
+                shake_started = None;
+                flash_started = None;
+            }
         }
         let sk = (
             view.scene_id.clone(),
@@ -910,12 +1003,15 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         let title_op_hold = title_op.is_some();
         if fx_hold {
             if !overlay && fade.is_none() && fx_until.is_none() {
-                let ms = view
-                    .fx_wait_ms
-                    .or(view.fx_shake_ms)
-                    .or(view.fx_flash_ms)
-                    .or(view.char_slide_ms)
-                    .unwrap_or(0);
+                let ms = if settings.effects {
+                    view.fx_wait_ms
+                        .or(view.fx_shake_ms)
+                        .or(view.fx_flash_ms)
+                        .or(view.char_slide_ms)
+                } else {
+                    view.fx_wait_ms.or(view.char_slide_ms)
+                }
+                .unwrap_or(0);
                 fx_until = Some(Instant::now() + Duration::from_millis(u64::from(ms)));
             }
             if !overlay && fade.is_none() && !skipping {
@@ -981,6 +1077,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         for event in events.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'running,
+                Event::Window { win_event, .. } => {
+                    apply_window_focus_flags(
+                        win_event,
+                        &mut focused,
+                        &mut minimized,
+                        &mut hidden,
+                    );
+                }
                 Event::KeyDown {
                     keycode: Some(Keycode::Return) | Some(Keycode::KpEnter),
                     keymod,
@@ -1964,6 +2068,14 @@ fn apply_setting_delta(
     } else if index == SIMD_ROW {
         settings.simd = !settings.simd;
         fb.set_kernel(choose_kernel(settings.simd));
+    } else if index == VSYNC_ROW {
+        let next = !settings.vsync;
+        match set_vsync(canvas, next) {
+            Ok(()) => settings.vsync = next,
+            Err(e) => emit_debug_line(&format!("vsync: {e}")),
+        }
+    } else if index == EFFECTS_ROW {
+        settings.effects = !settings.effects;
     } else if index == AUTO_DELAY_ROW {
         settings.bump_delay(delta);
     } else if index == TEXT_SPEED_ROW {
@@ -1987,6 +2099,8 @@ fn setting_delta(index: usize, sign: i32) -> i32 {
         || index == SKIP_UNREAD_ROW
         || index == UI_LANG_ROW
         || index == SIMD_ROW
+        || index == VSYNC_ROW
+        || index == EFFECTS_ROW
     {
         sign
     } else {
@@ -2316,6 +2430,217 @@ fn emit_blit_stats(line: &str) {
     let _ = std::fs::write(&path, body);
 }
 
+
+fn vsync_sdl_flag(on: bool) -> i32 {
+    if on {
+        1
+    } else {
+        0
+    }
+}
+
+fn set_vsync(
+    canvas: &sdl2::render::Canvas<sdl2::video::Window>,
+    on: bool,
+) -> Result<(), String> {
+    let rc = unsafe { sdl2::sys::SDL_RenderSetVSync(canvas.raw(), vsync_sdl_flag(on)) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        let raw = unsafe {
+            let c = sdl2::sys::SDL_GetError();
+            if c.is_null() {
+                "SDL_RenderSetVSync failed".to_string()
+            } else {
+                std::ffi::CStr::from_ptr(c).to_string_lossy().into_owned()
+            }
+        };
+        Err(sanitize_diag_line(&raw))
+    }
+}
+
+fn sanitize_diag_line(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // Drive path: X:\...
+        if i + 2 < bytes.len()
+            && bytes[i].is_ascii_alphabetic()
+            && bytes[i + 1] == b':'
+            && (bytes[i + 2] == b'\\' || bytes[i + 2] == b'/')
+        {
+            out.push('?');
+            i += 3;
+            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // UNC \\
+        if i + 1 < bytes.len() && bytes[i] == b'\\' && bytes[i + 1] == b'\\' {
+            out.push('?');
+            i += 2;
+            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // \Users\ or /Users/
+        let rest = &line[i..];
+        if rest.len() >= 7
+            && (rest[..7].eq_ignore_ascii_case("\\Users\\")
+                || rest[..7].eq_ignore_ascii_case("/Users/"))
+        {
+            out.push('?');
+            i += 7;
+            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn emit_debug_line(line: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide: Vec<u16> = std::ffi::OsStr::new(&format!("{line}\n"))
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
+                windows::core::PCWSTR(wide.as_ptr()),
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("{line}");
+    }
+}
+
+fn set_execution_awake(awake: bool) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Power::{
+            SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
+        };
+        unsafe {
+            if awake {
+                SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+            } else {
+                SetThreadExecutionState(ES_CONTINUOUS);
+            }
+        }
+    }
+    let _ = awake;
+}
+
+struct ExecutionStateGuard;
+
+impl Drop for ExecutionStateGuard {
+    fn drop(&mut self) {
+        set_execution_awake(false);
+    }
+}
+
+fn apply_window_focus_flags(
+    ev: WindowEvent,
+    focused: &mut bool,
+    minimized: &mut bool,
+    hidden: &mut bool,
+) {
+    match ev {
+        WindowEvent::FocusLost => *focused = false,
+        WindowEvent::FocusGained => *focused = true,
+        WindowEvent::Minimized => *minimized = true,
+        WindowEvent::Restored => *minimized = false,
+        WindowEvent::Hidden => *hidden = true,
+        WindowEvent::Shown => *hidden = false,
+        _ => {}
+    }
+}
+
+fn handle_pause_event(
+    event: Event,
+    focused: &mut bool,
+    minimized: &mut bool,
+    hidden: &mut bool,
+    need_present: &mut bool,
+    quit: &mut bool,
+) {
+    match event {
+        Event::Quit { .. } => *quit = true,
+        Event::Window { win_event, .. } => {
+            match win_event {
+                WindowEvent::Exposed
+                | WindowEvent::Resized(_, _)
+                | WindowEvent::SizeChanged(_, _) => {
+                    *need_present = true;
+                }
+                _ => {}
+            }
+            apply_window_focus_flags(win_event, focused, minimized, hidden);
+        }
+        _ => {}
+    }
+}
+
+fn shift_opt_instant(slot: &mut Option<Instant>, d: Duration) {
+    if let Some(t) = slot.as_mut() {
+        *t += d;
+    }
+}
+
+fn shift_pause_clocks(
+    typewriter: &mut Typewriter,
+    fade: &mut Option<Fade>,
+    auto_until: &mut Option<Instant>,
+    fx_until: &mut Option<Instant>,
+    shake_started: &mut Option<Instant>,
+    flash_started: &mut Option<Instant>,
+    slide_started: &mut Option<Instant>,
+    skip: &mut SkipClock,
+    d: Duration,
+) {
+    if d.is_zero() {
+        return;
+    }
+    typewriter.shift(d);
+    if let Some(f) = fade.as_mut() {
+        f.started += d;
+    }
+    shift_opt_instant(auto_until, d);
+    shift_opt_instant(fx_until, d);
+    shift_opt_instant(shake_started, d);
+    shift_opt_instant(flash_started, d);
+    shift_opt_instant(slide_started, d);
+    skip.shift(d);
+}
+
+fn flash_started_for(effects: bool, flash_ms: Option<u32>, now: Instant) -> Option<Instant> {
+    if effects {
+        flash_ms.map(|_| now)
+    } else {
+        None
+    }
+}
+
+/// Pause edge: Some(true) enter, Some(false) leave, None no edge.
+fn pause_edge(was_paused: bool, want_pause: bool) -> Option<bool> {
+    match (was_paused, want_pause) {
+        (false, true) => Some(true),
+        (true, false) => Some(false),
+        _ => None,
+    }
+}
+
 fn present_frame(
     canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
     texture: &sdl2::render::Texture,
@@ -2329,4 +2654,60 @@ fn present_frame(
     canvas.copy(texture, None, Rect::new(dx + ox, dy + oy, dw, dh))?;
     canvas.present();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_focus_lost_does_not_double_shift() {
+        let mut paused = false;
+        let mut shifts = 0u32;
+        let t0 = Instant::now();
+        // Enter once
+        assert_eq!(pause_edge(paused, true), Some(true));
+        paused = true;
+        let pause_started = t0;
+        // Repeated FocusLost while already paused — no edge
+        assert_eq!(pause_edge(paused, true), None);
+        assert_eq!(pause_edge(paused, true), None);
+        // Leave once
+        assert_eq!(pause_edge(paused, false), Some(false));
+        let dur = (t0 + Duration::from_secs(3)).saturating_duration_since(pause_started);
+        shifts += 1;
+        paused = false;
+        assert_eq!(shifts, 1);
+        assert_eq!(dur, Duration::from_secs(3));
+        // Another leave while unpaused — no edge
+        assert_eq!(pause_edge(paused, false), None);
+    }
+
+    #[test]
+    fn shift_keeps_auto_until_in_the_future() {
+        let t0 = Instant::now();
+        let mut auto_until = Some(t0 + Duration::from_millis(500));
+        // 2s pause would otherwise make auto_until overdue on resume
+        shift_opt_instant(&mut auto_until, Duration::from_secs(2));
+        let now = t0 + Duration::from_secs(2);
+        assert!(
+            auto_until.unwrap() > now,
+            "after shift, auto-advance must not fire immediately"
+        );
+        assert!(auto_until.unwrap() <= now + Duration::from_millis(500));
+    }
+
+    #[test]
+    fn effects_off_keeps_flash_started_none() {
+        let now = Instant::now();
+        assert!(flash_started_for(false, Some(200), now).is_none());
+        assert!(flash_started_for(true, Some(200), now).is_some());
+        assert!(flash_started_for(true, None, now).is_none());
+    }
+
+    #[test]
+    fn vsync_request_values() {
+        assert_eq!(vsync_sdl_flag(true), 1);
+        assert_eq!(vsync_sdl_flag(false), 0);
+    }
 }

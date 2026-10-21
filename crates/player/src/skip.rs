@@ -19,6 +19,13 @@ impl SkipClock {
 
     /// When `held` becomes true, fire once immediately, then on each interval.
     /// Releasing clears the clock so the next hold starts fresh.
+    /// Shift `last` forward by `d` so a held Ctrl interval survives focus pause.
+    pub fn shift(&mut self, d: Duration) {
+        if let Some(t) = self.last.as_mut() {
+            *t += d;
+        }
+    }
+
     pub fn pulse(&mut self, held: bool, now: Instant) -> bool {
         if !held {
             self.last = None;
@@ -82,5 +89,24 @@ mod tests {
             "movie / fx hold skips unread"
         );
         assert!(!ctrl_skips(Phase::Choices, true, true, true));
+    }
+
+    #[test]
+    fn shift_keeps_last_so_resume_does_not_instant_skip() {
+        let mut clock = SkipClock::new();
+        let t0 = Instant::now();
+        assert!(clock.pulse(true, t0));
+        clock.shift(Duration::from_secs(5));
+        // Without keeping last, a fresh hold would fire immediately. Shift must
+        // move last forward so resume mid-interval does not skip.
+        let resumed = t0 + Duration::from_secs(5) + Duration::from_millis(40);
+        assert!(
+            !clock.pulse(true, resumed),
+            "held Ctrl must not fire immediately after resume"
+        );
+        assert!(clock.pulse(
+            true,
+            t0 + Duration::from_secs(5) + Duration::from_millis(80)
+        ));
     }
 }
