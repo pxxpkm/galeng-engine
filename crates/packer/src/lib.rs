@@ -362,7 +362,7 @@ pub fn pack_with(
         write_entry(&mut zip, name, bytes)?;
     }
     let index = PakIndex {
-        schema_version: 1,
+        schema_version: PAK_SCHEMA,
         assets: assets.clone(),
     };
     let index_bytes = serde_json::to_vec_pretty(&index).map_err(|e| Error::Msg(e.to_string()))?;
@@ -383,19 +383,32 @@ pub struct PakReader {
 
 impl PakReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let file = File::open(path.as_ref()).map_err(|e| {
-            Error::Msg(format!("open {}: {e}", path.as_ref().display()))
-        })?;
-        let mut archive = ZipArchive::new(file)?;
+        // Do not put disk paths in the error — PR7/PR8 short codes.
+        let file = File::open(path.as_ref()).map_err(|_| Error::Msg("pak unreadable".into()))?;
+        let mut archive = ZipArchive::new(file).map_err(|_| Error::Msg("pak unreadable".into()))?;
         let index = match read_named(&mut archive, "index.json") {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(PakIndex {
-                schema_version: 1,
-                assets: BTreeMap::new(),
-            }),
-            Err(_) => PakIndex {
-                schema_version: 1,
+            Ok(bytes) => {
+                let parsed: PakIndex = serde_json::from_slice(&bytes)
+                    .map_err(|_| Error::Msg("pak index invalid".into()))?;
+                if parsed.schema_version < 1 {
+                    return Err(Error::Msg(format!(
+                        "pak schema {} is unsupported",
+                        parsed.schema_version
+                    )));
+                }
+                if parsed.schema_version > PAK_SCHEMA {
+                    return Err(Error::Msg(format!(
+                        "pak schema {} is newer than this player ({PAK_SCHEMA})",
+                        parsed.schema_version
+                    )));
+                }
+                parsed
+            }
+            Err(Error::Zip(zip::result::ZipError::FileNotFound)) => PakIndex {
+                schema_version: PAK_SCHEMA,
                 assets: BTreeMap::new(),
             },
+            Err(e) => return Err(e),
         };
         Ok(Self { archive, index })
     }
@@ -435,13 +448,18 @@ impl PakReader {
             return None;
         }
         if let Some(entry) = self.index.assets.get(logical).cloned() {
-            if let Ok(bytes) = read_named(&mut self.archive, &entry) {
+            // Do not trust index.assets values: same name checks + whitelist, and
+            // require the entry extension to be one the caller asked for.
+            if entry_name_allowed(&entry) {
                 let ext = Path::new(&entry)
                     .extension()
                     .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                return Some((ext, bytes));
+                    .unwrap_or("");
+                if exts.iter().any(|e| *e == ext) {
+                    if let Ok(bytes) = read_named(&mut self.archive, &entry) {
+                        return Some((ext.to_string(), bytes));
+                    }
+                }
             }
         }
         for ext in exts {
@@ -454,9 +472,80 @@ impl PakReader {
     }
 }
 
+/// Player-facing pak schema. Pack writes this; open rejects anything newer.
+pub const PAK_SCHEMA: u32 = 1;
+
+/// Cap for a single zip entry loaded into memory (PR8).
+pub const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
+fn entry_name_ok(name: &str) -> bool {
+    if name.contains('\\') || name.starts_with('/') {
+        return false;
+    }
+    !name.split('/').any(|p| p.is_empty() || p == "..")
+}
+
+fn entry_whitelisted(name: &str) -> bool {
+    if name == "galeng.json" || name == "index.json" {
+        return true;
+    }
+    if let Some(rest) = name.strip_prefix("scenario/") {
+        return !rest.is_empty() && !rest.contains('/') && rest.ends_with(".json");
+    }
+    if let Some(rest) = name.strip_prefix("assets/") {
+        return !rest.is_empty();
+    }
+    false
+}
+
+fn entry_name_allowed(name: &str) -> bool {
+    entry_name_ok(name) && entry_whitelisted(name)
+}
+
 fn read_named(archive: &mut ZipArchive<File>, name: &str) -> Result<Vec<u8>, Error> {
+    if !entry_name_allowed(name) {
+        return Err(Error::Msg("pak entry rejected".into()));
+    }
     let mut file = archive.by_name(name)?;
+    if file.size() > MAX_ENTRY_BYTES {
+        return Err(Error::Msg("pak entry too large".into()));
+    }
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_ENTRY_BYTES {
+        return Err(Error::Msg("pak entry too large".into()));
+    }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod entry_guard_tests {
+    use super::*;
+
+    #[test]
+    fn name_rejects_slash_dotdot_and_backslash() {
+        assert!(!entry_name_ok("assets/../x.png"));
+        assert!(!entry_name_ok("/assets/x.png"));
+        assert!(!entry_name_ok("assets\\x.png"));
+        assert!(!entry_name_ok("assets//x.png"));
+        assert!(entry_name_ok("assets/bg/park.png"));
+        assert!(entry_name_ok("galeng.json"));
+    }
+
+    #[test]
+    fn whitelist_excludes_input_json() {
+        assert!(!entry_whitelisted("input.json"));
+        assert!(entry_whitelisted("galeng.json"));
+        assert!(entry_whitelisted("index.json"));
+        assert!(entry_whitelisted("scenario/park_01.json"));
+        assert!(!entry_whitelisted("scenario/nested/x.json"));
+        assert!(entry_whitelisted("assets/bg/park.png"));
+        assert!(!entry_whitelisted("assets/"));
+    }
+
+    #[test]
+    fn size_cap_constant() {
+        assert_eq!(MAX_ENTRY_BYTES, 256 * 1024 * 1024);
+        assert!(MAX_ENTRY_BYTES < u64::from(u32::MAX));
+    }
 }

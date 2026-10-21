@@ -229,3 +229,110 @@ fn resolve_invocation_allows_diag_alone_and_with_pak() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+
+fn write_stored_zip(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+    // Minimal ZIP (stored) so player tests need no zip dev-dep.
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    let mut count = 0u16;
+    for (name, data) in entries {
+        let name_b = name.as_bytes();
+        let local_off = out.len() as u32;
+        let crc = crc32(data);
+        out.extend_from_slice(&0x04034b50u32.to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(name_b.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(name_b);
+        out.extend_from_slice(data);
+
+        central.extend_from_slice(&0x02014b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(name_b.len() as u16).to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&local_off.to_le_bytes());
+        central.extend_from_slice(name_b);
+        count += 1;
+    }
+    let cd_off = out.len() as u32;
+    let cd_len = central.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x06054b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&cd_len.to_le_bytes());
+    out.extend_from_slice(&cd_off.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    fs::write(path, out).unwrap();
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &b in data {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            let mask = (!(crc & 1)).wrapping_add(1); // 0 or 0xFFFF_FFFF
+            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+        }
+    }
+    !crc
+}
+
+#[test]
+fn load_pak_rejects_newer_schema() {
+    let pak = std::env::temp_dir().join(format!(
+        "galeng-pr8-player-schema2-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&pak);
+    write_stored_zip(
+        &pak,
+        &[
+            ("galeng.json", b"{}"),
+            ("index.json", br#"{"schemaVersion":2,"assets":{}}"#),
+        ],
+    );
+    let err = match Runtime::load_pak(&pak) { Ok(_) => panic!("expected err"), Err(e) => e.to_string() };
+    assert!(
+        err.contains("pak schema 2 is newer than this player (1)"),
+        "{err}"
+    );
+    assert!(!err.contains(pak.to_string_lossy().as_ref()));
+    let _ = fs::remove_file(&pak);
+}
+
+#[test]
+fn pak_reader_missing_index_stays_schema_1() {
+    let pak = std::env::temp_dir().join(format!(
+        "galeng-pr8-player-noindex-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&pak);
+    write_stored_zip(&pak, &[("galeng.json", b"{}")]);
+    let reader = galeng_packer::PakReader::open(&pak).expect("legacy open");
+    assert_eq!(reader.index.schema_version, galeng_packer::PAK_SCHEMA);
+    assert!(reader.index.assets.is_empty());
+    let _ = fs::remove_file(&pak);
+}
