@@ -21,6 +21,7 @@ pub mod save;
 pub mod saypage;
 pub mod seen;
 pub mod settings;
+pub mod user_paths;
 pub mod skip;
 pub mod title;
 pub mod typewriter;

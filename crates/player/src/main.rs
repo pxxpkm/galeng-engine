@@ -4,6 +4,7 @@ use std::env;
 use std::process::ExitCode;
 
 use galeng_player::cli::{resolve_launch, Launch};
+use galeng_player::user_paths::user_paths;
 use galeng_player::Runtime;
 
 fn main() -> ExitCode {
@@ -41,24 +42,30 @@ fn run() -> Result<(), String> {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .ok_or("cannot resolve player.exe directory")?;
     let launch = resolve_launch(&args, &exe_dir)?;
-    let (runtime, jumped) = match launch {
+    let (runtime, jumped) = match &launch {
         Launch::Dir {
             project,
             scene,
             beat,
         } => {
-            let jumped = scene.is_some() || beat != 0;
+            let jumped = scene.is_some() || *beat != 0;
             let runtime =
-                Runtime::load_dir_at(&project, scene.as_deref(), beat).map_err(|e| e.to_string())?;
+                Runtime::load_dir_at(project, scene.as_deref(), *beat).map_err(|e| e.to_string())?;
             (runtime, jumped)
         }
         Launch::Pak { pak, scene, beat } => {
-            let jumped = scene.is_some() || beat != 0;
+            let jumped = scene.is_some() || *beat != 0;
             let runtime =
-                Runtime::load_pak_at(&pak, scene.as_deref(), beat).map_err(|e| e.to_string())?;
+                Runtime::load_pak_at(pak, scene.as_deref(), *beat).map_err(|e| e.to_string())?;
             (runtime, jumped)
         }
     };
+    let paths = user_paths(
+        &launch,
+        &exe_dir,
+        &runtime.project.id,
+        &runtime.project_dir,
+    );
     let show = galeng_player::title::show_title(runtime.project.skip_title, jumped);
-    galeng_player::window::run(runtime, show)
+    galeng_player::window::run(runtime, show, paths)
 }

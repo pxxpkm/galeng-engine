@@ -141,7 +141,7 @@ cargo run -p galeng-player --release -- --project examples/prologue
 
 Tiny placeholder PNGs, a BGM loop, two voice clips, and a breeze SE live under `examples/prologue/assets/`. Missing pictures fall back to color blocks. Missing audio is silence. Click or Enter to advance. Esc quits.
 
-Settings and saves: `%APPDATA%\Galeng\example-prologue\`.
+Settings and saves: sibling `game.pak` (exported folder) uses `<exe_dir>\UserData\`; `--project` and other `--pak` paths use `%APPDATA%\Galeng\<id>\` (e.g. `example-prologue`).
 
 ### License
 
@@ -252,7 +252,7 @@ GALENG_SIGN_REQUIRED=1
 cargo run -p galeng-player --release -- --project examples/prologue
 ```
 
-設定與存檔：`%APPDATA%\Galeng\example-prologue\`。
+設定與存檔：同層 `game.pak`（匯出資料夾）用 `<exe_dir>\UserData\`；`--project` 與其他 `--pak` 仍用 `%APPDATA%\Galeng\<id>\`（例如 `example-prologue`）。
 
 ### 授權
 

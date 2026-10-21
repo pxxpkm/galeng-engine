@@ -115,3 +115,76 @@ fn resolve_launch_empty_uses_sibling_pak() {
     }
     let _ = fs::remove_dir_all(&tmp);
 }
+
+
+#[test]
+fn user_paths_sibling_game_pak_uses_userdata() {
+    use galeng_player::cli::{resolve_launch, Launch};
+    use galeng_player::user_paths::user_paths;
+
+    let exe = std::env::temp_dir().join(format!(
+        "galeng-pr5-pak-sib-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&exe);
+    fs::create_dir_all(&exe).unwrap();
+    fs::write(exe.join("game.pak"), b"x").unwrap();
+
+    let launch = resolve_launch(&[], &exe).unwrap();
+    match &launch {
+        Launch::Pak { pak, .. } => assert_eq!(pak, &exe.join("game.pak")),
+        Launch::Dir { .. } => panic!("expected pak"),
+    }
+    let paths = user_paths(&launch, &exe, "example-prologue", &exe);
+    assert_eq!(paths.config, exe.join("UserData").join("config.json"));
+    assert_eq!(paths.seen, exe.join("UserData").join("seen.json"));
+    assert_eq!(paths.save_dir, exe.join("UserData").join("save"));
+    assert!(!paths.save_dir.to_string_lossy().contains("example-prologue"));
+
+    // Non-sibling absolute pak beside a *different* dir → APPDATA helpers.
+    let other = std::env::temp_dir().join(format!(
+        "galeng-pr5-pak-other-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&other);
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("game.pak"), b"x").unwrap();
+    let prev = std::env::var_os("APPDATA");
+    let fake = std::env::temp_dir().join(format!(
+        "galeng-pr5-pak-app-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&fake);
+    fs::create_dir_all(&fake).unwrap();
+    std::env::set_var("APPDATA", &fake);
+    let launch2 = Launch::Pak {
+        pak: other.join("game.pak"),
+        scene: None,
+        beat: 0,
+    };
+    let paths2 = user_paths(&launch2, &exe, "gid", &other);
+    assert_eq!(
+        paths2.save_dir,
+        fake.join("Galeng").join("gid").join("save")
+    );
+    match prev {
+        Some(v) => std::env::set_var("APPDATA", v),
+        None => std::env::remove_var("APPDATA"),
+    }
+    let _ = fs::remove_dir_all(&exe);
+    let _ = fs::remove_dir_all(&other);
+    let _ = fs::remove_dir_all(&fake);
+}
+
+#[test]
+fn is_sibling_rejects_relative_game_pak() {
+    use galeng_player::cli::is_sibling_game_pak;
+    let exe = std::env::temp_dir().join(format!(
+        "galeng-pr5-pak-rel-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&exe);
+    fs::create_dir_all(&exe).unwrap();
+    assert!(!is_sibling_game_pak(std::path::Path::new("game.pak"), &exe));
+    let _ = fs::remove_dir_all(&exe);
+}

@@ -307,6 +307,45 @@ fn export_game_writes_pak_and_optional_exe() {
 }
 
 #[test]
+fn export_game_opts_does_not_touch_userdata() {
+    let tmp = std::env::temp_dir().join(format!(
+        "galeng-pr5-export-ud-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    copy_dir(&repo_root().join("examples/prologue"), &tmp);
+    let dest = tmp.join("dist-out");
+    fs::create_dir_all(dest.join("UserData/save")).unwrap();
+    fs::write(dest.join("UserData/config.json"), b"keep-me").unwrap();
+    fs::write(dest.join("UserData/seen.json"), b"seen-keep").unwrap();
+    fs::write(dest.join("UserData/save/slot-00.json"), b"slot-keep").unwrap();
+
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let fake = tmp.join("fake-player.exe");
+    fs::write(&fake, b"exe").unwrap();
+    dir.export_game_opts(Some(&fake), false, Some(&dest))
+        .expect("export");
+
+    // Write set is create_dir_all + copy player/SDL2/game.pak/optional ico — not UserData.
+    assert!(dest.join("game.pak").is_file());
+    assert!(dest.join("player.exe").is_file());
+    assert!(!dest.join("UserData").join("game.pak").exists());
+    assert_eq!(
+        fs::read(dest.join("UserData/config.json")).unwrap(),
+        b"keep-me"
+    );
+    assert_eq!(
+        fs::read(dest.join("UserData/seen.json")).unwrap(),
+        b"seen-keep"
+    );
+    assert_eq!(
+        fs::read(dest.join("UserData/save/slot-00.json")).unwrap(),
+        b"slot-keep"
+    );
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn export_game_strict_fails_on_missing_asset() {
     let tmp = std::env::temp_dir().join(format!(
         "galeng-part68-{}-strict",

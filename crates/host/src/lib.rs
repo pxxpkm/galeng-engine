@@ -137,6 +137,7 @@ impl ProjectDir {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
             beats: vec![galeng_schema::Beat {
+                id: None,
                 bg: None,
                 chars: None,
                 say: None,

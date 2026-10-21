@@ -28,12 +28,12 @@ use crate::title::{
 use crate::fb::{mix_rgba_into, BlitKernel, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
 use crate::font::{FontSet, TypeScale};
 use crate::save::{
-    check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, slot_path, write_slot,
-    write_thumb, AUTO_SLOT, THUMB_H, THUMB_W,
+    check_save, downscale_rgba, read_slot, read_thumb, slot_path, write_slot, write_thumb,
+    AUTO_SLOT, THUMB_H, THUMB_W,
 };
-use crate::seen::{default_seen_path, Seen};
+use crate::seen::Seen;
 use crate::settings::{
-    default_config_path, hit_row as hit_setting, read_config, wait_ms, write_config, STEP,
+    hit_row as hit_setting, read_config, wait_ms, write_config, STEP,
     AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, EFFECTS_ROW, FULLSCREEN_ROW,
     SETTINGS_ROWS, SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
 };
@@ -42,6 +42,7 @@ use crate::movie;
 use crate::saypage::{self, ConfirmSay};
 use crate::skip::{ctrl_skips, SkipClock};
 use crate::typewriter::Typewriter;
+use crate::user_paths::UserPaths;
 use crate::vm::{Phase, Runtime, VmError};
 use galeng_explore::ItemUseMode;
 
@@ -87,16 +88,14 @@ struct ChromeSnap {
     title_open: bool,
 }
 
-pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
+pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Result<(), String> {
     let fonts = FontSet::load(&runtime.project, &runtime.source)?;
     let scale = TypeScale::from_project(&runtime.project);
     let mut assets = Bank::from_source(runtime.source.clone());
-    let config_path = default_config_path(&runtime.project.id, &runtime.project_dir);
+    let config_path = paths.config.clone();
+    let save_dir = paths.save_dir.clone();
     let mut settings = read_config(&config_path);
-    let mut seen = Seen::load(default_seen_path(
-        &runtime.project.id,
-        &runtime.project_dir,
-    ));
+    let mut seen = Seen::load(paths.seen);
     let mut mixer = Mixer::try_new();
     mixer.set_settings(settings);
     let sdl = sdl2::init()?;
@@ -773,7 +772,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             &fonts.ui, &ui_locale, &rows);
         }
         if let Some(saving) = slot_pick {
-            let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+            let dir = &save_dir;
             let mut scenes: [SlotRow; SLOT_COUNT] =
                 std::array::from_fn(|_| SlotRow::Empty);
             let mut thumbs: [Option<(u32, u32, Vec<u8>)>; SLOT_COUNT] = Default::default();
@@ -1345,6 +1344,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             &mut auto_key,
                             last_thumb.as_deref(),
                             &mut notice,
+                            &save_dir,
                         ) {
                             slot_pick = None;
                             menu_open = false;
@@ -1366,6 +1366,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         &mut auto_key,
                         last_thumb.as_deref(),
                         &mut notice,
+                        &save_dir,
                     ) {
                         slot_pick = None;
                         menu_open = false;
@@ -1438,6 +1439,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut auto_until,
                                 &mut auto_key,
                                 &mut notice,
+                                &save_dir,
                             ) {
                                 title_open = false;
                                 title_dirty = false;
@@ -1472,14 +1474,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     match ACTIONS[menu_sel] {
                         MenuAction::Continue => menu_open = false,
                         MenuAction::QuickSave => {
-                            let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+                            let dir = &save_dir;
                             let _ = write_slot(&dir, 0, &runtime.to_save());
                             persist_thumb(&dir, 0, last_thumb.as_deref());
                             menu_open = false;
                         }
                         MenuAction::QuickLoad => {
                             if load_slot(&mut runtime, 0, &mut fade, &mut auto_until, &mut auto_key,
-                                &mut notice)
+                                &mut notice, &save_dir)
                             {
                                 menu_open = false;
                             }
@@ -1492,6 +1494,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut auto_until,
                                 &mut auto_key,
                                 &mut notice,
+                                &save_dir,
                             ) {
                                 menu_open = false;
                             }
@@ -1534,7 +1537,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     keycode: Some(Keycode::F5),
                     ..
                 } if !title_open => {
-                    let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+                    let dir = &save_dir;
                     let _ = write_slot(&dir, 0, &runtime.to_save());
                     persist_thumb(&dir, 0, last_thumb.as_deref());
                 }
@@ -1549,6 +1552,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         &mut auto_until,
                         &mut auto_key,
                         &mut notice,
+                        &save_dir,
                     ) {
                         title_open = false;
                         title_dirty = false;
@@ -1594,7 +1598,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     }
                     if view.phase == Phase::Choices {
                         if runtime.choose(choice_sel) {
-                            let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+                            let dir = &save_dir;
                             let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
                         }
                         continue;
@@ -1737,6 +1741,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut auto_key,
                                 last_thumb.as_deref(),
                                 &mut notice,
+                                &save_dir,
                             ) {
                                 slot_pick = None;
                                 menu_open = false;
@@ -1758,10 +1763,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             match ACTIONS[i] {
                                 MenuAction::Continue => menu_open = false,
                                 MenuAction::QuickSave => {
-                                    let dir = default_save_dir(
-                                        &runtime.project.id,
-                                        &runtime.project_dir,
-                                    );
+                                    let dir = &save_dir;
                                     let _ = write_slot(&dir, 0, &runtime.to_save());
                                     persist_thumb(&dir, 0, last_thumb.as_deref());
                                     menu_open = false;
@@ -1774,6 +1776,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut auto_until,
                                         &mut auto_key,
                                         &mut notice,
+                                        &save_dir,
                                     ) {
                                         menu_open = false;
                                     }
@@ -1786,6 +1789,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut auto_until,
                                         &mut auto_key,
                                         &mut notice,
+                                        &save_dir,
                                     ) {
                                         menu_open = false;
                                     }
@@ -1891,6 +1895,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut auto_until,
                                         &mut auto_key,
                                         &mut notice,
+                                        &save_dir,
                                     ) {
                                         title_open = false;
                                         title_dirty = false;
@@ -1938,6 +1943,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 HUD_ACTIONS[i],
                                 &mut settings,
                                 &config_path,
+                                &save_dir,
                                 &mut skip_latch,
                                 &mut ui_hidden,
                                 &mut backlog,
@@ -1987,10 +1993,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             choice_sel = i;
                             pressed_choice = Some(i);
                             if runtime.choose(i) {
-                                let dir = default_save_dir(
-                                    &runtime.project.id,
-                                    &runtime.project_dir,
-                                );
+                                let dir = &save_dir;
                                 let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
                             }
                         }
@@ -2211,6 +2214,7 @@ fn apply_hud(
     action: HudAction,
     settings: &mut crate::settings::Settings,
     config_path: &std::path::Path,
+    save_dir: &std::path::Path,
     skip_latch: &mut bool,
     ui_hidden: &mut bool,
     backlog: &mut BacklogView,
@@ -2236,13 +2240,13 @@ fn apply_hud(
         }
         HudAction::QuickSave => {
             if !*title_open {
-                let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+                let dir = &save_dir;
                 let _ = write_slot(&dir, 0, &runtime.to_save());
                 persist_thumb(&dir, 0, last_thumb);
             }
         }
         HudAction::QuickLoad => {
-            if load_slot(runtime, 0, fade, auto_until, auto_key, notice) {
+            if load_slot(runtime, 0, fade, auto_until, auto_key, notice, save_dir) {
                 *title_open = false;
                 *title_dirty = false;
             }
@@ -2306,8 +2310,9 @@ fn load_slot(
     auto_until: &mut Option<Instant>,
     auto_key: &mut Option<(String, usize, Option<u32>, bool, usize)>,
     notice: &mut Option<Notice>,
+    save_dir: &std::path::Path,
 ) -> bool {
-    let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+    let dir = save_dir;
     let path_exists = slot_path(&dir, slot).map(|p| p.is_file()).unwrap_or(false);
     let save = match read_slot(&dir, slot) {
         Ok(save) => save,
@@ -2358,20 +2363,21 @@ fn apply_numbered_slot(
     auto_key: &mut Option<(String, usize, Option<u32>, bool, usize)>,
     thumb: Option<&[u8]>,
     notice: &mut Option<Notice>,
+    save_dir: &std::path::Path,
 ) -> bool {
     let Some(saving) = slot_pick else {
         return false;
     };
     let slot = index_to_slot(index);
     if saving {
-        let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
+        let dir = save_dir;
         let ok = write_slot(&dir, slot, &runtime.to_save()).is_ok();
         if ok {
             persist_thumb(&dir, slot, thumb);
         }
         ok
     } else {
-        load_slot(runtime, slot, fade, auto_until, auto_key, notice)
+        load_slot(runtime, slot, fade, auto_until, auto_key, notice, save_dir)
     }
 }
 
