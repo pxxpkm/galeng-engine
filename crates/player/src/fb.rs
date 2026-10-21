@@ -33,15 +33,31 @@ impl Rgba {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BlitKernel {
+    Scalar,
+    Sse2,
+}
+
 pub struct Framebuffer {
     pub pixels: Vec<u8>,
+    kernel: BlitKernel,
 }
 
 impl Framebuffer {
     pub fn new() -> Self {
         Self {
             pixels: vec![0; FB_BYTES],
+            kernel: BlitKernel::Scalar,
         }
+    }
+
+    pub fn set_kernel(&mut self, kernel: BlitKernel) {
+        self.kernel = kernel;
+    }
+
+    pub fn kernel(&self) -> BlitKernel {
+        self.kernel
     }
 
     pub fn fill(&mut self, color: Rgba) {
@@ -75,23 +91,15 @@ impl Framebuffer {
             }
             return;
         }
-        // Rect already clamped: inner loop skips put()'s bounds checks.
-        for yy in y0..y1 {
-            for xx in x0..x1 {
-                let i = ((yy * WIDTH + xx) * 4) as usize;
-                let under = Rgba {
-                    r: self.pixels[i],
-                    g: self.pixels[i + 1],
-                    b: self.pixels[i + 2],
-                    a: self.pixels[i + 3],
-                };
-                let out = color.blend_over(under);
-                self.pixels[i] = out.r;
-                self.pixels[i + 1] = out.g;
-                self.pixels[i + 2] = out.b;
-                self.pixels[i + 3] = out.a;
+        #[cfg(target_arch = "x86_64")]
+        if self.kernel == BlitKernel::Sse2 {
+            // SAFETY: rect is clamped into the framebuffer; kernel selected at settings time.
+            unsafe {
+                sse2::fill_rect_blend(&mut self.pixels, x0, y0, x1, y1, color);
             }
+            return;
         }
+        fill_rect_blend_scalar(&mut self.pixels, x0, y0, x1, y1, color);
     }
 
     pub fn put(&mut self, x: u32, y: u32, color: Rgba) {
@@ -187,16 +195,22 @@ impl Framebuffer {
                     self.pixels[di + 3] = 255;
                     continue;
                 }
-                self.put(
-                    dest_x as u32,
-                    dest_y as u32,
-                    Rgba {
-                        r: src[si],
-                        g: src[si + 1],
-                        b: src[si + 2],
-                        a,
-                    },
-                );
+                let src_px = Rgba {
+                    r: src[si],
+                    g: src[si + 1],
+                    b: src[si + 2],
+                    a,
+                };
+                #[cfg(target_arch = "x86_64")]
+                if self.kernel == BlitKernel::Sse2 {
+                    let di = ((dest_y as u32 * WIDTH + dest_x as u32) * 4) as usize;
+                    // SAFETY: dest_x/dest_y already clipped into the frame.
+                    unsafe {
+                        sse2::blend_over_at(&mut self.pixels, di, src_px);
+                    }
+                    continue;
+                }
+                self.put(dest_x as u32, dest_y as u32, src_px);
             }
         }
     }
@@ -212,6 +226,158 @@ impl Framebuffer {
             }
         }
         n
+    }
+}
+
+
+fn fill_rect_blend_scalar(pixels: &mut [u8], x0: u32, y0: u32, x1: u32, y1: u32, color: Rgba) {
+    // Rect already clamped: inner loop skips put()'s bounds checks.
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            let i = ((yy * WIDTH + xx) * 4) as usize;
+            let under = Rgba {
+                r: pixels[i],
+                g: pixels[i + 1],
+                b: pixels[i + 2],
+                a: pixels[i + 3],
+            };
+            let out = color.blend_over(under);
+            pixels[i] = out.r;
+            pixels[i + 1] = out.g;
+            pixels[i + 2] = out.b;
+            pixels[i + 3] = out.a;
+        }
+    }
+}
+
+/// Exact `/255` for `x` in `0..=65025` (max channel product in blend_over).
+#[inline(always)]
+pub fn div255(x: u32) -> u32 {
+    (x + 1 + (x >> 8)) >> 8
+}
+
+#[cfg(target_arch = "x86_64")]
+mod sse2 {
+    use super::{div255, Rgba, WIDTH};
+    use std::arch::x86_64::*;
+
+    /// Straight (non-premultiplied) source-over; output alpha is 255.
+    /// `src.a` must be in `1..=254`.
+    #[inline(always)]
+    pub fn blend_over(src: Rgba, under: Rgba) -> Rgba {
+        let a = u32::from(src.a);
+        let ia = 255 - a;
+        Rgba {
+            r: div255(u32::from(src.r) * a + u32::from(under.r) * ia) as u8,
+            g: div255(u32::from(src.g) * a + u32::from(under.g) * ia) as u8,
+            b: div255(u32::from(src.b) * a + u32::from(under.b) * ia) as u8,
+            a: 255,
+        }
+    }
+
+    /// SAFETY: `di..di+4` must lie inside `pixels`.
+    #[inline(always)]
+    pub unsafe fn blend_over_at(pixels: &mut [u8], di: usize, src: Rgba) {
+        let under = Rgba {
+            r: *pixels.get_unchecked(di),
+            g: *pixels.get_unchecked(di + 1),
+            b: *pixels.get_unchecked(di + 2),
+            a: *pixels.get_unchecked(di + 3),
+        };
+        let out = blend_over(src, under);
+        *pixels.get_unchecked_mut(di) = out.r;
+        *pixels.get_unchecked_mut(di + 1) = out.g;
+        *pixels.get_unchecked_mut(di + 2) = out.b;
+        *pixels.get_unchecked_mut(di + 3) = out.a;
+    }
+
+    /// `div255` on four u32 lanes: `(x + 1 + (x >> 8)) >> 8`.
+    #[inline(always)]
+    unsafe fn div255_epi32(x: __m128i) -> __m128i {
+        let one = _mm_set1_epi32(1);
+        let hi = _mm_srli_epi32(x, 8);
+        _mm_srli_epi32(_mm_add_epi32(_mm_add_epi32(x, one), hi), 8)
+    }
+
+    /// Blend two packed RGBA pixels (8×u16: R0 G0 B0 A0 R1 G1 B1 A1).
+    /// `src_rgb0` / `src_rgb1` are epi32 [sr, sg, sb, 0] (already × alpha, fits i32).
+    #[inline(always)]
+    unsafe fn blend_pair_epi16(
+        pix: __m128i,
+        ia_v: __m128i,
+        src_rgb0: __m128i,
+        src_rgb1: __m128i,
+    ) -> __m128i {
+        let zero = _mm_setzero_si128();
+        // dst * ia in u16 (max 65025).
+        let mul = _mm_mullo_epi16(pix, ia_v);
+        // Widen to u32 before adding src*a (sum can exceed 65535).
+        let lo32 = _mm_unpacklo_epi16(mul, zero);
+        let hi32 = _mm_unpackhi_epi16(mul, zero);
+        let sum_lo = div255_epi32(_mm_add_epi32(lo32, src_rgb0));
+        let sum_hi = div255_epi32(_mm_add_epi32(hi32, src_rgb1));
+        let packed = _mm_packs_epi32(sum_lo, sum_hi);
+        // Force A lanes (indices 3 and 7) to 255.
+        let a255 = _mm_set_epi16(255, 0, 0, 0, 255, 0, 0, 0);
+        let clear_a = _mm_set_epi16(0, -1, -1, -1, 0, -1, -1, -1);
+        _mm_or_si128(_mm_and_si128(packed, clear_a), a255)
+    }
+
+    /// Same-color translucent fill for a clamped rect. `color.a` in `1..=254`.
+    /// SAFETY: `x0..x1`, `y0..y1` must lie inside the 1920×1080 framebuffer.
+    pub unsafe fn fill_rect_blend(
+        pixels: &mut [u8],
+        x0: u32,
+        y0: u32,
+        x1: u32,
+        y1: u32,
+        color: Rgba,
+    ) {
+        let a = u32::from(color.a);
+        let ia = 255 - a;
+        let sr = u32::from(color.r) * a;
+        let sg = u32::from(color.g) * a;
+        let sb = u32::from(color.b) * a;
+        let ia_v = _mm_set1_epi16(ia as i16);
+        // epi32 lane order for unpacklo of [R,G,B,A,...]: e0=R, e1=G, e2=B, e3=A
+        let src_rgb = _mm_set_epi32(0, sb as i32, sg as i32, sr as i32);
+
+        for yy in y0..y1 {
+            let row = ((yy * WIDTH + x0) * 4) as usize;
+            let mut xx = x0;
+            while xx + 4 <= x1 {
+                let i = row + ((xx - x0) as usize) * 4;
+                let dst = _mm_loadu_si128(pixels.as_ptr().add(i) as *const __m128i);
+                let zero = _mm_setzero_si128();
+                let lo = _mm_unpacklo_epi8(dst, zero);
+                let hi = _mm_unpackhi_epi8(dst, zero);
+                let out_lo = blend_pair_epi16(lo, ia_v, src_rgb, src_rgb);
+                let out_hi = blend_pair_epi16(hi, ia_v, src_rgb, src_rgb);
+                let out = _mm_packus_epi16(out_lo, out_hi);
+                _mm_storeu_si128(pixels.as_mut_ptr().add(i) as *mut __m128i, out);
+                xx += 4;
+            }
+            while xx < x1 {
+                let di = row + ((xx - x0) as usize) * 4;
+                let under = Rgba {
+                    r: *pixels.get_unchecked(di),
+                    g: *pixels.get_unchecked(di + 1),
+                    b: *pixels.get_unchecked(di + 2),
+                    a: *pixels.get_unchecked(di + 3),
+                };
+                let out = Rgba {
+                    r: div255(sr + u32::from(under.r) * ia) as u8,
+                    g: div255(sg + u32::from(under.g) * ia) as u8,
+                    b: div255(sb + u32::from(under.b) * ia) as u8,
+                    a: 255,
+                };
+                *pixels.get_unchecked_mut(di) = out.r;
+                *pixels.get_unchecked_mut(di + 1) = out.g;
+                *pixels.get_unchecked_mut(di + 2) = out.b;
+                *pixels.get_unchecked_mut(di + 3) = out.a;
+                xx += 1;
+            }
+        }
     }
 }
 
@@ -370,6 +536,79 @@ mod tests {
             }
         }
         assert_eq!(via_fill.pixels, via_put.pixels);
+    }
+
+    #[test]
+    fn div255_matches_integer_divide() {
+        for x in 0u32..=65025 {
+            assert_eq!(div255(x), x / 255, "x={x}");
+        }
+    }
+
+    #[test]
+    fn blend_over_div255_matches_scalar() {
+        for a in 1u8..=254 {
+            for sr in [0u8, 1, 127, 128, 254, 255] {
+                for dr in [0u8, 1, 127, 128, 254, 255] {
+                    let src = Rgba { r: sr, g: 40, b: 80, a };
+                    let under = Rgba { r: dr, g: 10, b: 200, a: 255 };
+                    let scalar = src.blend_over(under);
+                    let via = Rgba {
+                        r: div255(u32::from(src.r) * u32::from(a) + u32::from(under.r) * (255 - u32::from(a))) as u8,
+                        g: div255(u32::from(src.g) * u32::from(a) + u32::from(under.g) * (255 - u32::from(a))) as u8,
+                        b: div255(u32::from(src.b) * u32::from(a) + u32::from(under.b) * (255 - u32::from(a))) as u8,
+                        a: 255,
+                    };
+                    assert_eq!(via.r, scalar.r, "r a={a} sr={sr} dr={dr}");
+                    assert_eq!(via.g, scalar.g);
+                    assert_eq!(via.b, scalar.b);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn sse2_fill_rect_matches_scalar() {
+        let mut scalar = Framebuffer::new();
+        let mut simd = Framebuffer::new();
+        scalar.fill(Rgba::rgb(30, 60, 90));
+        simd.fill(Rgba::rgb(30, 60, 90));
+        simd.set_kernel(BlitKernel::Sse2);
+        let c = Rgba { r: 200, g: 10, b: 40, a: 100 };
+        // Width 7 forces both 4-wide and scalar tail.
+        scalar.fill_rect(2, 3, 7, 5, c);
+        simd.fill_rect(2, 3, 7, 5, c);
+        assert_eq!(scalar.pixels, simd.pixels);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn sse2_blit_partial_matches_scalar() {
+        let mut scalar = Framebuffer::new();
+        let mut simd = Framebuffer::new();
+        scalar.fill(Rgba::rgb(10, 20, 30));
+        simd.fill(Rgba::rgb(10, 20, 30));
+        simd.set_kernel(BlitKernel::Sse2);
+        let src = [
+            255u8, 0, 0, 128,
+            0, 255, 0, 64,
+            0, 0, 255, 200,
+            50, 50, 50, 1,
+        ];
+        scalar.blit_nearest(2, 2, &src, 4, 5, 2, 2, false);
+        simd.blit_nearest(2, 2, &src, 4, 5, 2, 2, false);
+        assert_eq!(scalar.pixels, simd.pixels);
+    }
+
+    #[test]
+    fn set_kernel_round_trip() {
+        let mut fb = Framebuffer::new();
+        assert_eq!(fb.kernel(), BlitKernel::Scalar);
+        fb.set_kernel(BlitKernel::Sse2);
+        assert_eq!(fb.kernel(), BlitKernel::Sse2);
+        fb.set_kernel(BlitKernel::Scalar);
+        assert_eq!(fb.kernel(), BlitKernel::Scalar);
     }
 }
 

@@ -25,7 +25,7 @@ use crate::gallery;
 use crate::title::{
     game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
 };
-use crate::fb::{mix_rgba_into, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
+use crate::fb::{mix_rgba_into, BlitKernel, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
 use crate::font::{FontSet, TypeScale};
 use crate::save::{
     check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, write_slot, write_thumb,
@@ -34,8 +34,8 @@ use crate::save::{
 use crate::seen::{default_seen_path, Seen};
 use crate::settings::{
     default_config_path, hit_row as hit_setting, read_config, wait_ms, write_config, STEP,
-    AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, FULLSCREEN_ROW, SETTINGS_ROWS, SKIP_UNREAD_ROW,
-    TEXT_SPEED_ROW, UI_LANG_ROW,
+    AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, FULLSCREEN_ROW, SETTINGS_ROWS, SIMD_ROW,
+    SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW,
 };
 use crate::fx::{flash_alpha, flash_white, shake_offset};
 use crate::movie;
@@ -124,6 +124,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut fb = Framebuffer::new();
+    fb.set_kernel(choose_kernel(settings.simd));
     let mut fade: Option<Fade> = None;
     let mut auto_until: Option<Instant> = None;
     let mut auto_key: Option<(String, usize, Option<u32>, bool, usize)> = None;
@@ -1150,6 +1151,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         setting_delta(settings_sel, -1),
                         &mut mixer,
                         &mut canvas,
+                        &mut fb,
                         &config_path,
                     );
                 }
@@ -1163,6 +1165,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         setting_delta(settings_sel, 1),
                         &mut mixer,
                         &mut canvas,
+                        &mut fb,
                         &config_path,
                     );
                 }
@@ -1553,6 +1556,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 delta,
                                 &mut mixer,
                                 &mut canvas,
+                                &mut fb,
                                 &config_path,
                             );
                         }
@@ -1917,6 +1921,18 @@ fn apply_window_icon(window: &mut sdl2::video::Window, runtime: &Runtime) {
     window.set_icon(surface);
 }
 
+fn choose_kernel(simd_setting: bool) -> BlitKernel {
+    let forced = std::env::var_os("GALENG_SCALAR").is_some();
+    if forced || !simd_setting {
+        return BlitKernel::Scalar;
+    }
+    if cfg!(target_arch = "x86_64") && std::is_x86_feature_detected!("sse2") {
+        BlitKernel::Sse2
+    } else {
+        BlitKernel::Scalar
+    }
+}
+
 fn set_desktop_fullscreen(
     canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
     on: bool,
@@ -1935,6 +1951,7 @@ fn apply_setting_delta(
     delta: i32,
     mixer: &mut Mixer,
     canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+    fb: &mut Framebuffer,
     config_path: &std::path::Path,
 ) {
     if index == FULLSCREEN_ROW {
@@ -1944,6 +1961,9 @@ fn apply_setting_delta(
         settings.auto_play = !settings.auto_play;
     } else if index == SKIP_UNREAD_ROW {
         settings.skip_unread = !settings.skip_unread;
+    } else if index == SIMD_ROW {
+        settings.simd = !settings.simd;
+        fb.set_kernel(choose_kernel(settings.simd));
     } else if index == AUTO_DELAY_ROW {
         settings.bump_delay(delta);
     } else if index == TEXT_SPEED_ROW {
@@ -1966,6 +1986,7 @@ fn setting_delta(index: usize, sign: i32) -> i32 {
         || index == AUTO_PLAY_ROW
         || index == SKIP_UNREAD_ROW
         || index == UI_LANG_ROW
+        || index == SIMD_ROW
     {
         sign
     } else {

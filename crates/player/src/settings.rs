@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub const CHANNEL_COUNT: usize = 4;
-pub const SETTINGS_ROWS: usize = 10;
+pub const SETTINGS_ROWS: usize = 11;
 pub const FULLSCREEN_ROW: usize = 4;
 pub const AUTO_PLAY_ROW: usize = 5;
 pub const AUTO_DELAY_ROW: usize = 6;
 pub const TEXT_SPEED_ROW: usize = 7;
 pub const UI_LANG_ROW: usize = 8;
 pub const SKIP_UNREAD_ROW: usize = 9;
+pub const SIMD_ROW: usize = 10;
 pub const STEP: i32 = 10;
 pub const DELAY_STEP: u32 = 200;
 pub const DELAY_MIN: u32 = 200;
@@ -96,6 +97,8 @@ pub struct Settings {
     pub ui_language: UiLang,
     #[serde(default)]
     pub skip_unread: bool,
+    #[serde(default = "default_true")]
+    pub simd: bool,
 }
 
 fn hundred() -> u8 {
@@ -108,6 +111,10 @@ fn default_delay() -> u32 {
 
 fn default_speed() -> u8 {
     crate::typewriter::SPEED_DEFAULT
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -123,6 +130,7 @@ impl Default for Settings {
             text_speed: crate::typewriter::SPEED_DEFAULT,
             ui_language: UiLang::Follow,
             skip_unread: false,
+            simd: true,
         }
     }
 }
@@ -142,6 +150,7 @@ impl Settings {
                 .clamp(crate::typewriter::SPEED_MIN, crate::typewriter::SPEED_MAX),
             ui_language: self.ui_language,
             skip_unread: self.skip_unread,
+            simd: self.simd,
         }
     }
 
@@ -272,6 +281,14 @@ pub fn fullscreen_label(locale: &str) -> &'static str {
     }
 }
 
+pub fn simd_label(locale: &str) -> &'static str {
+    match locale {
+        "en" => "SIMD blend",
+        "zh-Hans" => "SIMD混合",
+        _ => "SIMD混合",
+    }
+}
+
 pub fn on_off(locale: &str, on: bool) -> &'static str {
     match (locale, on) {
         ("en", true) => "On",
@@ -315,8 +332,8 @@ pub fn read_config(path: &Path) -> Settings {
 }
 
 pub fn row_rect(index: usize) -> (i32, i32, i32, i32) {
-    let y = 190 + (index as i32) * 72;
-    (360, y, 1200, 64)
+    let y = 96 + (index as i32) * 64;
+    (360, y, 1200, 56)
 }
 
 pub fn hit_row(lx: i32, ly: i32) -> Option<usize> {
@@ -384,6 +401,7 @@ mod tests {
         let loaded = read_config(&path);
         assert!(!loaded.fullscreen);
         assert!(!loaded.skip_unread);
+        assert!(loaded.simd);
         assert_eq!(loaded.ui_language, UiLang::Follow);
         assert_eq!(loaded.master, 80);
         let _ = fs::remove_dir_all(&dir);
@@ -400,7 +418,7 @@ mod tests {
     fn hit_first_row() {
         let (x, y, w, _h) = row_rect(0);
         assert_eq!(hit_row(x + 1, y + 1), Some(0));
-        assert_eq!(hit_row(x + w / 2, y + 200), Some(2));
+        assert_eq!(hit_row(x + w / 2, y + 128), Some(2));
     }
 
     #[test]
