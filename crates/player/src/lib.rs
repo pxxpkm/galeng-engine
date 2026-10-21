@@ -9,6 +9,7 @@ pub mod font;
 pub mod fx;
 pub mod gallery;
 pub mod hud;
+pub mod input;
 pub mod interp;
 pub mod menu;
 #[cfg(windows)]

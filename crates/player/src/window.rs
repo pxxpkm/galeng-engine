@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use sdl2::event::{Event, WindowEvent};
-use sdl2::keyboard::{Keycode, Mod, Scancode};
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -43,6 +42,7 @@ use crate::saypage::{self, ConfirmSay};
 use crate::skip::{ctrl_skips, SkipClock};
 use crate::typewriter::Typewriter;
 use crate::user_paths::UserPaths;
+use crate::input::{apply_action_gate, Action, ActionGateCtx, GateResult, InputMap};
 use crate::vm::{Phase, Runtime, VmError};
 use galeng_explore::ItemUseMode;
 
@@ -99,6 +99,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
     let mut mixer = Mixer::try_new();
     mixer.set_settings(settings);
     let sdl = sdl2::init()?;
+    let input_map = InputMap::load(&paths.input);
     let video = sdl.video()?;
     let mouse_util = sdl.mouse();
     let mut os_cursor_hidden = false;
@@ -207,9 +208,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             .ui_language
             .resolve(&runtime.project.locale)
             .to_string();
+        let kb = events.keyboard_state();
         let ctrl = !overlay
-            && (events.keyboard_state().is_scancode_pressed(Scancode::LCtrl)
-                || events.keyboard_state().is_scancode_pressed(Scancode::RCtrl));
+            && input_map.is_skip_held(|sc| kb.is_scancode_pressed(sc));
         let skipping = ctrl || skip_latch;
 
         let want_pause = !focused || minimized || hidden;
@@ -1106,56 +1107,435 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     );
                 }
                 Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::KpEnter),
+                    keycode: Some(key),
                     keymod,
-                    repeat: false,
-                    ..
-                } if keymod.intersects(Mod::LALTMOD | Mod::RALTMOD) => {
-                    settings.fullscreen = !settings.fullscreen;
-                    set_desktop_fullscreen(&mut canvas, settings.fullscreen);
-                    let _ = write_config(&config_path, &settings);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+                    repeat,
                     ..
                 } => {
-                    if notice.take().is_some()
-                        && !title_open
-                        && !menu_open
-                        && slot_pick.is_none()
-                        && !settings_open
-                        && !gallery_open
-                        && !music_open
-                        && !backlog.open
-                        && title_op.is_none()
-                        && cg_view.is_none()
-                    {
-                        // In-game cancel dismisses notice without advancing.
-                    } else if title_op.take().is_some() {
-                        mixer.set_movie(false);
-                    } else if cg_view.take().is_some() {
-                    } else if gallery_open {
-                        gallery_open = false;
-                    } else if music_open {
-                        music_open = false;
-                        music_playing = None;
-                    } else if settings_open {
-                        let _ = write_config(&config_path, &settings);
-                        settings_open = false;
-                        if settings_from_menu {
-                            menu_open = true;
+                    let Some(action) = input_map.action_for(key, keymod) else {
+                        continue;
+                    };
+                    if matches!(action, Action::Fullscreen) && repeat {
+                        continue;
+                    }
+                    match action {
+                        Action::Fullscreen => {
+                            settings.fullscreen = !settings.fullscreen;
+                            set_desktop_fullscreen(&mut canvas, settings.fullscreen);
+                            let _ = write_config(&config_path, &settings);
                         }
-                    } else if backlog.open {
-                        backlog.close();
-                    } else if slot_pick.take().is_some() {
-                        if !title_open {
-                            menu_open = true;
+                        Action::Cancel => {
+                            if notice.take().is_some()
+                                && !title_open
+                                && !menu_open
+                                && slot_pick.is_none()
+                                && !settings_open
+                                && !gallery_open
+                                && !music_open
+                                && !backlog.open
+                                && title_op.is_none()
+                                && cg_view.is_none()
+                            {
+                                // In-game cancel dismisses notice without advancing.
+                            } else if title_op.take().is_some() {
+                                mixer.set_movie(false);
+                            } else if cg_view.take().is_some() {
+                            } else if gallery_open {
+                                gallery_open = false;
+                            } else if music_open {
+                                music_open = false;
+                                music_playing = None;
+                            } else if settings_open {
+                                let _ = write_config(&config_path, &settings);
+                                settings_open = false;
+                                if settings_from_menu {
+                                    menu_open = true;
+                                }
+                            } else if backlog.open {
+                                backlog.close();
+                            } else if slot_pick.take().is_some() {
+                                if !title_open {
+                                    menu_open = true;
+                                }
+                            } else if title_open {
+                            } else {
+                                menu_open = !menu_open;
+                                if menu_open {
+                                    menu_sel = 0;
+                                }
+                            }
                         }
-                    } else if title_open {
-                    } else {
-                        menu_open = !menu_open;
-                        if menu_open {
-                            menu_sel = 0;
+                        Action::Up => {
+                            if slot_pick.is_some() {
+                                slot_sel = wrap_index(slot_sel, -1, SLOT_COUNT);
+                            } else if menu_open {
+                                menu_sel = wrap_index(menu_sel, -1, MENU_COUNT);
+                            } else if gallery_open && cg_view.is_none() {
+                                let n = runtime.project.cg.as_ref().map(|v| v.len()).unwrap_or(0);
+                                if n > 0 {
+                                    gallery_sel = wrap_index(gallery_sel, -1, n);
+                                }
+                            } else if music_open {
+                                let n = runtime
+                                    .project
+                                    .music_gallery
+                                    .as_ref()
+                                    .map(|v| v.len())
+                                    .unwrap_or(0);
+                                if n > 0 {
+                                    music_sel = wrap_index(music_sel, -1, n);
+                                }
+                            } else if settings_open {
+                                settings_sel = wrap_index(settings_sel, -1, SETTINGS_ROWS);
+                            } else if !overlay
+                                && view.phase == Phase::Choices
+                                && !view.choices.is_empty()
+                            {
+                                choice_sel = wrap_index(choice_sel, -1, view.choices.len());
+                            } else if title_open {
+                                title_sel = wrap_index(title_sel, -1, TITLE_COUNT);
+                            }
+                        }
+                        Action::Down => {
+                            if slot_pick.is_some() {
+                                slot_sel = wrap_index(slot_sel, 1, SLOT_COUNT);
+                            } else if menu_open {
+                                menu_sel = wrap_index(menu_sel, 1, MENU_COUNT);
+                            } else if gallery_open && cg_view.is_none() {
+                                let n = runtime.project.cg.as_ref().map(|v| v.len()).unwrap_or(0);
+                                if n > 0 {
+                                    gallery_sel = wrap_index(gallery_sel, 1, n);
+                                }
+                            } else if music_open {
+                                let n = runtime
+                                    .project
+                                    .music_gallery
+                                    .as_ref()
+                                    .map(|v| v.len())
+                                    .unwrap_or(0);
+                                if n > 0 {
+                                    music_sel = wrap_index(music_sel, 1, n);
+                                }
+                            } else if settings_open {
+                                settings_sel = wrap_index(settings_sel, 1, SETTINGS_ROWS);
+                            } else if !overlay
+                                && view.phase == Phase::Choices
+                                && !view.choices.is_empty()
+                            {
+                                choice_sel = wrap_index(choice_sel, 1, view.choices.len());
+                            } else if title_open {
+                                title_sel = wrap_index(title_sel, 1, TITLE_COUNT);
+                            }
+                        }
+                        Action::Left => {
+                            if settings_open {
+                                apply_setting_delta(
+                                    &mut settings,
+                                    settings_sel,
+                                    setting_delta(settings_sel, -1),
+                                    &mut mixer,
+                                    &mut canvas,
+                                    &mut fb,
+                                    &config_path,
+                                );
+                            }
+                        }
+                        Action::Right => {
+                            if settings_open {
+                                apply_setting_delta(
+                                    &mut settings,
+                                    settings_sel,
+                                    setting_delta(settings_sel, 1),
+                                    &mut mixer,
+                                    &mut canvas,
+                                    &mut fb,
+                                    &config_path,
+                                );
+                            }
+                        }
+                        Action::Slot(digit) => {
+                            match apply_action_gate(
+                                Action::Slot(digit),
+                                ActionGateCtx {
+                                    fade_active: false,
+                                    explore: false,
+                                    slot_pick: slot_pick.is_some(),
+                                },
+                            ) {
+                                GateResult::Dispatch(Action::Slot(d)) => {
+                                    if let Some(idx) = digit_to_slot_index(d) {
+                                        slot_sel = idx;
+                                        if apply_numbered_slot(
+                                            &mut runtime,
+                                            slot_pick,
+                                            idx,
+                                            &mut fade,
+                                            &mut auto_until,
+                                            &mut auto_key,
+                                            last_thumb.as_deref(),
+                                            &mut notice,
+                                            &save_dir,
+                                        ) {
+                                            slot_pick = None;
+                                            menu_open = false;
+                                            title_open = false;
+                                            title_dirty = false;
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        Action::Save => {
+                            if !title_open {
+                                let dir = &save_dir;
+                                let _ = write_slot(&dir, 0, &runtime.to_save());
+                                persist_thumb(&dir, 0, last_thumb.as_deref());
+                            }
+                        }
+                        Action::Load => {
+                            if load_slot(
+                                &mut runtime,
+                                0,
+                                &mut fade,
+                                &mut auto_until,
+                                &mut auto_key,
+                                &mut notice,
+                                &save_dir,
+                            ) {
+                                title_open = false;
+                                title_dirty = false;
+                            }
+                        }
+                        Action::Skip => {
+                            // Hold-to-skip is polled via keyboard_state / is_skip_held.
+                        }
+                        Action::Advance => {
+                            if slot_pick.is_some() {
+                                if apply_numbered_slot(
+                                    &mut runtime,
+                                    slot_pick,
+                                    slot_sel,
+                                    &mut fade,
+                                    &mut auto_until,
+                                    &mut auto_key,
+                                    last_thumb.as_deref(),
+                                    &mut notice,
+                                    &save_dir,
+                                ) {
+                                    slot_pick = None;
+                                    menu_open = false;
+                                    title_open = false;
+                                    title_dirty = false;
+                                }
+                            } else if gallery_open {
+                                if cg_view.take().is_none() {
+                                    let cgs = runtime.project.cg.as_deref().unwrap_or(&[]);
+                                    if let Some(item) = cgs.get(gallery_sel) {
+                                        if seen.has(&item.asset) {
+                                            cg_view = Some(gallery_sel);
+                                        }
+                                    }
+                                }
+                            } else if music_open {
+                                let n = runtime
+                                    .project
+                                    .music_gallery
+                                    .as_ref()
+                                    .map(|v| v.len())
+                                    .unwrap_or(0);
+                                if n > 0 {
+                                    music_playing = Some(music_sel.min(n - 1));
+                                }
+                            } else if title_op.is_some() {
+                                title_op = None;
+                                mixer.set_movie(false);
+                            } else if title_open && !settings_open && !gallery_open && !music_open {
+                                if notice.take().is_some() {
+                                    continue;
+                                }
+                                match TITLE_ACTIONS[title_sel] {
+                                    TitleAction::NewGame => {
+                                        start_new_game(
+                                            &mut runtime,
+                                            title_dirty,
+                                            &mut fade,
+                                            &mut auto_until,
+                                            &mut auto_key,
+                                        );
+                                        title_open = false;
+                                        title_dirty = false;
+                                        title_op = begin_title_op(&runtime);
+                                        if title_op.is_some() {
+                                            mixer.set_movie(true);
+                                        }
+                                    }
+                                    TitleAction::Continue => {
+                                        if load_slot(
+                                            &mut runtime,
+                                            AUTO_SLOT,
+                                            &mut fade,
+                                            &mut auto_until,
+                                            &mut auto_key,
+                                            &mut notice,
+                                            &save_dir,
+                                        ) {
+                                            title_open = false;
+                                            title_dirty = false;
+                                        }
+                                    }
+                                    TitleAction::LoadSlots => {
+                                        slot_pick = Some(false);
+                                        slot_sel = 0;
+                                    }
+                                    TitleAction::Gallery => {
+                                        gallery_open = true;
+                                        gallery_sel = 0;
+                                        cg_view = None;
+                                    }
+                                    TitleAction::Music => {
+                                        music_open = true;
+                                        music_sel = 0;
+                                        music_playing = None;
+                                    }
+                                    TitleAction::Settings => {
+                                        settings_open = true;
+                                        settings_sel = 0;
+                                        settings_from_menu = false;
+                                    }
+                                    TitleAction::Quit => break 'running,
+                                }
+                            } else if menu_open {
+                                match ACTIONS[menu_sel] {
+                                    MenuAction::Continue => menu_open = false,
+                                    MenuAction::QuickSave => {
+                                        let dir = &save_dir;
+                                        let _ = write_slot(&dir, 0, &runtime.to_save());
+                                        persist_thumb(&dir, 0, last_thumb.as_deref());
+                                        menu_open = false;
+                                    }
+                                    MenuAction::QuickLoad => {
+                                        if load_slot(
+                                            &mut runtime,
+                                            0,
+                                            &mut fade,
+                                            &mut auto_until,
+                                            &mut auto_key,
+                                            &mut notice,
+                                            &save_dir,
+                                        ) {
+                                            menu_open = false;
+                                        }
+                                    }
+                                    MenuAction::AutoLoad => {
+                                        if load_slot(
+                                            &mut runtime,
+                                            AUTO_SLOT,
+                                            &mut fade,
+                                            &mut auto_until,
+                                            &mut auto_key,
+                                            &mut notice,
+                                            &save_dir,
+                                        ) {
+                                            menu_open = false;
+                                        }
+                                    }
+                                    MenuAction::SaveSlots => {
+                                        slot_pick = Some(true);
+                                        slot_sel = 0;
+                                    }
+                                    MenuAction::LoadSlots => {
+                                        slot_pick = Some(false);
+                                        slot_sel = 0;
+                                    }
+                                    MenuAction::Settings => {
+                                        settings_open = true;
+                                        settings_sel = 0;
+                                        settings_from_menu = true;
+                                        menu_open = false;
+                                    }
+                                    MenuAction::ToTitle => {
+                                        go_to_title(
+                                            &mut title_open,
+                                            &mut title_sel,
+                                            &mut title_dirty,
+                                            &mut menu_open,
+                                            &mut slot_pick,
+                                            &mut backlog,
+                                            &mut gallery_open,
+                                            &mut cg_view,
+                                            &mut music_open,
+                                            &mut music_playing,
+                                            &mut fade,
+                                            &mut ui_hidden,
+                                            &mut skip_latch,
+                                        );
+                                    }
+                                    MenuAction::Quit => break 'running,
+                                }
+                            } else if backlog.open {
+                                backlog.close();
+                            } else {
+                                if ui_hidden {
+                                    ui_hidden = false;
+                                    continue;
+                                }
+                                let gate = apply_action_gate(
+                                    Action::Advance,
+                                    ActionGateCtx {
+                                        fade_active: fade.is_some(),
+                                        explore: view.phase == Phase::Explore,
+                                        slot_pick: false,
+                                    },
+                                );
+                                match gate {
+                                    GateResult::ClearFade => {
+                                        fade.take();
+                                        continue;
+                                    }
+                                    GateResult::Ignore => continue,
+                                    GateResult::Dispatch(_) => {}
+                                }
+                                if notice.take().is_some() {
+                                    continue;
+                                }
+                                if matches!(view.phase, Phase::Ended | Phase::MissingScene(_)) {
+                                    go_to_title(
+                                        &mut title_open,
+                                        &mut title_sel,
+                                        &mut title_dirty,
+                                        &mut menu_open,
+                                        &mut slot_pick,
+                                        &mut backlog,
+                                        &mut gallery_open,
+                                        &mut cg_view,
+                                        &mut music_open,
+                                        &mut music_playing,
+                                        &mut fade,
+                                        &mut ui_hidden,
+                                        &mut skip_latch,
+                                    );
+                                    continue;
+                                }
+                                if view.phase == Phase::Choices {
+                                    if runtime.choose(choice_sel) {
+                                        let dir = &save_dir;
+                                        let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
+                                    }
+                                    continue;
+                                }
+                                if view.phase == Phase::Dialogue {
+                                    apply_confirm_say(
+                                        &mut typewriter,
+                                        &mut say_page,
+                                        say_page_count,
+                                        &mut runtime,
+                                        &mut seen,
+                                    );
+                                    continue;
+                                }
+                                advance_reading(&mut runtime, &mut seen);
+                            }
                         }
                     }
                 }
@@ -1194,430 +1574,6 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     } else if dy < 0 {
                         backlog.wheel_down();
                     }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if slot_pick.is_some() => {
-                    slot_sel = wrap_index(slot_sel, -1, SLOT_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if slot_pick.is_some() => {
-                    slot_sel = wrap_index(slot_sel, 1, SLOT_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if menu_open => {
-                    menu_sel = wrap_index(menu_sel, -1, MENU_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if menu_open => {
-                    menu_sel = wrap_index(menu_sel, 1, MENU_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if gallery_open && cg_view.is_none() => {
-                    let n = runtime.project.cg.as_ref().map(|v| v.len()).unwrap_or(0);
-                    if n > 0 {
-                        gallery_sel = wrap_index(gallery_sel, -1, n);
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if gallery_open && cg_view.is_none() => {
-                    let n = runtime.project.cg.as_ref().map(|v| v.len()).unwrap_or(0);
-                    if n > 0 {
-                        gallery_sel = wrap_index(gallery_sel, 1, n);
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if music_open => {
-                    let n = runtime
-                        .project
-                        .music_gallery
-                        .as_ref()
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    if n > 0 {
-                        music_sel = wrap_index(music_sel, -1, n);
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if music_open => {
-                    let n = runtime
-                        .project
-                        .music_gallery
-                        .as_ref()
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    if n > 0 {
-                        music_sel = wrap_index(music_sel, 1, n);
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if settings_open => {
-                    settings_sel = wrap_index(settings_sel, -1, SETTINGS_ROWS);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if settings_open => {
-                    settings_sel = wrap_index(settings_sel, 1, SETTINGS_ROWS);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Left),
-                    ..
-                } if settings_open => {
-                    apply_setting_delta(
-                        &mut settings,
-                        settings_sel,
-                        setting_delta(settings_sel, -1),
-                        &mut mixer,
-                        &mut canvas,
-                        &mut fb,
-                        &config_path,
-                    );
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Right),
-                    ..
-                } if settings_open => {
-                    apply_setting_delta(
-                        &mut settings,
-                        settings_sel,
-                        setting_delta(settings_sel, 1),
-                        &mut mixer,
-                        &mut canvas,
-                        &mut fb,
-                        &config_path,
-                    );
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if !overlay && view.phase == Phase::Choices && !view.choices.is_empty() => {
-                    choice_sel = wrap_index(choice_sel, -1, view.choices.len());
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if !overlay && view.phase == Phase::Choices && !view.choices.is_empty() => {
-                    choice_sel = wrap_index(choice_sel, 1, view.choices.len());
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } if title_open => {
-                    title_sel = wrap_index(title_sel, -1, TITLE_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } if title_open => {
-                    title_sel = wrap_index(title_sel, 1, TITLE_COUNT);
-                }
-                Event::KeyDown {
-                    keycode: Some(code),
-                    ..
-                } if slot_pick.is_some() && digit_from_key(code) != 0 => {
-                    if let Some(idx) = digit_to_slot_index(digit_from_key(code)) {
-                        slot_sel = idx;
-                        if apply_numbered_slot(
-                            &mut runtime,
-                            slot_pick,
-                            idx,
-                            &mut fade,
-                            &mut auto_until,
-                            &mut auto_key,
-                            last_thumb.as_deref(),
-                            &mut notice,
-                            &save_dir,
-                        ) {
-                            slot_pick = None;
-                            menu_open = false;
-                            title_open = false;
-                            title_dirty = false;
-                        }
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if slot_pick.is_some() => {
-                    if apply_numbered_slot(
-                        &mut runtime,
-                        slot_pick,
-                        slot_sel,
-                        &mut fade,
-                        &mut auto_until,
-                        &mut auto_key,
-                        last_thumb.as_deref(),
-                        &mut notice,
-                        &save_dir,
-                    ) {
-                        slot_pick = None;
-                        menu_open = false;
-                        title_open = false;
-                        title_dirty = false;
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if gallery_open => {
-                    if cg_view.take().is_none() {
-                        let cgs = runtime.project.cg.as_deref().unwrap_or(&[]);
-                        if let Some(item) = cgs.get(gallery_sel) {
-                            if seen.has(&item.asset) {
-                                cg_view = Some(gallery_sel);
-                            }
-                        }
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if music_open => {
-                    let n = runtime
-                        .project
-                        .music_gallery
-                        .as_ref()
-                        .map(|v| v.len())
-                        .unwrap_or(0);
-                    if n > 0 {
-                        music_playing = Some(music_sel.min(n - 1));
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if title_op.is_some() => {
-                    title_op = None;
-                    mixer.set_movie(false);
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if title_open && !settings_open && !gallery_open && !music_open => {
-                    if notice.take().is_some() {
-                        continue;
-                    }
-                    match TITLE_ACTIONS[title_sel] {
-                        TitleAction::NewGame => {
-                            start_new_game(
-                                &mut runtime,
-                                title_dirty,
-                                &mut fade,
-                                &mut auto_until,
-                                &mut auto_key,
-                            );
-                            title_open = false;
-                            title_dirty = false;
-                            title_op = begin_title_op(&runtime);
-                            if title_op.is_some() {
-                                mixer.set_movie(true);
-                            }
-                        }
-                        TitleAction::Continue => {
-                            if load_slot(
-                                &mut runtime,
-                                AUTO_SLOT,
-                                &mut fade,
-                                &mut auto_until,
-                                &mut auto_key,
-                                &mut notice,
-                                &save_dir,
-                            ) {
-                                title_open = false;
-                                title_dirty = false;
-                            }
-                        }
-                        TitleAction::LoadSlots => {
-                            slot_pick = Some(false);
-                            slot_sel = 0;
-                        }
-                        TitleAction::Gallery => {
-                            gallery_open = true;
-                            gallery_sel = 0;
-                            cg_view = None;
-                        }
-                        TitleAction::Music => {
-                            music_open = true;
-                            music_sel = 0;
-                            music_playing = None;
-                        }
-                        TitleAction::Settings => {
-                            settings_open = true;
-                            settings_sel = 0;
-                            settings_from_menu = false;
-                        }
-                        TitleAction::Quit => break 'running,
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if menu_open => {
-                    match ACTIONS[menu_sel] {
-                        MenuAction::Continue => menu_open = false,
-                        MenuAction::QuickSave => {
-                            let dir = &save_dir;
-                            let _ = write_slot(&dir, 0, &runtime.to_save());
-                            persist_thumb(&dir, 0, last_thumb.as_deref());
-                            menu_open = false;
-                        }
-                        MenuAction::QuickLoad => {
-                            if load_slot(&mut runtime, 0, &mut fade, &mut auto_until, &mut auto_key,
-                                &mut notice, &save_dir)
-                            {
-                                menu_open = false;
-                            }
-                        }
-                        MenuAction::AutoLoad => {
-                            if load_slot(
-                                &mut runtime,
-                                AUTO_SLOT,
-                                &mut fade,
-                                &mut auto_until,
-                                &mut auto_key,
-                                &mut notice,
-                                &save_dir,
-                            ) {
-                                menu_open = false;
-                            }
-                        }
-                        MenuAction::SaveSlots => {
-                            slot_pick = Some(true);
-                            slot_sel = 0;
-                        }
-                        MenuAction::LoadSlots => {
-                            slot_pick = Some(false);
-                            slot_sel = 0;
-                        }
-                        MenuAction::Settings => {
-                            settings_open = true;
-                            settings_sel = 0;
-                            settings_from_menu = true;
-                            menu_open = false;
-                        }
-                        MenuAction::ToTitle => {
-                            go_to_title(
-                                &mut title_open,
-                                &mut title_sel,
-                                &mut title_dirty,
-                                &mut menu_open,
-                                &mut slot_pick,
-                                &mut backlog,
-                                &mut gallery_open,
-                                &mut cg_view,
-                                &mut music_open,
-                                &mut music_playing,
-                                &mut fade,
-                                &mut ui_hidden,
-                                &mut skip_latch,
-                            );
-                        }
-                        MenuAction::Quit => break 'running,
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::F5),
-                    ..
-                } if !title_open => {
-                    let dir = &save_dir;
-                    let _ = write_slot(&dir, 0, &runtime.to_save());
-                    persist_thumb(&dir, 0, last_thumb.as_deref());
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::F9),
-                    ..
-                } => {
-                    if load_slot(
-                        &mut runtime,
-                        0,
-                        &mut fade,
-                        &mut auto_until,
-                        &mut auto_key,
-                        &mut notice,
-                        &save_dir,
-                    ) {
-                        title_open = false;
-                        title_dirty = false;
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } if backlog.open => {
-                    backlog.close();
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Return) | Some(Keycode::Space),
-                    ..
-                } => {
-                    if ui_hidden {
-                        ui_hidden = false;
-                        continue;
-                    }
-                    if fade.take().is_some() {
-                        continue;
-                    }
-                    if notice.take().is_some() {
-                        continue;
-                    }
-                    if matches!(view.phase, Phase::Ended | Phase::MissingScene(_)) {
-                        go_to_title(
-                            &mut title_open,
-                            &mut title_sel,
-                            &mut title_dirty,
-                            &mut menu_open,
-                            &mut slot_pick,
-                            &mut backlog,
-                            &mut gallery_open,
-                            &mut cg_view,
-                            &mut music_open,
-                            &mut music_playing,
-                            &mut fade,
-                            &mut ui_hidden,
-                            &mut skip_latch,
-                        );
-                        continue;
-                    }
-                    if view.phase == Phase::Choices {
-                        if runtime.choose(choice_sel) {
-                            let dir = &save_dir;
-                            let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
-                        }
-                        continue;
-                    }
-                    if view.phase == Phase::Dialogue {
-                        apply_confirm_say(
-                            &mut typewriter,
-                            &mut say_page,
-                            say_page_count,
-                            &mut runtime,
-                            &mut seen,
-                        );
-                        continue;
-                    }
-                    if view.phase == Phase::Explore {
-                        // Space/Enter does not click hotspots — wait for mouse.
-                        continue;
-                    }
-                    advance_reading(&mut runtime, &mut seen);
                 }
                 Event::MouseMotion { x, y, .. } => {
                     if let InvDrag::Press {
@@ -2165,20 +2121,6 @@ fn setting_delta(index: usize, sign: i32) -> i32 {
     }
 }
 
-fn digit_from_key(key: Keycode) -> u8 {
-    match key {
-        Keycode::Num1 | Keycode::Kp1 => 1,
-        Keycode::Num2 | Keycode::Kp2 => 2,
-        Keycode::Num3 | Keycode::Kp3 => 3,
-        Keycode::Num4 | Keycode::Kp4 => 4,
-        Keycode::Num5 | Keycode::Kp5 => 5,
-        Keycode::Num6 | Keycode::Kp6 => 6,
-        Keycode::Num7 | Keycode::Kp7 => 7,
-        Keycode::Num8 | Keycode::Kp8 => 8,
-        Keycode::Num9 | Keycode::Kp9 => 9,
-        _ => 0,
-    }
-}
 
 fn go_to_title(
     title_open: &mut bool,
