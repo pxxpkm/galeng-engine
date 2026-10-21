@@ -94,7 +94,22 @@ pub fn validate_project_value(value: &Value) -> Result<Project, Error> {
 }
 
 pub fn validate_scene_value(value: &Value) -> Result<Scene, Error> {
-    apply_schema(scene_validator(), value)
+    let scene: Scene = apply_schema(scene_validator(), value)?;
+    reject_duplicate_beat_ids(&scene)?;
+    Ok(scene)
+}
+
+fn reject_duplicate_beat_ids(scene: &Scene) -> Result<(), Error> {
+    let mut seen = std::collections::BTreeSet::new();
+    for beat in &scene.beats {
+        let Some(id) = beat.id.as_deref() else {
+            continue;
+        };
+        if !seen.insert(id) {
+            return Err(Error::Schema(format!("duplicate beat id `{id}`")));
+        }
+    }
+    Ok(())
 }
 
 pub fn validate_project_str(text: &str) -> Result<Project, Error> {

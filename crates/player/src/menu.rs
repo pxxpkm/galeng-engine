@@ -183,10 +183,18 @@ pub fn digit_to_slot_index(digit: u8) -> Option<usize> {
     }
 }
 
-pub fn slot_row_label(slot: u8, scene: Option<&str>) -> String {
-    match scene {
-        Some(id) => format!("{slot:02}  {id}"),
-        None => format!("{slot:02}  —"),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotRow {
+    Empty,
+    Ok(String),
+    Unreadable,
+}
+
+pub fn slot_row_label(slot: u8, row: &SlotRow) -> String {
+    match row {
+        SlotRow::Empty => format!("{slot:02}  —"),
+        SlotRow::Ok(label) => format!("{slot:02}  {label}"),
+        SlotRow::Unreadable => format!("{slot:02}  ×"),
     }
 }
 
@@ -220,12 +228,16 @@ mod tests {
 
     #[test]
     fn empty_slot_label() {
-        assert_eq!(slot_row_label(3, None), "03  —");
-        assert_eq!(slot_row_label(3, Some("park_01")), "03  park_01");
+        assert_eq!(slot_row_label(3, &SlotRow::Empty), "03  —");
         assert_eq!(
-            slot_row_label(1, Some("公園・午後  08-14 12:00")),
+            slot_row_label(3, &SlotRow::Ok("park_01".into())),
+            "03  park_01"
+        );
+        assert_eq!(
+            slot_row_label(1, &SlotRow::Ok("公園・午後  08-14 12:00".into())),
             "01  公園・午後  08-14 12:00"
         );
+        assert_eq!(slot_row_label(1, &SlotRow::Unreadable), "01  ×");
     }
 
     #[test]

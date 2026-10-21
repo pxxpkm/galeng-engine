@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TRACK_KEYS, addStageChar, adjustIndexAfterMove, adjustIndexAfterMoveBeats, applyAsset, applyAssetAt, applyAssetToMany, beatFoldSummary, beatSummary, clearBeatsLabel, clearBeatsTrack, clearBeatTrack, closeAmb, closeCg, duplicateBeat, encodeAssetDrag, encodeBeatDrag, ensureGalleryItem, fallbackStageCharId, hasTrackContent, inheritCamera, insertBeatAfter, moveBeat, moveBeats, newBeatAfter, parseAssetDrag, parseBeatDrag, parseBeatDragSet, patchSay, patchStageChar, pasteBeatField, rangeIndices, removeBeatAt, removeBeatsAt, removeStageChar, resetCamera, seDisplay, selectionAfterMoveBeats, setAmb, setAutoAdvance, setBeatLabel, setBg, setBgMs, setBgTrans, setCamera, setCameraField, setCharOffset, setCharSlideMs, setCg, setFx, setMovie, setSayVoice, setSe, toggleIndex } from "./beats";
+import { TRACK_KEYS, addStageChar, adjustIndexAfterMove, adjustIndexAfterMoveBeats, applyAsset, applyAssetAt, applyAssetToMany, beatFoldSummary, beatSummary, clearBeatsLabel, clearBeatsTrack, clearBeatTrack, closeAmb, closeCg, BEAT_ID_RE, duplicateBeat, encodeAssetDrag, encodeBeatDrag, ensureBeatIds, ensureGalleryItem, fallbackStageCharId, hasTrackContent, inheritCamera, insertBeatAfter, moveBeat, moveBeats, newBeatAfter, parseAssetDrag, parseBeatDrag, parseBeatDragSet, patchSay, patchStageChar, pasteBeatField, rangeIndices, removeBeatAt, removeBeatsAt, removeStageChar, resetCamera, seDisplay, selectionAfterMoveBeats, setAmb, setAutoAdvance, setBeatLabel, setBg, setBgMs, setBgTrans, setCamera, setCameraField, setCharOffset, setCharSlideMs, setCg, setFx, setMovie, setSayVoice, setSe, toggleIndex } from "./beats";
 import type { Beat } from "./types";
 
 describe("applyAsset", () => {
@@ -232,7 +232,9 @@ describe("insert and remove", () => {
     const beats: Beat[] = [{ bg: { asset: "a" } }, { bg: { asset: "b" } }];
     const next = insertBeatAfter(beats, 0);
     expect(next).toHaveLength(3);
-    expect(next[1]).toEqual({});
+    expect(next[1]?.bg).toBeUndefined();
+    expect(next[1]?.say).toBeUndefined();
+    expect(next[1]?.id).toMatch(BEAT_ID_RE);
     expect(next[2]?.bg?.asset).toBe("b");
   });
 
@@ -246,16 +248,19 @@ describe("insert and remove", () => {
     ];
     const next = insertBeatAfter(beats, 0);
     expect(next).toHaveLength(3);
-    expect(next[1]).toEqual({ say: { speaker: "sora", text: "" } });
+    expect(next[1]?.say).toEqual({ speaker: "sora", text: "" });
+    expect(next[1]?.id).toMatch(BEAT_ID_RE);
     expect(next[1]?.chars).toBeUndefined();
     expect(next[0]?.say?.text).toBe("今天風真好。");
     expect(next[2]?.label).toBe("later");
   });
 
-  it("treats a blank speaker as an empty beat", () => {
-    expect(newBeatAfter({ say: { speaker: "  ", text: "x" } })).toEqual({});
-    expect(newBeatAfter({})).toEqual({});
-    expect(newBeatAfter(undefined)).toEqual({});
+  it("treats a blank speaker as an empty beat with a fresh id", () => {
+    for (const prev of [{ say: { speaker: "  ", text: "x" } }, {}, undefined] as const) {
+      const beat = newBeatAfter(prev as never);
+      expect(beat.say).toBeUndefined();
+      expect(beat.id).toMatch(BEAT_ID_RE);
+    }
   });
 
   it("refuses to delete the last beat", () => {
@@ -279,7 +284,9 @@ describe("duplicateBeat", () => {
     expect(next[0]?.label).toBe("a");
     expect(next[1]?.label).toBe("a");
     expect(next[2]?.label).toBe("b");
-    expect(next[1]).toEqual(next[0]);
+    expect(next[1]?.id).toMatch(BEAT_ID_RE);
+    expect(next[0]?.id).not.toBe(next[1]?.id);
+    expect({ ...next[1], id: undefined }).toEqual({ ...next[0], id: undefined });
     expect(next[1]).not.toBe(next[0]);
     expect(next[1]?.say).not.toBe(next[0]?.say);
     expect(next[1]?.chars).not.toBe(next[0]?.chars);
@@ -297,6 +304,42 @@ describe("duplicateBeat", () => {
     expect(duplicateBeat([], 0)).toHaveLength(0);
   });
 });
+
+describe("ensureBeatIds", () => {
+  it("keeps a legal id and mints otherwise", () => {
+    const legal = "b0123456789abcdef";
+    const out = ensureBeatIds([
+      { id: legal, label: "a" },
+      { id: "bad", label: "b" },
+      { label: "c" },
+      "skip",
+    ]) as Array<Record<string, unknown> | string>;
+    expect(out).toHaveLength(4);
+    expect((out[0] as { id: string }).id).toBe(legal);
+    expect((out[1] as { id: string }).id).toMatch(BEAT_ID_RE);
+    expect((out[1] as { id: string }).id).not.toBe("bad");
+    expect((out[1] as { label: string }).label).toBe("b");
+    expect((out[2] as { id: string }).id).toMatch(BEAT_ID_RE);
+    expect(out[3]).toBe("skip");
+  });
+
+  it("returns [] for non-arrays", () => {
+    expect(ensureBeatIds(null)).toEqual([]);
+    expect(ensureBeatIds({})).toEqual([]);
+  });
+});
+
+describe("duplicateBeat clears cloned id", () => {
+  it("does not reuse the source id", () => {
+    const id = "b0123456789abcdef";
+    const beats: Beat[] = [{ id, label: "a" }];
+    const next = duplicateBeat(beats, 0);
+    expect(next[0]?.id).toBe(id);
+    expect(next[1]?.id).toMatch(BEAT_ID_RE);
+    expect(next[1]?.id).not.toBe(id);
+  });
+});
+
 
 describe("moveBeat", () => {
   const beats: Beat[] = [{ label: "a" }, { label: "b" }, { label: "c" }];

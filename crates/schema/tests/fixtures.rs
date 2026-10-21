@@ -641,3 +641,37 @@ fn item_use_mode_defaults_aim_and_parses_drag() {
     let s = serde_json::to_string(&drag).unwrap();
     assert!(s.contains("useMode"), "{s}");
 }
+
+#[test]
+fn duplicate_beat_id_rejected() {
+    let text = r#"{
+      "id": "x",
+      "beats": [
+        { "id": "b0123456789abcdef" },
+        { "id": "b0123456789abcdef" }
+      ]
+    }"#;
+    let err = validate_scene_str(text).expect_err("dup id");
+    let msg = err.to_string();
+    assert!(msg.contains("duplicate beat id"), "got {msg}");
+}
+
+#[test]
+fn beat_id_round_trips() {
+    let text = r#"{
+      "id": "x",
+      "beats": [{ "id": "b0123456789abcdef", "label": "a" }]
+    }"#;
+    let scene = validate_scene_str(text).expect("ok");
+    assert_eq!(scene.beats[0].id.as_deref(), Some("b0123456789abcdef"));
+}
+
+#[test]
+fn illegal_beat_id_rejected() {
+    let text = r#"{
+      "id": "x",
+      "beats": [{ "id": "" }]
+    }"#;
+    assert!(validate_scene_str(text).is_err());
+}
+

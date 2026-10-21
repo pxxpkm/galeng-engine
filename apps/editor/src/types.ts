@@ -131,6 +131,8 @@ export interface Beat {
   cg?: string | null;
   set?: Record<string, string | number | boolean>;
   label?: string;
+  /** Stable identity. Pattern ^b[0-9a-f]{16}$. */
+  id?: string;
 }
 
 export interface ChoiceOption {

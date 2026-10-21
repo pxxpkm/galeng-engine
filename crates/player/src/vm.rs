@@ -24,6 +24,8 @@ pub enum VmError {
     Pak(#[from] galeng_packer::Error),
     #[error("explore: {0}")]
     Explore(#[from] galeng_explore::Error),
+    #[error("beat not found in scene `{0}`")]
+    BeatNotFound(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,11 +331,18 @@ impl Runtime {
             .and_then(|s| s.title.as_deref())
             .filter(|t| !t.is_empty())
             .unwrap_or(self.scene_id.as_str());
+        let beat_id = self
+            .scenes
+            .get(&self.scene_id)
+            .and_then(|s| s.beats.get(self.beat_index))
+            .and_then(|b| b.id.clone());
         crate::save::SaveGame {
             schema_version: self.project.schema_version,
             game_id: self.project.id.clone(),
             scene: self.scene_id.clone(),
             beat_index: self.beat_index,
+            beat_id,
+            save_format: crate::save::SAVE_FORMAT,
             vars: self
                 .vars
                 .iter()
@@ -351,8 +360,15 @@ impl Runtime {
             self.phase = Phase::MissingScene(save.scene.clone());
             return Ok(());
         }
+        let resume = {
+            let scene = &self.scenes[&save.scene];
+            crate::save::resolve_beat(&scene.beats, save.beat_id.as_deref(), save.beat_index)
+        };
+        let crate::save::Resume::At(beat_index) = resume else {
+            return Err(VmError::BeatNotFound(save.scene.clone()));
+        };
         self.scene_id = save.scene.clone();
-        self.beat_index = save.beat_index;
+        self.beat_index = beat_index;
         self.vars = save.vars.iter().map(|(k, v)| (k.clone(), *v)).collect();
         self.carried_bgm = save.carried_bgm.clone();
         self.last_say = None;
@@ -361,6 +377,14 @@ impl Runtime {
         self.pending_se.clear();
         self.settle();
         Ok(())
+    }
+
+    /// Id of the beat at the current index, if any.
+    pub fn current_beat_id(&self) -> Option<&str> {
+        self.scenes
+            .get(&self.scene_id)
+            .and_then(|s| s.beats.get(self.beat_index))
+            .and_then(|b| b.id.as_deref())
     }
 
     pub fn view(&self) -> View {

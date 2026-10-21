@@ -11,15 +11,15 @@ use crate::audio::Mixer;
 use crate::backlog::{self, BacklogView};
 use crate::draw::{
     draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_explore_cursor,
-    draw_gallery, draw_hud, draw_menu, draw_music, draw_one_choice, draw_settings, draw_slots,
-    draw_movie_skip, draw_title, draw_view, explore_cursor_kind, hit_choice, hit_explore_action,
-    hit_explore_item, letterbox, window_to_logical, ButtonState, EXPLORE_ITEM_H,
-    EXPLORE_ITEM_W,
+    draw_gallery, draw_hud, draw_menu, draw_music, draw_notice, draw_one_choice, draw_settings,
+    draw_slots, draw_movie_skip, draw_title, draw_title_notice, draw_view, explore_cursor_kind,
+    hit_choice, hit_explore_action, hit_explore_item, letterbox, window_to_logical, ButtonState,
+    Notice, EXPLORE_ITEM_H, EXPLORE_ITEM_W,
 };
 use crate::hud::{self, HudAction, HUD_ACTIONS};
 use crate::menu::{
     digit_to_slot_index, hit_menu, hit_slot, index_to_slot, menu_sizes, wrap_index, MenuAction,
-    ACTIONS, MENU_COUNT, SLOT_COUNT,
+    SlotRow, ACTIONS, MENU_COUNT, SLOT_COUNT,
 };
 use crate::gallery;
 use crate::title::{
@@ -28,8 +28,8 @@ use crate::title::{
 use crate::fb::{mix_rgba_into, BlitKernel, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
 use crate::font::{FontSet, TypeScale};
 use crate::save::{
-    check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, write_slot, write_thumb,
-    AUTO_SLOT, THUMB_H, THUMB_W,
+    check_save, default_save_dir, downscale_rgba, read_slot, read_thumb, slot_path, write_slot,
+    write_thumb, AUTO_SLOT, THUMB_H, THUMB_W,
 };
 use crate::seen::{default_seen_path, Seen};
 use crate::settings::{
@@ -42,7 +42,7 @@ use crate::movie;
 use crate::saypage::{self, ConfirmSay};
 use crate::skip::{ctrl_skips, SkipClock};
 use crate::typewriter::Typewriter;
-use crate::vm::{Phase, Runtime};
+use crate::vm::{Phase, Runtime, VmError};
 use galeng_explore::ItemUseMode;
 
 struct Fade {
@@ -188,6 +188,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
     let mut paused = false;
     let mut pause_started: Option<Instant> = None;
     let mut last_present_at: Option<Instant> = None;
+    let mut notice: Option<Notice> = None;
 
     'running: loop {
         let view = runtime.view();
@@ -773,15 +774,24 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
         }
         if let Some(saving) = slot_pick {
             let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
-            let mut scenes: [Option<String>; SLOT_COUNT] = Default::default();
+            let mut scenes: [SlotRow; SLOT_COUNT] =
+                std::array::from_fn(|_| SlotRow::Empty);
             let mut thumbs: [Option<(u32, u32, Vec<u8>)>; SLOT_COUNT] = Default::default();
             for (i, slot) in scenes.iter_mut().enumerate() {
                 let n = index_to_slot(i);
-                if let Ok(save) = read_slot(&dir, n) {
-                    if check_save(&save, &runtime.project.id, runtime.project.schema_version).is_ok()
-                    {
-                        *slot = Some(save.label.unwrap_or(save.scene));
+                let path_ok = slot_path(&dir, n).map(|p| p.is_file()).unwrap_or(false);
+                match read_slot(&dir, n) {
+                    Ok(save) => {
+                        if check_save(&save, &runtime.project.id, runtime.project.schema_version)
+                            .is_ok()
+                        {
+                            *slot = SlotRow::Ok(save.label.unwrap_or(save.scene));
+                        } else {
+                            *slot = SlotRow::Unreadable;
+                        }
                     }
+                    Err(_) if path_ok => *slot = SlotRow::Unreadable,
+                    Err(_) => *slot = SlotRow::Empty,
                 }
                 thumbs[i] = read_thumb(&dir, n);
             }
@@ -834,6 +844,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                 runtime.project.title_buttons.as_ref(),
                 &title_sizes,
             );
+            if let Some(n) = notice.as_ref() {
+                draw_title_notice(&mut fb, &fonts.ui, &ui_locale, n);
+            }
+        } else if let Some(n) = notice.as_ref() {
+            if !overlay {
+                draw_notice(&mut fb, &fonts.ui, &ui_locale, n);
+            }
         }
         mixer.pause_movie(overlay);
         if (movie.is_some() || title_op.is_some()) && !title_open {
@@ -1060,7 +1077,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
             && ctrl_skips(
                 view.phase.clone(),
                 settings.skip_unread,
-                seen.is_read(&view.scene_id, view.beat_index),
+                seen.is_read(
+                    &view.scene_id,
+                    view.beat_index,
+                    runtime.current_beat_id(),
+                ),
                 fx_hold || movie_hold,
             )
         {
@@ -1099,7 +1120,19 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => {
-                    if title_op.take().is_some() {
+                    if notice.take().is_some()
+                        && !title_open
+                        && !menu_open
+                        && slot_pick.is_none()
+                        && !settings_open
+                        && !gallery_open
+                        && !music_open
+                        && !backlog.open
+                        && title_op.is_none()
+                        && cg_view.is_none()
+                    {
+                        // In-game cancel dismisses notice without advancing.
+                    } else if title_op.take().is_some() {
                         mixer.set_movie(false);
                     } else if cg_view.take().is_some() {
                     } else if gallery_open {
@@ -1311,6 +1344,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             &mut auto_until,
                             &mut auto_key,
                             last_thumb.as_deref(),
+                            &mut notice,
                         ) {
                             slot_pick = None;
                             menu_open = false;
@@ -1331,6 +1365,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         &mut auto_until,
                         &mut auto_key,
                         last_thumb.as_deref(),
+                        &mut notice,
                     ) {
                         slot_pick = None;
                         menu_open = false;
@@ -1376,6 +1411,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     keycode: Some(Keycode::Return) | Some(Keycode::Space),
                     ..
                 } if title_open && !settings_open && !gallery_open && !music_open => {
+                    if notice.take().is_some() {
+                        continue;
+                    }
                     match TITLE_ACTIONS[title_sel] {
                         TitleAction::NewGame => {
                             start_new_game(
@@ -1399,6 +1437,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut fade,
                                 &mut auto_until,
                                 &mut auto_key,
+                                &mut notice,
                             ) {
                                 title_open = false;
                                 title_dirty = false;
@@ -1439,7 +1478,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                             menu_open = false;
                         }
                         MenuAction::QuickLoad => {
-                            if load_slot(&mut runtime, 0, &mut fade, &mut auto_until, &mut auto_key)
+                            if load_slot(&mut runtime, 0, &mut fade, &mut auto_until, &mut auto_key,
+                                &mut notice)
                             {
                                 menu_open = false;
                             }
@@ -1451,6 +1491,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut fade,
                                 &mut auto_until,
                                 &mut auto_key,
+                                &mut notice,
                             ) {
                                 menu_open = false;
                             }
@@ -1501,17 +1542,16 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                     keycode: Some(Keycode::F9),
                     ..
                 } => {
-                    let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
-                    if let Ok(save) = read_slot(&dir, 0) {
-                        if check_save(&save, &runtime.project.id, runtime.project.schema_version).is_ok()
-                        {
-                            let _ = runtime.apply_save(&save);
-                            fade = None;
-                            auto_until = None;
-                            auto_key = None;
-                            title_open = false;
-                            title_dirty = false;
-                        }
+                    if load_slot(
+                        &mut runtime,
+                        0,
+                        &mut fade,
+                        &mut auto_until,
+                        &mut auto_key,
+                        &mut notice,
+                    ) {
+                        title_open = false;
+                        title_dirty = false;
                     }
                 }
                 Event::KeyDown {
@@ -1529,6 +1569,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         continue;
                     }
                     if fade.take().is_some() {
+                        continue;
+                    }
+                    if notice.take().is_some() {
                         continue;
                     }
                     if matches!(view.phase, Phase::Ended | Phase::MissingScene(_)) {
@@ -1693,6 +1736,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut auto_until,
                                 &mut auto_key,
                                 last_thumb.as_deref(),
+                                &mut notice,
                             ) {
                                 slot_pick = None;
                                 menu_open = false;
@@ -1729,6 +1773,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut fade,
                                         &mut auto_until,
                                         &mut auto_key,
+                                        &mut notice,
                                     ) {
                                         menu_open = false;
                                     }
@@ -1740,6 +1785,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut fade,
                                         &mut auto_until,
                                         &mut auto_key,
+                                        &mut notice,
                                     ) {
                                         menu_open = false;
                                     }
@@ -1818,6 +1864,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                         ) {
                             title_sel = i;
                             pressed_title = Some(i);
+                            if notice.take().is_some() {
+                                continue;
+                            }
                             match TITLE_ACTIONS[i] {
                                 TitleAction::NewGame => {
                                     start_new_game(
@@ -1841,6 +1890,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                         &mut fade,
                                         &mut auto_until,
                                         &mut auto_key,
+                                        &mut notice,
                                     ) {
                                         title_open = false;
                                         title_dirty = false;
@@ -1900,11 +1950,15 @@ pub fn run(mut runtime: Runtime, mut title_open: bool) -> Result<(), String> {
                                 &mut title_open,
                                 &mut title_dirty,
                                 last_thumb.as_deref(),
+                                &mut notice,
                             );
                             continue;
                         }
                     }
                     if fade.take().is_some() {
+                        continue;
+                    }
+                    if notice.take().is_some() {
                         continue;
                     }
                     if matches!(
@@ -2169,6 +2223,7 @@ fn apply_hud(
     title_open: &mut bool,
     title_dirty: &mut bool,
     last_thumb: Option<&[u8]>,
+    notice: &mut Option<Notice>,
 ) {
     *ui_hidden = false;
     match action {
@@ -2187,7 +2242,7 @@ fn apply_hud(
             }
         }
         HudAction::QuickLoad => {
-            if load_slot(runtime, 0, fade, auto_until, auto_key) {
+            if load_slot(runtime, 0, fade, auto_until, auto_key, notice) {
                 *title_open = false;
                 *title_dirty = false;
             }
@@ -2219,7 +2274,7 @@ fn apply_confirm_say(
 fn advance_reading(runtime: &mut Runtime, seen: &mut Seen) {
     let view = runtime.view();
     if view.phase == Phase::Dialogue && view.say_text.is_some() {
-        seen.note_read(&view.scene_id, view.beat_index);
+        seen.note_read(&view.scene_id, view.beat_index, runtime.current_beat_id());
     }
     runtime.click_advance();
 }
@@ -2250,21 +2305,39 @@ fn load_slot(
     fade: &mut Option<Fade>,
     auto_until: &mut Option<Instant>,
     auto_key: &mut Option<(String, usize, Option<u32>, bool, usize)>,
+    notice: &mut Option<Notice>,
 ) -> bool {
     let dir = default_save_dir(&runtime.project.id, &runtime.project_dir);
-    let Ok(save) = read_slot(&dir, slot) else {
-        return false;
+    let path_exists = slot_path(&dir, slot).map(|p| p.is_file()).unwrap_or(false);
+    let save = match read_slot(&dir, slot) {
+        Ok(save) => save,
+        Err(_) if path_exists => {
+            *notice = Some(Notice::Format);
+            return false;
+        }
+        Err(_) => return false, // empty slot: silent
     };
     if check_save(&save, &runtime.project.id, runtime.project.schema_version).is_err() {
+        *notice = Some(Notice::Format);
         return false;
     }
-    if runtime.apply_save(&save).is_err() {
-        return false;
+    match runtime.apply_save(&save) {
+        Ok(()) => {
+            *fade = None;
+            *auto_until = None;
+            *auto_key = None;
+            *notice = None;
+            true
+        }
+        Err(VmError::BeatNotFound(id)) => {
+            *notice = Some(Notice::MissingBeat(id));
+            false
+        }
+        Err(_) => {
+            *notice = Some(Notice::Format);
+            false
+        }
     }
-    *fade = None;
-    *auto_until = None;
-    *auto_key = None;
-    true
 }
 
 fn persist_thumb(dir: &std::path::Path, slot: u8, thumb: Option<&[u8]>) {
@@ -2284,6 +2357,7 @@ fn apply_numbered_slot(
     auto_until: &mut Option<Instant>,
     auto_key: &mut Option<(String, usize, Option<u32>, bool, usize)>,
     thumb: Option<&[u8]>,
+    notice: &mut Option<Notice>,
 ) -> bool {
     let Some(saving) = slot_pick else {
         return false;
@@ -2297,7 +2371,7 @@ fn apply_numbered_slot(
         }
         ok
     } else {
-        load_slot(runtime, slot, fade, auto_until, auto_key)
+        load_slot(runtime, slot, fade, auto_until, auto_key, notice)
     }
 }
 

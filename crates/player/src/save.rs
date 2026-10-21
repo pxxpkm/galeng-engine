@@ -19,7 +19,16 @@ pub enum SaveError {
     GameMismatch { expected: String, got: String },
     #[error("save schema {got} does not match {expected}")]
     SchemaMismatch { expected: u32, got: u32 },
+    #[error("save format {got} is newer than supported")]
+    FormatTooNew { got: u32 },
 }
+
+fn save_format_v1() -> u32 {
+    1
+}
+
+/// Current writer format. Always written on new saves.
+pub const SAVE_FORMAT: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,12 +37,55 @@ pub struct SaveGame {
     pub game_id: String,
     pub scene: String,
     pub beat_index: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beat_id: Option<String>,
+    #[serde(default = "save_format_v1")]
+    pub save_format: u32,
     pub vars: BTreeMap<String, i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carried_bgm: Option<String>,
     pub saved_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resume {
+    At(usize),
+    NotFound,
+}
+
+/// Resolve a save position. When `beat_id` is present, never fall back to index.
+pub fn resolve_beat(
+    beats: &[galeng_schema::Beat],
+    beat_id: Option<&str>,
+    beat_index: usize,
+) -> Resume {
+    if let Some(id) = beat_id {
+        let mut found = None;
+        for (i, b) in beats.iter().enumerate() {
+            if b.id.as_deref() == Some(id) {
+                if found.is_some() {
+                    return Resume::NotFound;
+                }
+                found = Some(i);
+            }
+        }
+        return found.map(Resume::At).unwrap_or(Resume::NotFound);
+    }
+    if beat_index <= beats.len() {
+        Resume::At(beat_index)
+    } else {
+        Resume::NotFound
+    }
+}
+
+fn effective_save_format(raw: u32) -> u32 {
+    if raw == 0 {
+        1
+    } else {
+        raw
+    }
 }
 
 pub fn default_save_dir(game_id: &str, project_dir: &Path) -> PathBuf {
@@ -192,6 +244,10 @@ pub fn check_save(save: &SaveGame, game_id: &str, schema_version: u32) -> Result
             got: save.schema_version,
         });
     }
+    let fmt = effective_save_format(save.save_format);
+    if fmt > SAVE_FORMAT {
+        return Err(SaveError::FormatTooNew { got: save.save_format });
+    }
     Ok(())
 }
 
@@ -212,6 +268,8 @@ mod tests {
             game_id: "a".into(),
             scene: "s".into(),
             beat_index: 0,
+            beat_id: None,
+            save_format: 1,
             vars: BTreeMap::new(),
             carried_bgm: None,
             saved_at: 0,
@@ -252,7 +310,79 @@ mod tests {
         let save = read_slot(&tmp, 1).unwrap();
         assert_eq!(save.scene, "park_01");
         assert!(save.label.is_none());
+        assert!(save.beat_id.is_none());
+        assert_eq!(save.save_format, 1);
+        assert!(check_save(&save, "a", 1).is_ok());
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn save_format_zero_and_absent_are_v1() {
+        let absent: SaveGame = serde_json::from_str(
+            r#"{"schemaVersion":1,"gameId":"a","scene":"s","beatIndex":0,"vars":{},"savedAt":0}"#,
+        )
+        .unwrap();
+        assert_eq!(absent.save_format, 1);
+        let zero: SaveGame = serde_json::from_str(
+            r#"{"schemaVersion":1,"saveFormat":0,"gameId":"a","scene":"s","beatIndex":0,"vars":{},"savedAt":0}"#,
+        )
+        .unwrap();
+        assert_eq!(effective_save_format(zero.save_format), 1);
+        assert!(check_save(&zero, "a", 1).is_ok());
+    }
+
+    #[test]
+    fn save_format_above_2_is_refused() {
+        let save: SaveGame = serde_json::from_str(
+            r#"{"schemaVersion":1,"saveFormat":3,"gameId":"a","scene":"s","beatIndex":0,"vars":{},"savedAt":0}"#,
+        )
+        .unwrap();
+        match check_save(&save, "a", 1) {
+            Err(SaveError::FormatTooNew { got: 3 }) => {}
+            other => panic!("expected FormatTooNew, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_beat_by_id_and_index() {
+        use galeng_schema::Beat;
+        let beats = vec![
+            Beat {
+                id: Some("b0123456789abcdef".into()),
+                ..Beat::default()
+            },
+            Beat {
+                id: Some("bfedcba9876543210".into()),
+                ..Beat::default()
+            },
+        ];
+        assert_eq!(
+            resolve_beat(&beats, Some("bfedcba9876543210"), 0),
+            Resume::At(1)
+        );
+        assert_eq!(resolve_beat(&beats, Some("bmissing000000000"), 1), Resume::NotFound);
+        assert_eq!(resolve_beat(&beats, None, 0), Resume::At(0));
+        assert_eq!(resolve_beat(&beats, None, 2), Resume::At(2)); // == len → exit
+        assert_eq!(resolve_beat(&beats, None, 3), Resume::NotFound);
+        let dup = vec![
+            Beat {
+                id: Some("b0123456789abcdef".into()),
+                ..Beat::default()
+            },
+            Beat {
+                id: Some("b0123456789abcdef".into()),
+                ..Beat::default()
+            },
+        ];
+        assert_eq!(
+            resolve_beat(&dup, Some("b0123456789abcdef"), 0),
+            Resume::NotFound
+        );
+        // id present: never fall back to index even when index is in range
+        assert_eq!(
+            resolve_beat(&beats, Some("bmissing000000000"), 0),
+            Resume::NotFound
+        );
     }
 
     #[test]

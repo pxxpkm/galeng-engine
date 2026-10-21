@@ -107,7 +107,11 @@
           "anyOf": [{ "$ref": "#/$defs/assetPath" }, { "type": "null" }]
         },
         "set": { "$ref": "#/$defs/setMap" },
-        "label": { "type": "string" }
+        "label": { "type": "string" },
+        "id": {
+          "type": "string",
+          "pattern": "^b[0-9a-f]{16}$"
+        }
       }
     },
     "bg": {

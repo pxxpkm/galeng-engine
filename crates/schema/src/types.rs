@@ -641,7 +641,7 @@ pub enum ConditionPred {
 
 pub type Condition = BTreeMap<String, ConditionPred>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Beat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -680,6 +680,9 @@ pub struct Beat {
     pub set: Option<BTreeMap<String, SetValue>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Stable beat identity (`^b[0-9a-f]{16}$`). Unique within a scene.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

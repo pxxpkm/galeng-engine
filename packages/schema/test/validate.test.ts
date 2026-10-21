@@ -326,3 +326,33 @@ describe("set values", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("beat id", () => {
+  it("accepts a legal id", () => {
+    const ok = validateScene({
+      id: "ok",
+      beats: [{ id: "b0123456789abcdef", say: { speaker: "a", text: "hi" } }],
+    });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect(ok.value.beats?.[0]?.id).toBe("b0123456789abcdef");
+    }
+  });
+
+  it("rejects an illegal id pattern", () => {
+    const bad = validateScene({
+      id: "bad",
+      beats: [{ id: "B0123456789ABCDEF" }],
+    });
+    expect(bad.ok).toBe(false);
+  });
+
+  it("rejects an empty id string", () => {
+    const bad = validateScene({
+      id: "bad",
+      beats: [{ id: "" }],
+    });
+    expect(bad.ok).toBe(false);
+  });
+});
+

@@ -16,7 +16,7 @@ use crate::title::{
 };
 use crate::menu::{
     index_to_slot, menu_box, menu_caption, menu_spec, slot_rect as file_slot_rect, slot_row_label,
-    slot_title, MENU_COUNT, SLOT_COUNT,
+    slot_title, SlotRow, MENU_COUNT, SLOT_COUNT,
 };
 use crate::vm::{Phase, View};
 
@@ -136,6 +136,62 @@ pub fn missing_scene_text(locale: &str, id: &str) -> String {
         _ => format!("找不到場景 {id}"),
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    Format,
+    MissingBeat(String),
+}
+
+pub fn format_save_notice(locale: &str) -> &'static str {
+    match locale {
+        "en" => "This save cannot be loaded (wrong game or format)",
+        "zh-Hans" => "这份存档无法读取（游戏或格式不符）",
+        _ => "這份存檔無法讀取（遊戲或格式不符）",
+    }
+}
+
+pub fn missing_beat_text(locale: &str, id: &str) -> String {
+    match locale {
+        "en" => format!("No matching line in scene {id}"),
+        "zh-Hans" => format!("找不到场景 {id} 里的句子"),
+        _ => format!("找不到場景 {id} 裡的句子"),
+    }
+}
+
+pub fn draw_notice(fb: &mut Framebuffer, font: &GameFont, locale: &str, notice: &Notice) {
+    let text = match notice {
+        Notice::Format => format_save_notice(locale).to_string(),
+        Notice::MissingBeat(id) => missing_beat_text(locale, id),
+    };
+    font.draw_text(
+        fb,
+        MSG_X + 24,
+        MSG_Y + 48,
+        28.0,
+        &text,
+        Rgba::rgb(255, 220, 180),
+        MSG_W - 48,
+    );
+}
+
+pub fn draw_title_notice(fb: &mut Framebuffer, font: &GameFont, locale: &str, notice: &Notice) {
+    let text = match notice {
+        Notice::Format => format_save_notice(locale).to_string(),
+        Notice::MissingBeat(id) => missing_beat_text(locale, id),
+    };
+    // Title layer: centered above the bottom edge so it is not under buttons.
+    font.draw_text(
+        fb,
+        200,
+        820,
+        30.0,
+        &text,
+        Rgba::rgb(255, 220, 180),
+        1520,
+    );
+}
+
 
 pub fn draw_view(
     fb: &mut Framebuffer,
@@ -1252,7 +1308,7 @@ pub fn draw_slots(
     locale: &str,
     saving: bool,
     selected: usize,
-    scenes: &[Option<String>; SLOT_COUNT],
+    scenes: &[SlotRow; SLOT_COUNT],
     thumbs: &[Option<(u32, u32, Vec<u8>)>; SLOT_COUNT],
 ) {
     fb.fill_rect(
@@ -1295,7 +1351,7 @@ pub fn draw_slots(
         } else {
             x + 20
         };
-        let text = slot_row_label(index_to_slot(i), scenes[i].as_deref());
+        let text = slot_row_label(index_to_slot(i), &scenes[i]);
         font.draw_text_in_box(
             fb,
             text_x,
@@ -1510,6 +1566,18 @@ mod tests {
         assert_eq!(choices_label("zh-Hant"), "選擇");
         assert_eq!(ended_label("zh-Hant"), "終");
         assert_eq!(missing_scene_text("zh-Hant", "x"), "找不到場景 x");
+        assert_eq!(
+            format_save_notice("en"),
+            "This save cannot be loaded (wrong game or format)"
+        );
+        assert_eq!(
+            missing_beat_text("en", "park_01"),
+            "No matching line in scene park_01"
+        );
+        assert_eq!(
+            missing_beat_text("zh-Hant", "park_01"),
+            "找不到場景 park_01 裡的句子"
+        );
     }
 
     #[test]

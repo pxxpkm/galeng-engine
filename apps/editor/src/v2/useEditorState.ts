@@ -9,6 +9,7 @@ import {
   clearBeatsLabel,
   clearBeatsTrack,
   duplicateBeat,
+  ensureBeatIds,
   ensureGalleryItem,
   insertBeatAfter as insertBeatAfterBeats,
   moveBeats,
@@ -300,7 +301,11 @@ export function useEditorState() {
           throw new Error(tRef.current("editor.saveCancelled"));
         }
       }
-      const saved = await putJson<Scene>(`/api/scenes/${scene.id}`, scene);
+      const withIds = {
+        ...scene,
+        beats: ensureBeatIds(scene.beats) as Scene["beats"],
+      };
+      const saved = await putJson<Scene>(`/api/scenes/${scene.id}`, withIds);
       setScene(saved);
       setScenes((list) => upsertSceneMeta(list, saved));
       setDirty(false);

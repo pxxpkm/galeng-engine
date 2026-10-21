@@ -21,6 +21,7 @@ import {
   saveExploreDoc,
 } from "./persist";
 import { createFsPersistApi } from "./persistFs";
+import { BEAT_ID_RE } from "../beats";
 
 describe("Explore persist (real file path)", () => {
   it("save → disk files → load round-trip", async () => {
@@ -118,7 +119,10 @@ describe("Explore persist (real file path)", () => {
       beats: [{ say: { speaker: "X", text: "keep-me" } }],
       exit: { type: "return" },
     });
-    expect(api.beats).toEqual([{ say: { speaker: "X", text: "keep-me" } }]);
+    const beats = api.beats as Array<{ id?: string; say?: { speaker: string; text: string } }>;
+    expect(beats).toHaveLength(1);
+    expect(beats[0]?.say).toEqual({ speaker: "X", text: "keep-me" });
+    expect(beats[0]?.id).toMatch(BEAT_ID_RE);
     expect(api.exit).toEqual({ type: "return" });
   });
 
@@ -216,7 +220,13 @@ describe("Explore persist (real file path)", () => {
     expect((projectOnDisk.items as { id: string }[])[0]?.id).toBe("key");
 
     expect(sceneOnDisk.exit).toEqual({ type: "return" });
-    expect(sceneOnDisk.beats).toEqual([{ say: { speaker: "X", text: "keep-beats" } }]);
+    const diskBeats = sceneOnDisk.beats as Array<{
+      id?: string;
+      say?: { speaker: string; text: string };
+    }>;
+    expect(diskBeats).toHaveLength(1);
+    expect(diskBeats[0]?.say).toEqual({ speaker: "X", text: "keep-beats" });
+    expect(diskBeats[0]?.id).toMatch(BEAT_ID_RE);
     expect(sceneOnDisk.sceneKind).toBe("explore");
   });
 

@@ -107,11 +107,11 @@ fn leaving_first_line_marks_it_read() {
     let mut rt = Runtime::load_dir(repo_root().join("examples/prologue")).unwrap();
     let scene = rt.view().scene_id.clone();
     let beat = rt.view().beat_index;
-    assert!(!seen.is_read(&scene, beat));
-    seen.note_read(&scene, beat);
+    assert!(!seen.is_read(&scene, beat, None));
+    seen.note_read(&scene, beat, None);
     rt.click_advance();
-    assert!(seen.is_read(&scene, beat));
-    assert!(!seen.is_read(&rt.view().scene_id, rt.view().beat_index));
+    assert!(seen.is_read(&scene, beat, None));
+    assert!(!seen.is_read(&rt.view().scene_id, rt.view().beat_index, None));
     let _ = fs::remove_dir_all(&tmp);
 }
 

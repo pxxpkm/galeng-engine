@@ -5,6 +5,7 @@
  */
 
 import { getJson, putJson } from "../api";
+import { ensureBeatIds } from "../beats";
 import { loadExplore } from "./commands";
 import {
   BUILTIN_VERBS,
@@ -128,6 +129,8 @@ export function exploreSceneToApi(
   if (!Array.isArray(merged.beats)) {
     merged.beats = [];
   }
+  // Patch ids in place on the raw JSON array — do not round-trip through Beat[].
+  merged.beats = ensureBeatIds(merged.beats);
   return merged;
 }
 

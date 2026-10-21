@@ -226,6 +226,8 @@ export interface Beat {
   cg?: AssetPath | null;
   set?: Record<string, SetValue>;
   label?: string;
+  /** Stable identity. Pattern ^b[0-9a-f]{16}$. */
+  id?: string;
 }
 
 export interface ChoiceOption {

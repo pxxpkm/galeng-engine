@@ -1,5 +1,38 @@
 import type { AssetMeta, Beat, CharOnStage, GalleryItem } from "./types";
 
+/** Stable beat id: `b` + 16 lowercase hex digits. */
+export const BEAT_ID_RE = /^b[0-9a-f]{16}$/;
+
+export function mintBeatId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  let hex = "b";
+  for (const b of bytes) {
+    hex += b.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+/**
+ * In-place JSON patch for `beats` arrays (dialogue or explore raw).
+ * Keeps a legal id; otherwise spreads the object and assigns a new one.
+ */
+export function ensureBeatIds(beats: unknown): unknown[] {
+  if (!Array.isArray(beats)) {
+    return [];
+  }
+  return beats.map((el) => {
+    if (el !== null && typeof el === "object" && !Array.isArray(el)) {
+      const rec = el as Record<string, unknown>;
+      if (typeof rec.id === "string" && BEAT_ID_RE.test(rec.id)) {
+        return el;
+      }
+      return { ...rec, id: mintBeatId() };
+    }
+    return el;
+  });
+}
+
 export const STAGE_SLOTS = ["left", "center", "right"] as const;
 export type StageSlot = (typeof STAGE_SLOTS)[number];
 export const MAX_STAGE_CHARS = 3;
@@ -475,11 +508,12 @@ export function parseAssetDrag(raw: string): AssetMeta | null {
 
 /** Next empty beat: keep speaker only. No text / voice / chars. */
 export function newBeatAfter(prev: Beat | undefined): Beat {
+  const id = mintBeatId();
   const speaker = prev?.say?.speaker?.trim() ?? "";
   if (!speaker) {
-    return {};
+    return { id };
   }
-  return { say: { speaker, text: "" } };
+  return { id, say: { speaker, text: "" } };
 }
 
 export function insertBeatAfter(beats: Beat[], index: number): Beat[] {
@@ -495,7 +529,10 @@ export function duplicateBeat(beats: Beat[], index: number): Beat[] {
     return beats;
   }
   const copy = beats.slice();
-  copy.splice(index + 1, 0, structuredClone(beats[index] ?? {}));
+  const cloned = structuredClone(beats[index] ?? {}) as Beat;
+  delete cloned.id;
+  cloned.id = mintBeatId();
+  copy.splice(index + 1, 0, cloned);
   return copy;
 }
 
