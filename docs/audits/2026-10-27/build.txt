@@ -1,0 +1,22 @@
+$ tsc --noEmit && vite build
+src/App.tsx(50,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+src/App.tsx(51,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+src/App.tsx(52,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+src/v2/useEditorState.ts(48,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+src/v2/useEditorState.ts(49,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+src/v2/useEditorState.ts(50,3): error TS2322: Type '{ "app.name": string; "menu.new": string; "menu.open": string; "menu.save": string; "menu.load": string; "menu.settings": string; "menu.quit": string; "menu.exportScript": string; "menu.exportGame": string; "menu.playFromHere": string; ... 371 more ...; editor: { ...; }; }' is not assignable to type 'Record<string, string>'.
+  Property '"editor"' is incompatible with index signature.
+    Type '{ warnSaveExploreFromDialogue: string; saveCancelled: string; }' is not assignable to type 'string'.
+/workspace/galeng-engine/apps/editor:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @galeng/editor@ build: `tsc --noEmit && vite build`
+Exit status 2
