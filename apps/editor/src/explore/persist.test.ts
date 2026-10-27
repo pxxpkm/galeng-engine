@@ -13,6 +13,7 @@ import {
 } from "./commands";
 import { blankExploreDoc } from "./fixture";
 import {
+  adoptSavedProjectRaw,
   apiToExploreScene,
   exploreProjectToApi,
   exploreSceneToApi,
@@ -333,6 +334,94 @@ describe("Explore persist (real file path)", () => {
     );
     expect(projMerged.effectLibrary).toBeUndefined();
     expect(projMerged.font).toBe("keep.ttf");
+  });
+
+  it("room save keeps titleBgm and gallery written after the doc was loaded", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-settings-"));
+    await mkdir(path.join(root, "scenario"), { recursive: true });
+    const api = createFsPersistApi(root);
+    const projectSeed = {
+      id: "demo",
+      title: "Demo",
+      schemaVersion: 2,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "study",
+      locale: "zh-Hant",
+      font: "fonts/old.ttf",
+      verbs: [{ id: "look", label: "看", builtin: true }],
+      items: [],
+      switches: [],
+      fallback: { perVerb: { look: "冇咩特別。" }, global: "……" },
+    };
+    const sceneSeed = {
+      id: "study",
+      title: "書房",
+      sceneKind: "explore",
+      hotspots: [
+        {
+          id: "desk",
+          name: "書桌",
+          shape: { type: "rect", x: 10, y: 20, w: 100, h: 80 },
+        },
+      ],
+      interactions: [],
+    };
+    await writeFile(
+      path.join(root, "galeng.json"),
+      `${JSON.stringify(projectSeed, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "scenario", "study.json"),
+      `${JSON.stringify(sceneSeed, null, 2)}\n`,
+      "utf8",
+    );
+
+    let doc = await loadExploreDoc(api, "study");
+    const settingsSaved = {
+      ...projectSeed,
+      font: "fonts/new.ttf",
+      titleBgm: "bgm/audit_new",
+      musicGallery: [{ id: "theme", asset: "bgm/theme" }],
+    };
+    await writeFile(
+      path.join(root, "galeng.json"),
+      `${JSON.stringify(settingsSaved, null, 2)}\n`,
+      "utf8",
+    );
+    doc = adoptSavedProjectRaw(doc, settingsSaved);
+    expect(doc._rawProject?.titleBgm).toBe("bgm/audit_new");
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      addHotspot({
+        id: "lamp",
+        name: "燈",
+        shape: { type: "rect", x: 1, y: 1, w: 20, h: 20 },
+      }),
+    ));
+    void bus;
+    // Stale raw from before Settings, if used alone, would drop titleBgm.
+    doc = { ...doc, _rawProject: projectSeed };
+
+    await saveExploreDoc(api, doc);
+
+    const projectOnDisk = JSON.parse(
+      await readFile(path.join(root, "galeng.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const sceneOnDisk = JSON.parse(
+      await readFile(path.join(root, "scenario", "study.json"), "utf8"),
+    ) as { hotspots: { id: string }[] };
+    expect(projectOnDisk.font).toBe("fonts/new.ttf");
+    expect(projectOnDisk.titleBgm).toBe("bgm/audit_new");
+    expect(projectOnDisk.musicGallery).toEqual([{ id: "theme", asset: "bgm/theme" }]);
+    expect(sceneOnDisk.hotspots.map((h) => h.id)).toEqual(["desk", "lamp"]);
+
+    const reloaded = await loadExploreDoc(api, "study");
+    expect(reloaded._rawProject?.titleBgm).toBe("bgm/audit_new");
+    expect(reloaded._rawProject?.font).toBe("fonts/new.ttf");
+    expect(reloaded.scene.hotspots.map((h) => h.id)).toEqual(["desk", "lamp"]);
   });
 
   it("loads onEmptyClick from click-room study.json and round-trips", async () => {

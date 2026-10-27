@@ -42,6 +42,7 @@ import { VarList } from "./VarList";
 import type { CiteSite } from "./overview";
 import type { VarSite } from "./vars";
 import { clampBeatIndex, loadScenesForSearch, type SearchHit } from "./search";
+import { mergeSaveResponse } from "./saveGeneration";
 import { Preview } from "./Preview";
 import { switchUiVersion } from "./v2/uiVersion";
 import type { AssetMeta, AssetRootInfo, Beat, ChoiceOption, GalleryItem, Locale, Project, Scene, SceneMeta } from "./types";
@@ -96,6 +97,16 @@ export function App() {
   const [varsOpen, setVarsOpen] = useState(false);
   const [focusChoice, setFocusChoice] = useState<number | null>(null);
   const pendingBeatRef = useRef<number | null>(null);
+  const sceneRef = useRef(scene);
+  const projectRef = useRef(project);
+  const dirtyRef = useRef(dirty);
+  const projectDirtyRef = useRef(projectDirty);
+  const sceneRev = useRef(0);
+  const projectRev = useRef(0);
+  sceneRef.current = scene;
+  projectRef.current = project;
+  dirtyRef.current = dirty;
+  projectDirtyRef.current = projectDirty;
 
   const beat = scene?.beats[beatIndex];
   const lists = assetLists(assets);
@@ -118,6 +129,10 @@ export function App() {
           getJson<AssetRootInfo>("/api/asset-root"),
         ]);
         if (cancelled) return;
+        projectRev.current += 1;
+        projectRef.current = p;
+        projectDirtyRef.current = false;
+        classicDirtyRef.current = dirtyRef.current;
         setProject(p);
         setScenes(s);
         setAssets(a);
@@ -141,6 +156,10 @@ export function App() {
       .then((s) => {
         const idx = clampBeatIndex(pendingBeatRef.current, s.beats.length);
         pendingBeatRef.current = null;
+        sceneRev.current += 1;
+        sceneRef.current = s;
+        dirtyRef.current = false;
+        classicDirtyRef.current = projectDirtyRef.current;
         setScene(s);
         setBeatIndex(idx);
         setSelected([idx]);
@@ -154,6 +173,10 @@ export function App() {
   function commit(next: Scene, nextBeat = beatIndex, nextSelected?: number[]) {
     if (!scene) return;
     setHistory((h) => push(h, { scene, beatIndex }));
+    sceneRev.current += 1;
+    sceneRef.current = next;
+    dirtyRef.current = true;
+    classicDirtyRef.current = true;
     setScene(next);
     setBeatIndex(nextBeat);
     setSelected(nextSelected && nextSelected.length > 0 ? nextSelected : [nextBeat]);
@@ -199,8 +222,7 @@ export function App() {
     next.beats = applyAssetAt(next.beats, index, asset);
     commit(next, index);
     if (asset.logical.startsWith("cg/") && project) {
-      setProject({ ...project, cg: ensureGalleryItem(project.cg, asset.logical) });
-      setProjectDirty(true);
+      replaceProject({ ...project, cg: ensureGalleryItem(project.cg, asset.logical) });
     }
   }
 
@@ -209,6 +231,10 @@ export function App() {
     const result = undo(history, { scene, beatIndex });
     if (!result) return;
     setHistory(result.history);
+    sceneRev.current += 1;
+    sceneRef.current = result.snap.scene;
+    dirtyRef.current = true;
+    classicDirtyRef.current = true;
     setScene(result.snap.scene);
     setBeatIndex(result.snap.beatIndex);
     setSelected([result.snap.beatIndex]);
@@ -221,6 +247,10 @@ export function App() {
     const result = redo(history, { scene, beatIndex });
     if (!result) return;
     setHistory(result.history);
+    sceneRev.current += 1;
+    sceneRef.current = result.snap.scene;
+    dirtyRef.current = true;
+    classicDirtyRef.current = true;
     setScene(result.snap.scene);
     setBeatIndex(result.snap.beatIndex);
     setSelected([result.snap.beatIndex]);
@@ -228,39 +258,82 @@ export function App() {
     setDirty(true);
   }
 
+  function replaceProject(next: Project) {
+    projectRev.current += 1;
+    projectRef.current = next;
+    projectDirtyRef.current = true;
+    classicDirtyRef.current = true;
+    setProject(next);
+    setProjectDirty(true);
+  }
+
   function patchSayFields(partial: { speaker?: string; text?: string }) {
     updateBeat((current) => patchSay(current, partial));
   }
 
   async function save() {
+    const projectNow = projectRef.current;
+    const sceneNow = sceneRef.current;
     const issues = [
-      ...(project && projectDirty ? projectSaveIssues(project) : []),
-      ...(scene && dirty ? sceneSaveIssues(scene) : []),
+      ...(projectNow && projectDirtyRef.current ? projectSaveIssues(projectNow) : []),
+      ...(sceneNow && dirtyRef.current ? sceneSaveIssues(sceneNow) : []),
     ];
     if (issues.length > 0) {
       throw new Error(formatSaveIssues(issues, t));
     }
-    if (project && projectDirty) {
-      const savedProject = await putJson<Project>("/api/project", project);
-      setProject(savedProject);
-      setProjectDirty(false);
+    if (projectNow && projectDirtyRef.current) {
+      const requestRev = projectRev.current;
+      const body = projectRef.current;
+      if (body) {
+        const savedProject = await putJson<Project>("/api/project", body);
+        const current = projectRef.current ?? savedProject;
+        const merged = mergeSaveResponse({
+          requestRev,
+          currentRev: projectRev.current,
+          saved: savedProject,
+          current,
+        });
+        if (merged.clearDirty) {
+          projectRef.current = merged.value;
+          projectDirtyRef.current = false;
+          classicDirtyRef.current = dirtyRef.current;
+          setProject(merged.value);
+          setProjectDirty(false);
+        }
+      }
     }
-    if (!scene) {
+    const sceneForKind = sceneRef.current;
+    if (!sceneForKind || !dirtyRef.current) {
       return;
     }
-    if (!dirty) {
-      return;
-    }
-    if (scene.sceneKind === "explore") {
+    if (sceneForKind.sceneKind === "explore") {
       const ok = window.confirm(t("editor.warnSaveExploreFromDialogue"));
       if (!ok) {
         throw new Error(t("editor.saveCancelled"));
       }
     }
-    const saved = await putJson<Scene>(`/api/scenes/${scene.id}`, scene);
-    setScene(saved);
-    setScenes((list) => upsertSceneMeta(list, saved));
-    setDirty(false);
+    const body = sceneRef.current;
+    if (!body || !dirtyRef.current) {
+      return;
+    }
+    const requestRev = sceneRev.current;
+    const saved = await putJson<Scene>(`/api/scenes/${body.id}`, body);
+    const current = sceneRef.current;
+    if (!current) return;
+    const merged = mergeSaveResponse({
+      requestRev,
+      currentRev: sceneRev.current,
+      saved,
+      current,
+    });
+    if (merged.clearDirty) {
+      sceneRef.current = merged.value;
+      dirtyRef.current = false;
+      classicDirtyRef.current = projectDirtyRef.current;
+      setScene(merged.value);
+      setScenes((list) => upsertSceneMeta(list, merged.value));
+      setDirty(false);
+    }
   }
 
   async function play() {
@@ -622,32 +695,28 @@ export function App() {
     if (!project) return;
     const cg = (project.cg ?? []).slice();
     cg[index] = item;
-    setProject({ ...project, cg });
-    setProjectDirty(true);
+    replaceProject({ ...project, cg });
   }
 
   function addGallery() {
     if (!project) return;
     const n = (project.cg?.length ?? 0) + 1;
-    setProject({
+    replaceProject({
       ...project,
       cg: [...(project.cg ?? []), { id: `cg_${n}`, asset: "cg/still" }],
     });
-    setProjectDirty(true);
   }
 
   function delGallery(index: number) {
     if (!project) return;
-    setProject({
+    replaceProject({
       ...project,
       cg: (project.cg ?? []).filter((_, i) => i !== index),
     });
-    setProjectDirty(true);
   }
 
   function patchProjectField(next: Project) {
-    setProject(next);
-    setProjectDirty(true);
+    replaceProject(next);
   }
 
   function patchSceneTitle(raw: string) {

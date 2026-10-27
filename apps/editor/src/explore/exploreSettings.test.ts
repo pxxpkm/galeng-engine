@@ -14,6 +14,8 @@ describe("detectEditorLocale / editorT", () => {
     expect(t("menu.settings")).toBe("設定");
     expect(t("editor.fontsPanel")).toBe("字型");
     expect(t("editor.audioPanel")).toBe("音訊");
+    expect(t("editor.warnSaveExploreFromDialogue")).toContain("探險");
+    expect(t("editor.saveCancelled")).toBe("已取消儲存");
   });
 });
 

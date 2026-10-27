@@ -1,12 +1,13 @@
 //! Author-default key → action table, with optional player `input.json` override.
 //!
 //! Mouse L/R and wheel stay in `window.rs` (not in this table).
-//! Skip is held via scancode poll (`is_skip_held`), not KeyDown.
+//! Skip is held (`is_skip_held`), not a KeyDown. The chord still uses the same
+//! modifier test as every other action, so `Ctrl+K` is not "K is down".
 
 use std::fs;
 use std::path::Path;
 
-use sdl2::keyboard::{Keycode, Mod, Scancode};
+use sdl2::keyboard::{Keycode, Mod};
 use serde::Deserialize;
 
 /// Virtual actions wired from today's `window.rs` keys.
@@ -77,11 +78,27 @@ struct Chord {
 
 const MAX_INPUT_BYTES: u64 = 64 * 1024;
 
+/// Modifier keys currently down. Built from scancodes in the player loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeldMods {
+    pub alt: bool,
+    pub ctrl: bool,
+    pub shift: bool,
+    pub gui: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ModFlags {
+    alt: bool,
+    ctrl: bool,
+    shift: bool,
+    gui: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct InputMap {
     /// Parallel to priority walk order; each action owns its chord list.
     bindings: Vec<(Action, Vec<Chord>)>,
-    skip_scancodes: Vec<Scancode>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,7 +132,6 @@ impl InputMap {
     pub fn defaults() -> Self {
         let mut map = Self {
             bindings: Vec::new(),
-            skip_scancodes: Vec::new(),
         };
         map.set(
             Action::Advance,
@@ -125,11 +141,23 @@ impl InputMap {
                 chord(Keycode::KpEnter, false, false, false),
             ],
         );
-        map.set(Action::Cancel, vec![chord(Keycode::Escape, false, false, false)]);
+        map.set(
+            Action::Cancel,
+            vec![chord(Keycode::Escape, false, false, false)],
+        );
         map.set(Action::Up, vec![chord(Keycode::Up, false, false, false)]);
-        map.set(Action::Down, vec![chord(Keycode::Down, false, false, false)]);
-        map.set(Action::Left, vec![chord(Keycode::Left, false, false, false)]);
-        map.set(Action::Right, vec![chord(Keycode::Right, false, false, false)]);
+        map.set(
+            Action::Down,
+            vec![chord(Keycode::Down, false, false, false)],
+        );
+        map.set(
+            Action::Left,
+            vec![chord(Keycode::Left, false, false, false)],
+        );
+        map.set(
+            Action::Right,
+            vec![chord(Keycode::Right, false, false, false)],
+        );
         map.set(Action::Save, vec![chord(Keycode::F5, false, false, false)]);
         map.set(Action::Load, vec![chord(Keycode::F9, false, false, false)]);
         map.set(
@@ -156,7 +184,6 @@ impl InputMap {
                 ],
             );
         }
-        map.rebuild_skip_scancodes();
         map
     }
 
@@ -180,31 +207,6 @@ impl InputMap {
             slot.1 = chords;
         } else {
             self.bindings.push((action, chords));
-        }
-    }
-
-    fn rebuild_skip_scancodes(&mut self) {
-        self.skip_scancodes.clear();
-        if let Some((_, chords)) = self.bindings.iter().find(|(a, _)| *a == Action::Skip) {
-            for c in chords {
-                if let Some(sc) = Scancode::from_keycode(c.key) {
-                    if !self.skip_scancodes.contains(&sc) {
-                        self.skip_scancodes.push(sc);
-                    }
-                }
-            }
-        }
-        // Fall back if SDL could not map (unit tests without video): LCtrl/RCtrl scancodes.
-        if self.skip_scancodes.is_empty() {
-            if let Some((_, chords)) = self.bindings.iter().find(|(a, _)| *a == Action::Skip) {
-                for c in chords {
-                    if c.key == Keycode::LCtrl {
-                        self.skip_scancodes.push(Scancode::LCtrl);
-                    } else if c.key == Keycode::RCtrl {
-                        self.skip_scancodes.push(Scancode::RCtrl);
-                    }
-                }
-            }
         }
     }
 
@@ -258,26 +260,38 @@ impl InputMap {
             // Present key (even []) replaces previous layer for this action.
             self.set(action, chords);
         }
-        self.rebuild_skip_scancodes();
     }
 
     /// At most one action; higher priority wins alone.
     pub fn action_for(&self, key: Keycode, keymod: Mod) -> Option<Action> {
-        if keymod.intersects(Mod::LGUIMOD | Mod::RGUIMOD) {
+        let flags = flags_from_mod(keymod);
+        self.best_action(key, flags)
+    }
+
+    /// True while a skip chord is held and no higher-priority action owns that same chord.
+    pub fn is_skip_held(&self, key_down: impl Fn(Keycode) -> bool, held: HeldMods) -> bool {
+        let flags = flags_from_held(held);
+        if flags.gui {
+            return false;
+        }
+        let Some((_, chords)) = self.bindings.iter().find(|(a, _)| *a == Action::Skip) else {
+            return false;
+        };
+        chords.iter().any(|c| {
+            key_down(c.key)
+                && chord_hit(c, flags)
+                && self.best_action(c.key, flags) == Some(Action::Skip)
+        })
+    }
+
+    fn best_action(&self, key: Keycode, flags: ModFlags) -> Option<Action> {
+        if flags.gui {
             return None;
         }
-        let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
-        let ctrl = keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD);
-        let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
-
         let mut best: Option<(u8, Action)> = None;
         for (action, chords) in &self.bindings {
-            if *action == Action::Skip {
-                // Skip is held via scancode poll, not KeyDown.
-                continue;
-            }
             for c in chords {
-                if c.key == key && c.alt == alt && c.ctrl == ctrl && c.shift == shift {
+                if chord_hit(c, flags) && c.key == key {
                     let p = action.priority();
                     match best {
                         Some((bp, _)) if bp >= p => {}
@@ -287,10 +301,6 @@ impl InputMap {
             }
         }
         best.map(|(_, a)| a)
-    }
-
-    pub fn is_skip_held(&self, pressed: impl Fn(Scancode) -> bool) -> bool {
-        self.skip_scancodes.iter().any(|sc| pressed(*sc))
     }
 
     #[cfg(test)]
@@ -420,6 +430,39 @@ fn looks_like_drive(tok: &str) -> bool {
     b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
 }
 
+fn flags_from_mod(keymod: Mod) -> ModFlags {
+    ModFlags {
+        alt: keymod.intersects(Mod::LALTMOD | Mod::RALTMOD),
+        ctrl: keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD),
+        shift: keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
+        gui: keymod.intersects(Mod::LGUIMOD | Mod::RGUIMOD),
+    }
+}
+
+fn flags_from_held(held: HeldMods) -> ModFlags {
+    ModFlags {
+        alt: held.alt,
+        ctrl: held.ctrl,
+        shift: held.shift,
+        gui: held.gui,
+    }
+}
+
+/// A modifier key sets its own bit in the OS mod state. The chord `LCtrl`
+/// means that key, not "Ctrl plus another key", so that bit is not required.
+fn chord_hit(c: &Chord, mut flags: ModFlags) -> bool {
+    if matches!(c.key, Keycode::LAlt | Keycode::RAlt) {
+        flags.alt = false;
+    }
+    if matches!(c.key, Keycode::LCtrl | Keycode::RCtrl) {
+        flags.ctrl = false;
+    }
+    if matches!(c.key, Keycode::LShift | Keycode::RShift) {
+        flags.shift = false;
+    }
+    !flags.gui && c.alt == flags.alt && c.ctrl == flags.ctrl && c.shift == flags.shift
+}
+
 fn emit_input_line(line: &str) {
     #[cfg(windows)]
     {
@@ -429,9 +472,9 @@ fn emit_input_line(line: &str) {
             .chain(std::iter::once(0))
             .collect();
         unsafe {
-            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
-                windows::core::PCWSTR(wide.as_ptr()),
-            );
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(windows::core::PCWSTR(
+                wide.as_ptr(),
+            ));
         }
     }
     #[cfg(not(windows))]
@@ -518,10 +561,7 @@ mod tests {
     fn empty_array_unbinds() {
         let mut map = InputMap::defaults();
         let mut w = Vec::new();
-        map.merge_json(
-            r#"{"schemaVersion":1,"bindings":{"cancel":[]}}"#,
-            &mut w,
-        );
+        map.merge_json(r#"{"schemaVersion":1,"bindings":{"cancel":[]}}"#, &mut w);
         assert!(map.chords_for(Action::Cancel).is_empty());
         assert_eq!(
             map.action_for(Keycode::Escape, mods(false, false, false)),
@@ -538,19 +578,13 @@ mod tests {
     fn absent_action_keeps_previous_layer() {
         let mut map = InputMap::defaults();
         let mut w = Vec::new();
-        map.merge_json(
-            r#"{"schemaVersion":1,"bindings":{"save":["F6"]}}"#,
-            &mut w,
-        );
+        map.merge_json(r#"{"schemaVersion":1,"bindings":{"save":["F6"]}}"#, &mut w);
         // cancel not in file → still Escape
         assert_eq!(
             map.action_for(Keycode::Escape, mods(false, false, false)),
             Some(Action::Cancel)
         );
-        assert_eq!(
-            map.action_for(Keycode::F5, mods(false, false, false)),
-            None
-        );
+        assert_eq!(map.action_for(Keycode::F5, mods(false, false, false)), None);
         assert_eq!(
             map.action_for(Keycode::F6, mods(false, false, false)),
             Some(Action::Save)
@@ -561,10 +595,7 @@ mod tests {
     fn schema_version_not_1_ignores_whole_file() {
         let mut map = InputMap::defaults();
         let mut w = Vec::new();
-        map.merge_json(
-            r#"{"schemaVersion":2,"bindings":{"cancel":[]}}"#,
-            &mut w,
-        );
+        map.merge_json(r#"{"schemaVersion":2,"bindings":{"cancel":[]}}"#, &mut w);
         assert!(w.iter().any(|s| s.contains("ignored schema")));
         assert_eq!(
             map.action_for(Keycode::Escape, mods(false, false, false)),
@@ -615,6 +646,59 @@ mod tests {
         let mut m = mods(false, false, false);
         m |= Mod::LGUIMOD;
         assert_eq!(map.action_for(Keycode::Escape, m), None);
+    }
+
+    fn held(ctrl: bool) -> HeldMods {
+        HeldMods {
+            alt: false,
+            ctrl,
+            shift: false,
+            gui: false,
+        }
+    }
+
+    #[test]
+    fn default_ctrl_stays_skip_while_ctrl_mod_is_down() {
+        let map = InputMap::defaults();
+        assert!(map.is_skip_held(|k| k == Keycode::LCtrl, held(true)));
+        assert!(!map.is_skip_held(|k| k == Keycode::K, held(true)));
+        assert_eq!(
+            map.action_for(Keycode::LCtrl, mods(false, true, false)),
+            Some(Action::Skip)
+        );
+    }
+
+    #[test]
+    fn ctrl_k_skip_requires_ctrl_and_not_bare_k() {
+        let mut map = InputMap::defaults();
+        let mut w = Vec::new();
+        map.merge_json(
+            r#"{"schemaVersion":1,"bindings":{"skip":["Ctrl+F6"]}}"#,
+            &mut w,
+        );
+        assert!(map.is_skip_held(|k| k == Keycode::F6, held(true)));
+        assert!(!map.is_skip_held(|k| k == Keycode::F6, held(false)));
+        assert_eq!(
+            map.action_for(Keycode::F6, mods(false, true, false)),
+            Some(Action::Skip)
+        );
+        assert_eq!(map.action_for(Keycode::F6, mods(false, false, false)), None);
+    }
+
+    #[test]
+    fn skip_on_space_wins_over_advance() {
+        let mut map = InputMap::defaults();
+        let mut w = Vec::new();
+        map.merge_json(
+            r#"{"schemaVersion":1,"bindings":{"skip":["Space"]}}"#,
+            &mut w,
+        );
+        assert_eq!(
+            map.action_for(Keycode::Space, mods(false, false, false)),
+            Some(Action::Skip)
+        );
+        assert!(map.is_skip_held(|k| k == Keycode::Space, held(false)));
+        assert!(!map.is_skip_held(|k| k == Keycode::Return, held(false)));
     }
 
     #[test]

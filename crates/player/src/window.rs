@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use sdl2::event::{Event, WindowEvent};
+use sdl2::keyboard::Scancode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -9,42 +10,42 @@ use crate::assets::Bank;
 use crate::audio::Mixer;
 use crate::backlog::{self, BacklogView};
 use crate::draw::{
-    draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome, draw_explore_cursor,
-    draw_gallery, draw_hud, draw_menu, draw_music, draw_notice, draw_one_choice, draw_settings,
-    draw_slots, draw_movie_skip, draw_title, draw_title_notice, draw_view, explore_cursor_kind,
-    hit_choice, hit_explore_action, hit_explore_item, letterbox, window_to_logical, ButtonState,
-    Notice, EXPLORE_ITEM_H, EXPLORE_ITEM_W,
+    draw_backlog, draw_button, draw_cg, draw_choice_buttons, draw_explore_chrome,
+    draw_explore_cursor, draw_gallery, draw_hud, draw_menu, draw_movie_skip, draw_music,
+    draw_notice, draw_one_choice, draw_settings, draw_slots, draw_title, draw_title_notice,
+    draw_view, explore_cursor_kind, hit_choice, hit_explore_action, hit_explore_item, letterbox,
+    window_to_logical, ButtonState, Notice, EXPLORE_ITEM_H, EXPLORE_ITEM_W,
 };
+use crate::fb::{mix_rgba_into, BlitKernel, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
+use crate::font::{FontSet, TypeScale};
+use crate::fx::{flash_alpha, flash_white, shake_offset};
+use crate::gallery;
 use crate::hud::{self, HudAction, HUD_ACTIONS};
+use crate::input::{apply_action_gate, Action, ActionGateCtx, GateResult, HeldMods, InputMap};
 use crate::menu::{
     digit_to_slot_index, hit_menu, hit_slot, index_to_slot, menu_sizes, wrap_index, MenuAction,
     SlotRow, ACTIONS, MENU_COUNT, SLOT_COUNT,
 };
-use crate::gallery;
-use crate::title::{
-    game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
-};
-use crate::fb::{mix_rgba_into, BlitKernel, Framebuffer, FB_BYTES, HEIGHT, WIDTH};
-use crate::font::{FontSet, TypeScale};
+use crate::movie;
 use crate::save::{
     check_save, downscale_rgba, read_slot, read_thumb, slot_path, write_slot, write_thumb,
     AUTO_SLOT, THUMB_H, THUMB_W,
 };
+use crate::saypage::{self, ConfirmSay};
 use crate::seen::Seen;
 use crate::settings::{
-    hit_row as hit_setting, read_config, wait_ms, write_config, STEP,
-    AUTO_DELAY_ROW, AUTO_PLAY_ROW, DELAY_MIN, DELAY_STEP, EFFECTS_ROW, FULLSCREEN_ROW,
-    SETTINGS_ROWS, SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
+    hit_row as hit_setting, read_config, wait_ms, write_config, AUTO_DELAY_ROW, AUTO_PLAY_ROW,
+    DELAY_MIN, DELAY_STEP, EFFECTS_ROW, FULLSCREEN_ROW, SETTINGS_ROWS, SIMD_ROW, SKIP_UNREAD_ROW,
+    STEP, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
 };
-use crate::fx::{flash_alpha, flash_white, shake_offset};
-use crate::movie;
-use crate::saypage::{self, ConfirmSay};
 use crate::skip::{ctrl_skips, SkipClock};
+use crate::title::{
+    game_window_title, hit_title, image_sizes, TitleAction, TITLE_ACTIONS, TITLE_COUNT,
+};
 use crate::typewriter::Typewriter;
 use crate::user_paths::UserPaths;
-use crate::input::{apply_action_gate, Action, ActionGateCtx, GateResult, InputMap};
 use crate::vm::{Phase, Runtime, VmError};
-use galeng_explore::ItemUseMode;
+use galeng_explore::{Error as ExploreError, ItemUseMode};
 
 struct Fade {
     from: Vec<u8>,
@@ -118,8 +119,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
     if settings.fullscreen {
         set_desktop_fullscreen(&mut canvas, true);
     }
-    if let Err(e) = set_vsync(&canvas, settings.vsync) {
-        emit_debug_line(&format!("vsync: {e}"), Some(&paths.log));
+    match set_vsync(&canvas, settings.vsync) {
+        Ok(()) => {}
+        Err(e) => {
+            emit_debug_line(&format!("vsync: {e}"), Some(&paths.log));
+            // present_vsync() already turned vsync on. A failed change leaves it there.
+            settings.vsync = vsync_after_startup(settings.vsync, false);
+        }
     }
     let _exec_guard = ExecutionStateGuard;
     set_execution_awake(true);
@@ -209,8 +215,19 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             .resolve(&runtime.project.locale)
             .to_string();
         let kb = events.keyboard_state();
+        let held_mods = HeldMods {
+            alt: kb.is_scancode_pressed(Scancode::LAlt) || kb.is_scancode_pressed(Scancode::RAlt),
+            ctrl: kb.is_scancode_pressed(Scancode::LCtrl)
+                || kb.is_scancode_pressed(Scancode::RCtrl),
+            shift: kb.is_scancode_pressed(Scancode::LShift)
+                || kb.is_scancode_pressed(Scancode::RShift),
+            gui: kb.is_scancode_pressed(Scancode::LGui) || kb.is_scancode_pressed(Scancode::RGui),
+        };
         let ctrl = !overlay
-            && input_map.is_skip_held(|sc| kb.is_scancode_pressed(sc));
+            && input_map.is_skip_held(
+                |key| Scancode::from_keycode(key).is_some_and(|sc| kb.is_scancode_pressed(sc)),
+                held_mods,
+            );
         let skipping = ctrl || skip_latch;
 
         let want_pause = !focused || minimized || hidden;
@@ -332,9 +349,8 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             let page_text = saypage::page_text(text, &spans, say_page);
             typewriter.visible(page_text)
         });
-        let say_more = view.phase == Phase::Dialogue
-            && typewriter.is_done()
-            && say_page + 1 < say_page_count;
+        let say_more =
+            view.phase == Phase::Dialogue && typewriter.is_done() && say_page + 1 < say_page_count;
         if view.phase == Phase::Choices {
             let n = view.choices.len().max(1);
             if choice_sel >= n {
@@ -354,21 +370,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
         let mut hover_choice = None;
         let mut hover_hud = None;
         if let Some((lx, ly)) = window_to_logical(mouse.x(), mouse.y(), ww, wh) {
-            if title_open && !settings_open && !gallery_open && !music_open && slot_pick.is_none()
-            {
-                hover_title = hit_title(
-                    lx,
-                    ly,
-                    runtime.project.title_buttons.as_ref(),
-                    &title_sizes,
-                );
+            if title_open && !settings_open && !gallery_open && !music_open && slot_pick.is_none() {
+                hover_title =
+                    hit_title(lx, ly, runtime.project.title_buttons.as_ref(), &title_sizes);
             } else if menu_open && slot_pick.is_none() && !settings_open {
-                hover_menu = hit_menu(
-                    lx,
-                    ly,
-                    runtime.project.pause_buttons.as_ref(),
-                    &pause_sizes,
-                );
+                hover_menu = hit_menu(lx, ly, runtime.project.pause_buttons.as_ref(), &pause_sizes);
             } else if !overlay && view.phase == Phase::Choices {
                 hover_choice = hit_choice(lx, ly, view.choices.len());
             }
@@ -481,11 +487,18 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             (Some(start), Some(ms))
                 if start.elapsed() < Duration::from_millis(u64::from(ms))
         );
-        if scene_hit && chrome_hit && shake_started.is_none() && flash_started.is_none() && !sliding
+        if scene_hit
+            && chrome_hit
+            && shake_started.is_none()
+            && flash_started.is_none()
+            && !sliding
             && view.phase != Phase::Explore
         {
             full_upload = false;
-        } else if scene_hit && shake_started.is_none() && flash_started.is_none() && !sliding
+        } else if scene_hit
+            && shake_started.is_none()
+            && flash_started.is_none()
+            && !sliding
             && view.phase != Phase::Explore
         {
             full_upload = false;
@@ -507,9 +520,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     }
                 } else {
                     draw_choice_buttons(
-                    &mut fb,
-                    &fonts.ui,
-                    &scale,
+                        &mut fb,
+                        &fonts.ui,
+                        &scale,
                         &view,
                         choice_sel,
                         hover_choice,
@@ -542,7 +555,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             }
         } else {
             {
-                let t0 = if blit_stats { Some(Instant::now()) } else { None };
+                let t0 = if blit_stats {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
                 draw_view(
                     &mut fb,
                     &fonts.dialogue,
@@ -715,9 +732,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
         );
         if full_upload && show_hud {
             draw_hud(
-                    &mut fb,
-                    &fonts.ui,
-                    &scale,
+                &mut fb,
+                &fonts.ui,
+                &scale,
                 &ui_locale,
                 hover_hud,
                 pressed_hud,
@@ -741,15 +758,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
         } else if gallery_open {
             let ids: Vec<&str> = cgs.iter().map(|g| g.id.as_str()).collect();
             let unlocked: Vec<bool> = cgs.iter().map(|g| seen.has(&g.asset)).collect();
-            draw_gallery(
-            &mut fb,
-            &fonts.ui, &ui_locale, &ids, gallery_sel, &unlocked);
+            draw_gallery(&mut fb, &fonts.ui, &ui_locale, &ids, gallery_sel, &unlocked);
         } else if music_open {
             let tracks = runtime.project.music_gallery.as_deref().unwrap_or(&[]);
             let ids: Vec<&str> = tracks.iter().map(|g| g.id.as_str()).collect();
             draw_music(
-            &mut fb,
-            &fonts.ui,
+                &mut fb,
+                &fonts.ui,
                 &ui_locale,
                 &ids,
                 music_sel,
@@ -768,14 +783,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     )
                 })
                 .collect();
-            draw_backlog(
-            &mut fb,
-            &fonts.ui, &ui_locale, &rows);
+            draw_backlog(&mut fb, &fonts.ui, &ui_locale, &rows);
         }
         if let Some(saving) = slot_pick {
             let dir = &save_dir;
-            let mut scenes: [SlotRow; SLOT_COUNT] =
-                std::array::from_fn(|_| SlotRow::Empty);
+            let mut scenes: [SlotRow; SLOT_COUNT] = std::array::from_fn(|_| SlotRow::Empty);
             let mut thumbs: [Option<(u32, u32, Vec<u8>)>; SLOT_COUNT] = Default::default();
             for (i, slot) in scenes.iter_mut().enumerate() {
                 let n = index_to_slot(i);
@@ -796,13 +808,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                 thumbs[i] = read_thumb(&dir, n);
             }
             draw_slots(
-            &mut fb,
-            &fonts.ui,
-                &ui_locale,
-                saving,
-                slot_sel,
-                &scenes,
-                &thumbs,
+                &mut fb, &fonts.ui, &ui_locale, saving, slot_sel, &scenes, &thumbs,
             );
         } else if settings_open {
             draw_settings(
@@ -874,11 +880,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             mixer.stop_voice();
         } else if title_open {
             mixer.set_movie(false);
-            mixer.sync(
-                runtime.project.title_bgm.as_deref(),
-                0,
-                &runtime.source,
-            );
+            mixer.sync(runtime.project.title_bgm.as_deref(), 0, &runtime.source);
             mixer.sync_amb(None, &runtime.source);
             mixer.stop_voice();
         } else {
@@ -913,7 +915,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
         if skip_present {
             std::thread::sleep(Duration::from_millis(1));
         } else if let Some(state) = &fade {
-            let t0 = if blit_stats { Some(Instant::now()) } else { None };
+            let t0 = if blit_stats {
+                Some(Instant::now())
+            } else {
+                None
+            };
             let t = state.started.elapsed().as_secs_f32() * 1000.0 / state.ms as f32;
             // Mix into scratch only; Fade.from stays the pre-fade frame.
             mix_rgba_into(&state.from, &fb.pixels, t, &mut scratch);
@@ -926,7 +932,11 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             present_frame(&mut canvas, &texture, 0, 0)?;
             did_present = true;
         } else {
-            let t0 = if blit_stats { Some(Instant::now()) } else { None };
+            let t0 = if blit_stats {
+                Some(Instant::now())
+            } else {
+                None
+            };
             if full_upload || overlay || title_open {
                 texture
                     .update(None, &fb.pixels, (WIDTH * 4) as usize)
@@ -1006,16 +1016,17 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                 flash_started = None;
             }
         }
-        let sk = (
-            view.scene_id.clone(),
-            view.beat_index,
-            view.char_slide_ms,
-        );
+        let sk = (view.scene_id.clone(), view.beat_index, view.char_slide_ms);
         if slide_key.as_ref() != Some(&sk) {
             slide_key = Some(sk);
             slide_started = view.char_slide_ms.map(|_| Instant::now());
         }
-        let fx_hold = runtime.fx_holds();
+        let fx_hold = fx_hold_active(
+            settings.effects,
+            runtime.fx_holds(),
+            view.fx_wait_ms,
+            view.char_slide_ms,
+        );
         let movie_hold = runtime.movie_holds();
         let title_op_hold = title_op.is_some();
         if fx_hold {
@@ -1027,9 +1038,10 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                         .or(view.char_slide_ms)
                 } else {
                     view.fx_wait_ms.or(view.char_slide_ms)
+                };
+                if let Some(ms) = ms {
+                    fx_until = Some(Instant::now() + Duration::from_millis(u64::from(ms)));
                 }
-                .unwrap_or(0);
-                fx_until = Some(Instant::now() + Duration::from_millis(u64::from(ms)));
             }
             if !overlay && fade.is_none() && !skipping {
                 if let Some(deadline) = fx_until {
@@ -1077,11 +1089,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             && ctrl_skips(
                 view.phase.clone(),
                 settings.skip_unread,
-                seen.is_read(
-                    &view.scene_id,
-                    view.beat_index,
-                    runtime.current_beat_id(),
-                ),
+                seen.is_read(&view.scene_id, view.beat_index, runtime.current_beat_id()),
                 fx_hold || movie_hold,
             )
         {
@@ -1099,12 +1107,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
             match event {
                 Event::Quit { .. } => break 'running,
                 Event::Window { win_event, .. } => {
-                    apply_window_focus_flags(
-                        win_event,
-                        &mut focused,
-                        &mut minimized,
-                        &mut hidden,
-                    );
+                    apply_window_focus_flags(win_event, &mut focused, &mut minimized, &mut hidden);
                 }
                 Event::KeyDown {
                     keycode: Some(key),
@@ -1290,9 +1293,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                         }
                         Action::Save => {
                             if !title_open {
-                                let dir = &save_dir;
-                                let _ = write_slot(&dir, 0, &runtime.to_save());
-                                persist_thumb(&dir, 0, last_thumb.as_deref());
+                                let _ = store_runtime_save(
+                                    &runtime,
+                                    &save_dir,
+                                    0,
+                                    last_thumb.as_deref(),
+                                    &mut notice,
+                                    true,
+                                );
                             }
                         }
                         Action::Load => {
@@ -1411,9 +1419,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                 match ACTIONS[menu_sel] {
                                     MenuAction::Continue => menu_open = false,
                                     MenuAction::QuickSave => {
-                                        let dir = &save_dir;
-                                        let _ = write_slot(&dir, 0, &runtime.to_save());
-                                        persist_thumb(&dir, 0, last_thumb.as_deref());
+                                        let _ = store_runtime_save(
+                                            &runtime,
+                                            &save_dir,
+                                            0,
+                                            last_thumb.as_deref(),
+                                            &mut notice,
+                                            true,
+                                        );
                                         menu_open = false;
                                     }
                                     MenuAction::QuickLoad => {
@@ -1521,8 +1534,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                 }
                                 if view.phase == Phase::Choices {
                                     if runtime.choose(choice_sel) {
-                                        let dir = &save_dir;
-                                        let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
+                                        let _ = store_runtime_save(
+                                            &runtime,
+                                            &save_dir,
+                                            AUTO_SLOT,
+                                            None,
+                                            &mut notice,
+                                            false,
+                                        );
                                     }
                                     continue;
                                 }
@@ -1542,7 +1561,13 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     }
                 }
                 Event::MouseWheel { y, direction, .. } => {
-                    if menu_open || slot_pick.is_some() || title_open || settings_open || gallery_open || music_open {
+                    if menu_open
+                        || slot_pick.is_some()
+                        || title_open
+                        || settings_open
+                        || gallery_open
+                        || music_open
+                    {
                         continue;
                     }
                     let dy = match direction {
@@ -1550,10 +1575,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                         _ => y,
                     };
                     // YU-NO P1: cycle multi-action button when hovering a hotspot.
-                    if !backlog.open
-                        && !ui_hidden
-                        && runtime.view().phase == Phase::Explore
-                    {
+                    if !backlog.open && !ui_hidden && runtime.view().phase == Phase::Explore {
                         if let Some(id) = explore_focus.clone() {
                             let n = runtime.explore_available_actions(&id).len();
                             if n > 1 && dy != 0 {
@@ -1562,11 +1584,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                                 } else {
                                     explore_action_index = (explore_action_index + 1) % n;
                                 }
-                                sync_explore_action(
-                                    &mut runtime,
-                                    Some(&id),
-                                    explore_action_index,
-                                );
+                                sync_explore_action(&mut runtime, Some(&id), explore_action_index);
                                 continue;
                             }
                         }
@@ -1578,12 +1596,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     }
                 }
                 Event::MouseMotion { x, y, .. } => {
-                    if let InvDrag::Press {
-                        item,
-                        x: sx,
-                        y: sy,
-                    } = &inv_drag
-                    {
+                    if let InvDrag::Press { item, x: sx, y: sy } = &inv_drag {
                         let (ww, wh) = canvas.output_size()?;
                         if let Some((lx, ly)) = window_to_logical(x, y, ww, wh) {
                             if (lx - *sx).abs() >= INV_DRAG_PX || (ly - *sy).abs() >= INV_DRAG_PX {
@@ -1609,11 +1622,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                             if runtime.view().phase == Phase::Explore {
                                 if let Some((lx, ly)) = logical {
                                     if let Some(hs) = runtime.explore_hit(lx, ly) {
-                                        runtime.interact_with_item(
-                                            &hs,
-                                            &item,
-                                            ItemUseMode::Drag,
-                                        );
+                                        runtime.interact_with_item(&hs, &item, ItemUseMode::Drag);
                                     }
                                 }
                             }
@@ -1711,20 +1720,22 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                         continue;
                     }
                     if menu_open {
-                        if let Some(i) = hit_menu(
-                            lx,
-                            ly,
-                            runtime.project.pause_buttons.as_ref(),
-                            &pause_sizes,
-                        ) {
+                        if let Some(i) =
+                            hit_menu(lx, ly, runtime.project.pause_buttons.as_ref(), &pause_sizes)
+                        {
                             pressed_menu = Some(i);
                             menu_sel = i;
                             match ACTIONS[i] {
                                 MenuAction::Continue => menu_open = false,
                                 MenuAction::QuickSave => {
-                                    let dir = &save_dir;
-                                    let _ = write_slot(&dir, 0, &runtime.to_save());
-                                    persist_thumb(&dir, 0, last_thumb.as_deref());
+                                    let _ = store_runtime_save(
+                                        &runtime,
+                                        &save_dir,
+                                        0,
+                                        last_thumb.as_deref(),
+                                        &mut notice,
+                                        true,
+                                    );
                                     menu_open = false;
                                 }
                                 MenuAction::QuickLoad => {
@@ -1819,12 +1830,9 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                         continue;
                     }
                     if title_open {
-                        if let Some(i) = hit_title(
-                            lx,
-                            ly,
-                            runtime.project.title_buttons.as_ref(),
-                            &title_sizes,
-                        ) {
+                        if let Some(i) =
+                            hit_title(lx, ly, runtime.project.title_buttons.as_ref(), &title_sizes)
+                        {
                             title_sel = i;
                             pressed_title = Some(i);
                             if notice.take().is_some() {
@@ -1926,10 +1934,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                     if notice.take().is_some() {
                         continue;
                     }
-                    if matches!(
-                        runtime.view().phase,
-                        Phase::Ended | Phase::MissingScene(_)
-                    ) {
+                    if matches!(runtime.view().phase, Phase::Ended | Phase::MissingScene(_)) {
                         go_to_title(
                             &mut title_open,
                             &mut title_sel,
@@ -1952,8 +1957,14 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                             choice_sel = i;
                             pressed_choice = Some(i);
                             if runtime.choose(i) {
-                                let dir = &save_dir;
-                                let _ = write_slot(&dir, AUTO_SLOT, &runtime.to_save());
+                                let _ = store_runtime_save(
+                                    &runtime,
+                                    &save_dir,
+                                    AUTO_SLOT,
+                                    None,
+                                    &mut notice,
+                                    false,
+                                );
                             }
                         }
                     } else if runtime.view().phase == Phase::Dialogue {
@@ -1975,11 +1986,7 @@ pub fn run(mut runtime: Runtime, mut title_open: bool, paths: UserPaths) -> Resu
                             };
                         } else if hit_explore_action(lx, ly) {
                             if let Some(id) = explore_focus.clone() {
-                                sync_explore_action(
-                                    &mut runtime,
-                                    Some(&id),
-                                    explore_action_index,
-                                );
+                                sync_explore_action(&mut runtime, Some(&id), explore_action_index);
                                 runtime.interact_hotspot(&id);
                             } else if explore_focus_room {
                                 runtime.interact_empty();
@@ -2029,13 +2036,9 @@ fn apply_window_icon(window: &mut sdl2::video::Window, runtime: &Runtime) {
     let h = rgba.height();
     let mut raw = rgba.into_raw();
     let pitch = w.saturating_mul(4);
-    let Ok(surface) = sdl2::surface::Surface::from_data(
-        &mut raw,
-        w,
-        h,
-        pitch,
-        PixelFormatEnum::ABGR8888,
-    ) else {
+    let Ok(surface) =
+        sdl2::surface::Surface::from_data(&mut raw, w, h, pitch, PixelFormatEnum::ABGR8888)
+    else {
         return;
     };
     window.set_icon(surface);
@@ -2053,10 +2056,7 @@ fn choose_kernel(simd_setting: bool) -> BlitKernel {
     }
 }
 
-fn set_desktop_fullscreen(
-    canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-    on: bool,
-) {
+fn set_desktop_fullscreen(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, on: bool) {
     let mode = if on {
         sdl2::video::FullscreenType::Desktop
     } else {
@@ -2125,7 +2125,6 @@ fn setting_delta(index: usize, sign: i32) -> i32 {
     }
 }
 
-
 fn go_to_title(
     title_open: &mut bool,
     title_sel: &mut usize,
@@ -2186,9 +2185,7 @@ fn apply_hud(
         }
         HudAction::QuickSave => {
             if !*title_open {
-                let dir = &save_dir;
-                let _ = write_slot(&dir, 0, &runtime.to_save());
-                persist_thumb(&dir, 0, last_thumb);
+                let _ = store_runtime_save(runtime, save_dir, 0, last_thumb, notice, true);
             }
         }
         HudAction::QuickLoad => {
@@ -2247,6 +2244,39 @@ fn start_new_game(
     *fade = None;
     *auto_until = None;
     *auto_key = None;
+}
+
+fn store_runtime_save(
+    runtime: &Runtime,
+    dir: &std::path::Path,
+    slot: u8,
+    thumb: Option<&[u8]>,
+    notice: &mut Option<Notice>,
+    notify: bool,
+) -> bool {
+    match runtime.try_to_save() {
+        Ok(save) => {
+            let ok = write_slot(dir, slot, &save).is_ok();
+            if ok {
+                persist_thumb(dir, slot, thumb);
+            } else if notify {
+                *notice = Some(Notice::Format);
+            }
+            ok
+        }
+        Err(VmError::Explore(ExploreError::InvalidState(_))) => {
+            if notify {
+                *notice = Some(Notice::CannotSave);
+            }
+            false
+        }
+        Err(_) => {
+            if notify {
+                *notice = Some(Notice::Format);
+            }
+            false
+        }
+    }
 }
 
 fn load_slot(
@@ -2316,17 +2346,11 @@ fn apply_numbered_slot(
     };
     let slot = index_to_slot(index);
     if saving {
-        let dir = save_dir;
-        let ok = write_slot(&dir, slot, &runtime.to_save()).is_ok();
-        if ok {
-            persist_thumb(&dir, slot, thumb);
-        }
-        ok
+        store_runtime_save(runtime, save_dir, slot, thumb, notice, true)
     } else {
         load_slot(runtime, slot, fade, auto_until, auto_key, notice, save_dir)
     }
 }
-
 
 fn sync_explore_action(runtime: &mut Runtime, hotspot_id: Option<&str>, index: usize) {
     if runtime.explore_pending_item().is_some() {
@@ -2431,9 +2455,9 @@ fn emit_blit_stats(line: &str) {
             .chain(std::iter::once(0))
             .collect();
         unsafe {
-            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
-                windows::core::PCWSTR(wide.as_ptr()),
-            );
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(windows::core::PCWSTR(
+                wide.as_ptr(),
+            ));
         }
     }
     // Best-effort append <exe_dir>/blit-stats.txt; never fail the frame.
@@ -2456,6 +2480,30 @@ fn emit_blit_stats(line: &str) {
     let _ = std::fs::write(&path, body);
 }
 
+/// `present_vsync()` starts the renderer on. A failed `SDL_RenderSetVSync` leaves that on.
+fn vsync_after_startup(requested: bool, applied: bool) -> bool {
+    if applied {
+        requested
+    } else {
+        true
+    }
+}
+
+/// Shake and flash are not holds when effects are off. `None` wait and slide means do not arm a timer.
+fn fx_hold_active(
+    effects: bool,
+    engine_holds: bool,
+    wait_ms: Option<u32>,
+    slide_ms: Option<u32>,
+) -> bool {
+    if !engine_holds {
+        return false;
+    }
+    if effects {
+        return true;
+    }
+    wait_ms.is_some() || slide_ms.is_some()
+}
 
 fn vsync_sdl_flag(on: bool) -> i32 {
     if on {
@@ -2465,10 +2513,7 @@ fn vsync_sdl_flag(on: bool) -> i32 {
     }
 }
 
-fn set_vsync(
-    canvas: &sdl2::render::Canvas<sdl2::video::Window>,
-    on: bool,
-) -> Result<(), String> {
+fn set_vsync(canvas: &sdl2::render::Canvas<sdl2::video::Window>, on: bool) -> Result<(), String> {
     let rc = unsafe { sdl2::sys::SDL_RenderSetVSync(canvas.raw(), vsync_sdl_flag(on)) };
     if rc == 0 {
         Ok(())
@@ -2497,9 +2542,9 @@ fn emit_debug_line(line: &str, log: Option<&std::path::Path>) {
             .chain(std::iter::once(0))
             .collect();
         unsafe {
-            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
-                windows::core::PCWSTR(wide.as_ptr()),
-            );
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(windows::core::PCWSTR(
+                wide.as_ptr(),
+            ));
         }
     }
     #[cfg(not(windows))]
@@ -2695,5 +2740,22 @@ mod tests {
     fn vsync_request_values() {
         assert_eq!(vsync_sdl_flag(true), 1);
         assert_eq!(vsync_sdl_flag(false), 0);
+    }
+
+    #[test]
+    fn failed_startup_vsync_keeps_renderer_on() {
+        assert!(vsync_after_startup(false, false));
+        assert!(vsync_after_startup(true, false));
+        assert!(!vsync_after_startup(false, true));
+        assert!(vsync_after_startup(true, true));
+    }
+
+    #[test]
+    fn effects_off_flash_only_is_not_a_hold() {
+        assert!(!fx_hold_active(false, true, None, None));
+        assert!(fx_hold_active(false, true, Some(400), None));
+        assert!(fx_hold_active(false, true, None, Some(200)));
+        assert!(fx_hold_active(true, true, None, None));
+        assert!(!fx_hold_active(true, false, Some(10), None));
     }
 }

@@ -518,6 +518,77 @@ fn flash_without_say_holds_then_advances() {
 }
 
 #[test]
+fn beat_set_applies_once_on_advance_and_load() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k4-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::write(
+        tmp.join("galeng.json"),
+        r#"{
+          "id": "k4",
+          "title": "K4",
+          "schemaVersion": 2,
+          "resolution": { "width": 1920, "height": 1080 },
+          "startScene": "a",
+          "locale": "zh-Hant",
+          "skipTitle": true
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("scenario/a.json"),
+        r#"{
+          "id": "a",
+          "beats": [
+            { "say": { "speaker": "n", "text": "one {score}" }, "set": { "score": "+1" } },
+            { "say": { "speaker": "n", "text": "two {score}" }, "set": { "score": "+1" } }
+          ],
+          "exit": {
+            "type": "branch",
+            "if": { "score": { "eq": 1, "gt": 10 } },
+            "then": "yes",
+            "else": "no"
+          }
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("scenario/yes.json"),
+        r#"{ "id": "yes", "beats": [{ "say": { "speaker": "n", "text": "yes" } }] }"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("scenario/no.json"),
+        r#"{ "id": "no", "beats": [{ "say": { "speaker": "n", "text": "no" } }] }"#,
+    )
+    .unwrap();
+
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.vars().get("score"), Some(&1));
+    assert_eq!(rt.view().say_text.as_deref(), Some("one 1"));
+    let mid = rt.to_save();
+    rt.apply_save(&mid).unwrap();
+    assert_eq!(rt.vars().get("score"), Some(&1));
+    assert_eq!(rt.view().say_text.as_deref(), Some("one 1"));
+
+    rt.click_advance();
+    assert_eq!(rt.vars().get("score"), Some(&2));
+    assert_eq!(rt.view().say_text.as_deref(), Some("two 2"));
+    rt.apply_save(&rt.to_save()).unwrap();
+    assert_eq!(rt.vars().get("score"), Some(&2));
+
+    rt.click_advance();
+    assert_eq!(rt.view().scene_id, "no");
+    assert_eq!(rt.vars().get("score"), Some(&2));
+
+    let landed = rt.backlog()[0].clone();
+    assert!(rt.jump_back(&landed.scene, landed.beat_index));
+    assert_eq!(rt.view().say_text.as_deref(), Some("one 2"));
+    assert_eq!(rt.vars().get("score"), Some(&2));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn camera_inherits_resets_and_does_not_cross_scene() {
     let tmp = std::env::temp_dir().join(format!("galeng-part93-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);

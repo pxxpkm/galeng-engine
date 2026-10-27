@@ -21,6 +21,8 @@ pub enum SaveError {
     SchemaMismatch { expected: u32, got: u32 },
     #[error("save format {got} is newer than supported")]
     FormatTooNew { got: u32 },
+    #[error("explore session save has no engine state")]
+    MissingExplore,
 }
 
 fn save_format_v1() -> u32 {
@@ -28,7 +30,8 @@ fn save_format_v1() -> u32 {
 }
 
 /// Current writer format. Always written on new saves.
-pub const SAVE_FORMAT: u32 = 2;
+/// 3 adds optional `explore` engine state. Formats 1 and 2 still load.
+pub const SAVE_FORMAT: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +50,10 @@ pub struct SaveGame {
     pub saved_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Explore engine snapshot. Absent on dialogue-only saves and on saves
+    /// written before format 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explore: Option<galeng_explore::ExploreSave>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +97,12 @@ fn effective_save_format(raw: u32) -> u32 {
 
 pub fn default_save_dir(game_id: &str, project_dir: &Path) -> PathBuf {
     std::env::var_os("APPDATA")
-        .map(|root| PathBuf::from(root).join("Galeng").join(game_id).join("save"))
+        .map(|root| {
+            PathBuf::from(root)
+                .join("Galeng")
+                .join(game_id)
+                .join("save")
+        })
         .unwrap_or_else(|| project_dir.join("save"))
 }
 
@@ -148,13 +160,23 @@ pub fn downscale_rgba(src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<u8>
     out
 }
 
-pub fn write_thumb(dir: &Path, slot: u8, rgba: &[u8], width: u32, height: u32) -> Result<PathBuf, SaveError> {
+pub fn write_thumb(
+    dir: &Path,
+    slot: u8,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<PathBuf, SaveError> {
     let path = thumb_path(dir, slot)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let img = image::RgbaImage::from_raw(width, height, rgba.to_vec())
-        .ok_or_else(|| SaveError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "bad thumb")))?;
+    let img = image::RgbaImage::from_raw(width, height, rgba.to_vec()).ok_or_else(|| {
+        SaveError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "bad thumb",
+        ))
+    })?;
     img.save(&path)
         .map_err(|e| SaveError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
     Ok(path)
@@ -194,7 +216,9 @@ fn windows_local_offset_secs(unix: u64) -> Option<i64> {
     use windows::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
 
     const UNIX_EPOCH_AS_FILETIME: u64 = 11_644_473_600 * 10_000_000;
-    let utc = unix.saturating_mul(10_000_000).saturating_add(UNIX_EPOCH_AS_FILETIME);
+    let utc = unix
+        .saturating_mul(10_000_000)
+        .saturating_add(UNIX_EPOCH_AS_FILETIME);
     let utc_ft = FILETIME {
         dwLowDateTime: utc as u32,
         dwHighDateTime: (utc >> 32) as u32,
@@ -246,7 +270,9 @@ pub fn check_save(save: &SaveGame, game_id: &str, schema_version: u32) -> Result
     }
     let fmt = effective_save_format(save.save_format);
     if fmt > SAVE_FORMAT {
-        return Err(SaveError::FormatTooNew { got: save.save_format });
+        return Err(SaveError::FormatTooNew {
+            got: save.save_format,
+        });
     }
     Ok(())
 }
@@ -274,6 +300,7 @@ mod tests {
             carried_bgm: None,
             saved_at: 0,
             label: None,
+            explore: None,
         };
         assert!(check_save(&save, "b", 1).is_err());
         assert!(check_save(&save, "a", 2).is_err());
@@ -285,7 +312,9 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("galeng-part54-{}-thumb", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
-        let src = vec![200u8, 10, 10, 255, 10, 200, 10, 255, 10, 10, 200, 255, 255, 255, 0, 255];
+        let src = vec![
+            200u8, 10, 10, 255, 10, 200, 10, 255, 10, 10, 200, 255, 255, 255, 0, 255,
+        ];
         let small = downscale_rgba(&src, 2, 2, THUMB_W, THUMB_H);
         assert_eq!(small.len(), (THUMB_W * THUMB_H * 4) as usize);
         write_thumb(&tmp, 1, &small, THUMB_W, THUMB_H).unwrap();
@@ -311,6 +340,7 @@ mod tests {
         assert_eq!(save.scene, "park_01");
         assert!(save.label.is_none());
         assert!(save.beat_id.is_none());
+        assert!(save.explore.is_none());
         assert_eq!(save.save_format, 1);
         assert!(check_save(&save, "a", 1).is_ok());
         let _ = fs::remove_dir_all(&tmp);
@@ -332,13 +362,13 @@ mod tests {
     }
 
     #[test]
-    fn save_format_above_2_is_refused() {
+    fn save_format_above_3_is_refused() {
         let save: SaveGame = serde_json::from_str(
-            r#"{"schemaVersion":1,"saveFormat":3,"gameId":"a","scene":"s","beatIndex":0,"vars":{},"savedAt":0}"#,
+            r#"{"schemaVersion":1,"saveFormat":4,"gameId":"a","scene":"s","beatIndex":0,"vars":{},"savedAt":0}"#,
         )
         .unwrap();
         match check_save(&save, "a", 1) {
-            Err(SaveError::FormatTooNew { got: 3 }) => {}
+            Err(SaveError::FormatTooNew { got: 4 }) => {}
             other => panic!("expected FormatTooNew, got {other:?}"),
         }
     }
@@ -360,7 +390,10 @@ mod tests {
             resolve_beat(&beats, Some("bfedcba9876543210"), 0),
             Resume::At(1)
         );
-        assert_eq!(resolve_beat(&beats, Some("bmissing000000000"), 1), Resume::NotFound);
+        assert_eq!(
+            resolve_beat(&beats, Some("bmissing000000000"), 1),
+            Resume::NotFound
+        );
         assert_eq!(resolve_beat(&beats, None, 0), Resume::At(0));
         assert_eq!(resolve_beat(&beats, None, 2), Resume::At(2)); // == len → exit
         assert_eq!(resolve_beat(&beats, None, 3), Resume::NotFound);
@@ -402,7 +435,9 @@ mod tests {
         assert_eq!(format_saved_at_offset(0, -8 * 3600), "12-31 16:00");
         let clock = format_saved_at(1_700_000_000);
         assert!(
-            clock.as_bytes().len() == 11 && clock.as_bytes()[2] == b'-' && clock.as_bytes()[5] == b' ',
+            clock.as_bytes().len() == 11
+                && clock.as_bytes()[2] == b'-'
+                && clock.as_bytes()[5] == b' ',
             "expected MM-DD HH:MM, got {clock}"
         );
     }

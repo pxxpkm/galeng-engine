@@ -26,6 +26,11 @@ pub struct ExploreSave {
     pub pending_item: Option<String>,
     #[serde(default)]
     pub inventory_open: bool,
+    /// Line on screen when `phase` is Saying and the action queue was empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub say_speaker: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub say_text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

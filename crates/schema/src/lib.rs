@@ -1,9 +1,11 @@
 //! Plane scenario IR (dialogue and explore): serde types plus JSON Schema validation.
 
+pub mod eval;
 pub mod local;
 pub mod types;
 pub mod validate;
 
+pub use eval::{apply_set, cmp_holds, condition_holds, pred_holds};
 pub use local::{
     asset_dir, ensure_asset_groups, is_default_asset_dir, load_local, save_local, store_asset_root,
     LocalConfig, ASSET_GROUP_DIRS, LOCAL_FILE,

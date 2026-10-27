@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use galeng_schema::{
-    validate_project_str, validate_scene_str, ChoiceOption, Condition, ConditionPred, Exit,
-    ExploreAction, InteractionOn, ItemDef, ItemUseMode, Project, Scene, SceneKind, SetValue,
+    apply_set, condition_holds, validate_project_str, validate_scene_str, ChoiceOption, Exit,
+    ExploreAction, InteractionOn, ItemDef, ItemUseMode, Project, Scene, SceneKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -237,8 +237,18 @@ impl Engine {
             pending_item: self.pending_item.clone(),
             inventory_open: self.inventory_open,
             inventory: self.world.inventory.clone(),
-            switches: self.world.switches.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-            vars: self.world.vars.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            switches: self
+                .world
+                .switches
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
+            vars: self
+                .world
+                .vars
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
             trace: self.last_trace,
             last_trans: self.last_trans.clone(),
             pending_se: self.pending_se.clone(),
@@ -444,14 +454,10 @@ impl Engine {
         Ok(true)
     }
 
-    /// Save only at Explore idle / dialogue beat boundary / Choices / Ended.
-    /// Rejects mid-Saying, non-empty action queue, or Error phase (does not serialize queue/say).
+    /// Save at Explore, Dialogue, Choices, Ended, or Saying when the queue is empty.
+    /// A Saying line is stored and restored. A non-empty action queue is not
+    /// serializable, so that save is refused instead of dropping the rest.
     pub fn try_to_save(&self) -> Result<ExploreSave, Error> {
-        if matches!(self.phase, Phase::Saying) {
-            return Err(Error::InvalidState(
-                "cannot save while Saying (dismiss first)".into(),
-            ));
-        }
         if matches!(self.phase, Phase::Error(_)) {
             return Err(Error::InvalidState("cannot save in Error phase".into()));
         }
@@ -483,14 +489,26 @@ impl Engine {
             beat_index: self.beat_index,
             phase: PhaseSave::from(&self.phase),
             call_stack: self.call_stack.clone(),
-            switches: self.world.switches.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-            vars: self.world.vars.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            switches: self
+                .world
+                .switches
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
+            vars: self
+                .world
+                .vars
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
             inventory: self.world.inventory.clone(),
             hotspot_visible,
             hotspot_enabled,
             selected_verb: self.selected_verb.clone(),
             pending_item: self.pending_item.clone(),
             inventory_open: self.inventory_open,
+            say_speaker: self.say_speaker.clone(),
+            say_text: self.say_text.clone(),
         }
     }
 
@@ -505,7 +523,12 @@ impl Engine {
             }
         }
         for id in candidates {
-            if let Some(asset) = self.scenes.get(id).and_then(|s| s.bg.as_ref()).map(|b| b.asset.clone()) {
+            if let Some(asset) = self
+                .scenes
+                .get(id)
+                .and_then(|s| s.bg.as_ref())
+                .map(|b| b.asset.clone())
+            {
                 return Some(asset);
             }
         }
@@ -514,7 +537,6 @@ impl Engine {
 
     /// Drain SE assets queued by PlaySe actions (player plays them).
     pub fn take_pending_se(&mut self) -> Vec<String> {
-
         std::mem::take(&mut self.pending_se)
     }
 
@@ -568,7 +590,11 @@ impl Engine {
             let InteractionOn::Verb(v) = &inter.on else {
                 continue;
             };
-            let Some(rule) = inter.rules.iter().find(|r| preds_hold(&r.when, &self.world)) else {
+            let Some(rule) = inter
+                .rules
+                .iter()
+                .find(|r| preds_hold(&r.when, &self.world))
+            else {
                 continue;
             };
             let id = v.verb.clone();
@@ -624,7 +650,6 @@ impl Engine {
     }
 
     pub fn load_save(&mut self, save: &ExploreSave) -> Result<(), Error> {
-
         if save.schema_version != self.project.schema_version {
             return Err(Error::SchemaMismatch {
                 expected: self.project.schema_version,
@@ -674,8 +699,9 @@ impl Engine {
         self.pending_item = save.pending_item.clone();
         self.inventory_open = save.inventory_open;
         self.action_queue.clear();
-        self.say_speaker = None;
-        self.say_text = None;
+        self.say_speaker = save.say_speaker.clone();
+        self.say_text = save.say_text.clone();
+        self.pending_se.clear();
         self.last_trace = TraceLayer::None;
         Ok(())
     }
@@ -1055,7 +1081,11 @@ fn resolve_interaction(
         }
         for rule in &inter.rules {
             if preds_hold(&rule.when, world) {
-                return (rule.actions.clone(), TraceLayer::Interaction, item.is_some());
+                return (
+                    rule.actions.clone(),
+                    TraceLayer::Interaction,
+                    item.is_some(),
+                );
             }
         }
     }
@@ -1113,76 +1143,6 @@ fn on_matches(
 ) -> bool {
     match on {
         InteractionOn::Verb(v) => verb == Some(v.verb.as_str()),
-        InteractionOn::Item(i) => {
-            item == Some(i.item.as_str()) && i.use_mode == item_mode
-        }
+        InteractionOn::Item(i) => item == Some(i.item.as_str()) && i.use_mode == item_mode,
     }
 }
-
-fn apply_set(vars: &mut HashMap<String, i32>, set: &BTreeMap<String, SetValue>) {
-    for (k, v) in set {
-        let n = match v {
-            SetValue::Int(i) => *i,
-            SetValue::Bool(b) => {
-                if *b {
-                    1
-                } else {
-                    0
-                }
-            }
-            SetValue::Text(_) => continue,
-        };
-        vars.insert(k.clone(), n);
-    }
-}
-
-fn condition_holds(vars: &HashMap<String, i32>, cond: &Condition) -> bool {
-    if cond.is_empty() {
-        return true;
-    }
-    cond.iter().all(|(key, pred)| {
-        let cur = vars.get(key).copied().unwrap_or(0);
-        match pred {
-            ConditionPred::Bool(b) => (cur != 0) == *b,
-            ConditionPred::Int(i) => cur == *i,
-            ConditionPred::Text(_) => false,
-            ConditionPred::Cmp(cmp) => {
-                if let Some(eq) = &cmp.eq {
-                    if let Some(n) = eq.as_i64() {
-                        return cur == n as i32;
-                    }
-                    if let Some(b) = eq.as_bool() {
-                        return (cur != 0) == b;
-                    }
-                }
-                if let Some(ne) = &cmp.ne {
-                    if let Some(n) = ne.as_i64() {
-                        return cur != n as i32;
-                    }
-                }
-                if let Some(gte) = cmp.gte {
-                    if cur < gte {
-                        return false;
-                    }
-                }
-                if let Some(lte) = cmp.lte {
-                    if cur > lte {
-                        return false;
-                    }
-                }
-                if let Some(gt) = cmp.gt {
-                    if cur <= gt {
-                        return false;
-                    }
-                }
-                if let Some(lt) = cmp.lt {
-                    if cur >= lt {
-                        return false;
-                    }
-                }
-                true
-            }
-        }
-    })
-}
-

@@ -380,8 +380,6 @@
   "editor.scriptsOpen": "打开",
   "editor.scriptsCopy": "复制",
   "editor.scriptsOpenHint": "“打开”会跳到现有时间轴/检查器（脚本库只是路由器）。",
-  "editor": {
-    "warnSaveExploreFromDialogue": "此场景为探险（explore）。在对白编辑器写入 beats 可能与探险壳冲突。仍要保存？",
-    "saveCancelled": "已取消保存"
-  }
+  "editor.warnSaveExploreFromDialogue": "此场景为探险（explore）。在对白编辑器写入 beats 可能与探险壳冲突。仍要保存？",
+  "editor.saveCancelled": "已取消保存"
 }

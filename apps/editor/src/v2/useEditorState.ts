@@ -40,6 +40,7 @@ import { dialogueRouteParams } from "../editorRoute";
 import { exportAllScenes, exportScene, type ScriptFile } from "../exportScript";
 import { upsertSceneMeta } from "../route";
 import { clampBeatIndex, loadScenesForSearch, type SearchHit } from "../search";
+import { mergeSaveResponse } from "../saveGeneration";
 import type { CiteSite } from "../overview";
 import { varNames, type VarSite } from "../vars";
 import type { AssetMeta, AssetRootInfo, Beat, Locale, Project, Scene, SceneMeta } from "../types";
@@ -122,6 +123,16 @@ export function useEditorState() {
   const [inspectorTab, setInspectorTab] = useState<"beat" | "exit">("beat");
   const [focusChoice, setFocusChoice] = useState<number | null>(null);
   const pendingBeatRef = useRef<number | null>(null);
+  const sceneRef = useRef(scene);
+  const projectRef = useRef(project);
+  const dirtyRef = useRef(dirty);
+  const projectDirtyRef = useRef(projectDirty);
+  const sceneRev = useRef(0);
+  const projectRev = useRef(0);
+  sceneRef.current = scene;
+  projectRef.current = project;
+  dirtyRef.current = dirty;
+  projectDirtyRef.current = projectDirty;
 
   const toastId = useRef(0);
   const beat = scene?.beats[beatIndex];
@@ -170,6 +181,10 @@ export function useEditorState() {
           getJson<AssetRootInfo>("/api/asset-root"),
         ]);
         if (cancelled) return;
+        projectRev.current += 1;
+        projectRef.current = p;
+        projectDirtyRef.current = false;
+        anyDirtyRef.current = dirtyRef.current;
         setProject(p);
         setScenes(s);
         setAssets(a);
@@ -194,6 +209,10 @@ export function useEditorState() {
       .then((s) => {
         const idx = clampBeatIndex(pendingBeatRef.current, s.beats.length);
         pendingBeatRef.current = null;
+        sceneRev.current += 1;
+        sceneRef.current = s;
+        dirtyRef.current = false;
+        anyDirtyRef.current = projectDirtyRef.current;
         setScene(s);
         setBeatIndex(idx);
         setSelected([idx]);
@@ -216,6 +235,10 @@ export function useEditorState() {
     (next: Scene, nextBeat = beatIndex, nextSelected?: number[]) => {
       if (!scene) return;
       setHistory((h) => push(h, { scene, beatIndex }));
+      sceneRev.current += 1;
+      sceneRef.current = next;
+      dirtyRef.current = true;
+      anyDirtyRef.current = true;
       setScene(next);
       setBeatIndex(nextBeat);
       const focus = [nextBeat];
@@ -248,7 +271,12 @@ export function useEditorState() {
       next.beats = applyAssetToMany(next.beats, group, asset);
       commitScene(next, index, group);
       if (asset.logical.startsWith("cg/") && project) {
-        setProject({ ...project, cg: ensureGalleryItem(project.cg, asset.logical) });
+        const nextProject = { ...project, cg: ensureGalleryItem(project.cg, asset.logical) };
+        projectRev.current += 1;
+        projectRef.current = nextProject;
+        projectDirtyRef.current = true;
+        anyDirtyRef.current = true;
+        setProject(nextProject);
         setProjectDirty(true);
       }
     },
@@ -260,6 +288,10 @@ export function useEditorState() {
     const result = undo(history, { scene, beatIndex });
     if (!result) return;
     setHistory(result.history);
+    sceneRev.current += 1;
+    sceneRef.current = result.snap.scene;
+    dirtyRef.current = true;
+    anyDirtyRef.current = true;
     setScene(result.snap.scene);
     setBeatIndex(result.snap.beatIndex);
     setSelected([result.snap.beatIndex]);
@@ -272,6 +304,10 @@ export function useEditorState() {
     const result = redo(history, { scene, beatIndex });
     if (!result) return;
     setHistory(result.history);
+    sceneRev.current += 1;
+    sceneRef.current = result.snap.scene;
+    dirtyRef.current = true;
+    anyDirtyRef.current = true;
     setScene(result.snap.scene);
     setBeatIndex(result.snap.beatIndex);
     setSelected([result.snap.beatIndex]);
@@ -280,42 +316,79 @@ export function useEditorState() {
   }, [scene, beatIndex, history]);
 
   const save = useCallback(async () => {
+    const projectNow = projectRef.current;
+    const sceneNow = sceneRef.current;
     const issues = [
-      ...(project && projectDirty ? projectSaveIssues(project) : []),
-      ...(scene && dirty ? sceneSaveIssues(scene) : []),
+      ...(projectNow && projectDirtyRef.current ? projectSaveIssues(projectNow) : []),
+      ...(sceneNow && dirtyRef.current ? sceneSaveIssues(sceneNow) : []),
     ];
     if (issues.length > 0) {
       throw new Error(formatSaveIssues(issues, tRef.current));
     }
-    let savedAny = false;
-    if (project && projectDirty) {
-      const savedProject = await putJson<Project>("/api/project", project);
-      setProject(savedProject);
-      setProjectDirty(false);
-      savedAny = true;
+    let accepted = false;
+    if (projectNow && projectDirtyRef.current) {
+      const requestRev = projectRev.current;
+      const body = projectRef.current;
+      if (body) {
+        const savedProject = await putJson<Project>("/api/project", body);
+        const current = projectRef.current ?? savedProject;
+        const merged = mergeSaveResponse({
+          requestRev,
+          currentRev: projectRev.current,
+          saved: savedProject,
+          current,
+        });
+        if (merged.clearDirty) {
+          projectRef.current = merged.value;
+          projectDirtyRef.current = false;
+          anyDirtyRef.current = dirtyRef.current;
+          setProject(merged.value);
+          setProjectDirty(false);
+          accepted = true;
+        }
+      }
     }
-    if (scene && dirty) {
-      if (scene.sceneKind === "explore") {
+    const sceneForKind = sceneRef.current;
+    if (sceneForKind && dirtyRef.current) {
+      if (sceneForKind.sceneKind === "explore") {
         const ok = window.confirm(tRef.current("editor.warnSaveExploreFromDialogue"));
         if (!ok) {
           throw new Error(tRef.current("editor.saveCancelled"));
         }
       }
-      const withIds = {
-        ...scene,
-        beats: ensureBeatIds(scene.beats) as Scene["beats"],
-      };
-      const saved = await putJson<Scene>(`/api/scenes/${scene.id}`, withIds);
-      setScene(saved);
-      setScenes((list) => upsertSceneMeta(list, saved));
-      setDirty(false);
-      clearBackup(globalThis.localStorage, saved.id);
-      savedAny = true;
+      const body = sceneRef.current;
+      if (body && dirtyRef.current) {
+        const requestRev = sceneRev.current;
+        const withIds = {
+          ...body,
+          beats: ensureBeatIds(body.beats) as Scene["beats"],
+        };
+        const saved = await putJson<Scene>(`/api/scenes/${body.id}`, withIds);
+        const current = sceneRef.current;
+        if (current) {
+          const merged = mergeSaveResponse({
+            requestRev,
+            currentRev: sceneRev.current,
+            saved,
+            current,
+          });
+          if (merged.clearDirty) {
+            sceneRef.current = merged.value;
+            dirtyRef.current = false;
+            anyDirtyRef.current = projectDirtyRef.current;
+            setScene(merged.value);
+            setScenes((list) => upsertSceneMeta(list, merged.value));
+            setDirty(false);
+            clearBackup(globalThis.localStorage, merged.value.id);
+            accepted = true;
+          }
+        }
+      }
     }
-    if (savedAny) {
+    if (accepted) {
       pushToast("note", tRef.current("editor.saved"));
     }
-  }, [project, projectDirty, scene, dirty, pushToast]);
+  }, [pushToast]);
 
   // Deep link from Explore: #dialogue?scene=id&scripts=1
   const deepLinkDone = useRef(false);
@@ -804,6 +877,10 @@ export function useEditorState() {
   );
 
   const patchProject = useCallback((next: Project) => {
+    projectRev.current += 1;
+    projectRef.current = next;
+    projectDirtyRef.current = true;
+    anyDirtyRef.current = true;
     setProject(next);
     setProjectDirty(true);
   }, []);

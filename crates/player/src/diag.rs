@@ -22,51 +22,59 @@ pub enum DiagMode {
     AfterFailure,
 }
 
-/// Strip drive paths, UNC, and `\Users\` / `/Users/` segments from a diag line.
+/// Strip drive paths, UNC, and `\Users\` / `/Users\` segments from a diag line.
+///
+/// Walks char boundaries. A byte step through UTF-8 panics on the next slice.
 pub fn sanitize_diag_line(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
-    let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        // Drive path: X:\... or X:/...
-        if i + 2 < bytes.len()
-            && bytes[i].is_ascii_alphabetic()
-            && bytes[i + 1] == b':'
-            && (bytes[i + 2] == b'\\' || bytes[i + 2] == b'/')
-        {
-            out.push('?');
-            i += 3;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        // UNC \\
-        if i + 1 < bytes.len() && bytes[i] == b'\\' && bytes[i + 1] == b'\\' {
-            out.push('?');
-            i += 2;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        // \Users\ or /Users/
+    while i < line.len() {
         let rest = &line[i..];
-        if rest.len() >= 7
-            && (rest[..7].eq_ignore_ascii_case("\\Users\\")
-                || rest[..7].eq_ignore_ascii_case("/Users/"))
-        {
+        if let Some(skip) = path_token_len(rest) {
             out.push('?');
-            i += 7;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
-                i += 1;
-            }
+            i += skip;
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let ch = rest.chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
+}
+
+/// Byte length of a path token at the start of `rest`, not including a trailing space.
+fn path_token_len(rest: &str) -> Option<usize> {
+    let b = rest.as_bytes();
+    let prefix = if b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'\\' || b[2] == b'/')
+    {
+        3
+    } else if b.len() >= 2 && b[0] == b'\\' && b[1] == b'\\' {
+        2
+    } else if users_prefix(rest) {
+        7
+    } else {
+        return None;
+    };
+    let mut n = prefix;
+    for ch in rest[prefix..].chars() {
+        if ch == ' ' || ch == '\t' || ch == '\n' {
+            break;
+        }
+        n += ch.len_utf8();
+    }
+    Some(n)
+}
+
+fn users_prefix(rest: &str) -> bool {
+    let b = rest.as_bytes();
+    if b.len() < 7 || !b[..7].iter().all(|c| c.is_ascii()) {
+        return false;
+    }
+    let head = &rest[..7];
+    head.eq_ignore_ascii_case("\\Users\\") || head.eq_ignore_ascii_case("/Users/")
 }
 
 /// Pure OS version formatter (fixture-tested; no registry I/O).
@@ -126,30 +134,17 @@ fn simd_line() -> String {
 }
 
 fn map_pak_open_err(err: &galeng_packer::Error) -> String {
-    let s = err.to_string();
-    // Future PR8 may reject with a schema message; map without leaking paths.
-    if let Some(rest) = s.strip_prefix("schema ") {
-        let n: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        if !n.is_empty() {
-            return format!("pak: error: schema {n}");
-        }
-    }
-    if s.contains("schema") {
-        // Best-effort: last integer in the message.
-        let digits: String = s
-            .chars()
-            .rev()
-            .skip_while(|c| !c.is_ascii_digit())
-            .take_while(|c| c.is_ascii_digit())
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        if !digits.is_empty() {
-            return format!("pak: error: schema {digits}");
+    schema_diag_line(&err.to_string())
+}
+
+/// Pak open failures name the pak's schema, not the player's, and never a path.
+fn schema_diag_line(s: &str) -> String {
+    for prefix in ["pak schema ", "schema "] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            let n: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !n.is_empty() {
+                return format!("pak: error: schema {n}");
+            }
         }
     }
     "pak: error: unreadable".into()
@@ -201,10 +196,7 @@ fn movie_line() -> String {
 
 fn probe_sdl_video(skip: bool) -> Vec<String> {
     if skip {
-        return vec![
-            "sdl.video: skipped".into(),
-            "sdl.renderer: skipped".into(),
-        ];
+        return vec!["sdl.video: skipped".into(), "sdl.renderer: skipped".into()];
     }
     let mut lines = Vec::new();
     let sdl = match sdl2::init() {
@@ -220,10 +212,7 @@ fn probe_sdl_video(skip: bool) -> Vec<String> {
     let video = match sdl.video() {
         Ok(v) => v,
         Err(e) => {
-            lines.push(format!(
-                "sdl.video: error: {}",
-                sanitize_diag_line(&e)
-            ));
+            lines.push(format!("sdl.video: error: {}", sanitize_diag_line(&e)));
             return lines;
         }
     };
@@ -238,18 +227,11 @@ fn probe_sdl_video(skip: bool) -> Vec<String> {
             lines.push(format!("display: {n} {bounds}"));
         }
         Err(e) => {
-            lines.push(format!(
-                "display: error: {}",
-                sanitize_diag_line(&e)
-            ));
+            lines.push(format!("display: error: {}", sanitize_diag_line(&e)));
         }
     }
 
-    match video
-        .window("galeng-diag", 1280, 720)
-        .hidden()
-        .build()
-    {
+    match video.window("galeng-diag", 1280, 720).hidden().build() {
         Ok(window) => match window.into_canvas().build() {
             Ok(canvas) => {
                 lines.push(format!("sdl.renderer: {}", canvas.info().name));
@@ -318,9 +300,7 @@ fn read_dword(subkey: windows::core::PCWSTR, name: &str) -> Option<u32> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
-    use windows::Win32::System::Registry::{
-        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD,
-    };
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD};
     let wide_name: Vec<u16> = std::ffi::OsStr::new(name)
         .encode_wide()
         .chain(std::iter::once(0))
@@ -351,9 +331,7 @@ fn read_sz(subkey: windows::core::PCWSTR, name: &str) -> Option<String> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
-    use windows::Win32::System::Registry::{
-        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
-    };
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
     let wide_name: Vec<u16> = std::ffi::OsStr::new(name)
         .encode_wide()
         .chain(std::iter::once(0))
@@ -408,9 +386,9 @@ fn emit_ods(line: &str) {
             .chain(std::iter::once(0))
             .collect();
         unsafe {
-            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(
-                windows::core::PCWSTR(wide.as_ptr()),
-            );
+            windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(windows::core::PCWSTR(
+                wide.as_ptr(),
+            ));
         }
     }
     #[cfg(not(windows))]
@@ -420,7 +398,11 @@ fn emit_ods(line: &str) {
 }
 
 /// Progress-root label for the report (never a full path).
-pub fn user_data_label(launch: Option<&Launch>, exe_dir: &Path, paths: Option<&UserPaths>) -> &'static str {
+pub fn user_data_label(
+    launch: Option<&Launch>,
+    exe_dir: &Path,
+    paths: Option<&UserPaths>,
+) -> &'static str {
     match launch {
         Some(Launch::Pak { pak, .. }) if is_sibling_game_pak(pak, exe_dir) => {
             if let Some(p) = paths {
@@ -554,10 +536,7 @@ pub fn run_after_failure(inv: &Invocation, exe_dir: &Path, paths: &UserPaths) {
 pub fn run_prewindow_sibling(exe_dir: &Path, err: &str) {
     let root = exe_dir.join("UserData");
     if fs::create_dir_all(&root).is_err() {
-        emit_ods(&format!(
-            "galeng-player: {}",
-            sanitize_diag_line(err)
-        ));
+        emit_ods(&format!("galeng-player: {}", sanitize_diag_line(err)));
         return;
     }
     let inv = Invocation {
@@ -575,10 +554,7 @@ pub fn run_prewindow_sibling(exe_dir: &Path, err: &str) {
 
 /// One sanitized ODS line (no log dirs).
 pub fn emit_sanitized_ods(err: &str) {
-    emit_ods(&format!(
-        "galeng-player: {}",
-        sanitize_diag_line(err)
-    ));
+    emit_ods(&format!("galeng-player: {}", sanitize_diag_line(err)));
 }
 
 #[cfg(test)]
@@ -592,19 +568,35 @@ mod tests {
             "open ? denied"
         );
         // Drive consumes through end of token; leading \\ of UNC may already be eaten.
+        assert_eq!(sanitize_diag_line(r"read \\server\share\file"), "read ?");
+        assert_eq!(sanitize_diag_line(r"bad \Users\leo\secret"), "bad ?");
+        assert_eq!(sanitize_diag_line("ok /Users/leo/x y"), "ok ? y");
         assert_eq!(
-            sanitize_diag_line(r"read \\server\share\file"),
-            "read ?"
+            sanitize_diag_line("vsync: not supported"),
+            "vsync: not supported"
+        );
+        assert_eq!(sanitize_diag_line("找不到場景 庭園"), "找不到場景 庭園");
+        assert_eq!(
+            sanitize_diag_line("input: unknown key 鍵"),
+            "input: unknown key 鍵"
         );
         assert_eq!(
-            sanitize_diag_line(r"bad \Users\leo\secret"),
-            "bad ?"
+            sanitize_diag_line("open C:\\遊戲\\存檔.pak denied"),
+            "open ? denied"
+        );
+    }
+
+    #[test]
+    fn newer_pak_reports_its_schema_not_the_player() {
+        assert_eq!(
+            schema_diag_line("pak schema 2 is newer than this player (1)"),
+            "pak: error: schema 2"
         );
         assert_eq!(
-            sanitize_diag_line("ok /Users/leo/x y"),
-            "ok ? y"
+            schema_diag_line("pak schema 0 is unsupported"),
+            "pak: error: schema 0"
         );
-        assert_eq!(sanitize_diag_line("vsync: not supported"), "vsync: not supported");
+        assert_eq!(schema_diag_line("pak unreadable"), "pak: error: unreadable");
     }
 
     #[test]
@@ -647,10 +639,7 @@ mod tests {
 
     #[test]
     fn log_rotate_keeps_one_generation() {
-        let dir = std::env::temp_dir().join(format!(
-            "galeng-pr7-rotate-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("galeng-pr7-rotate-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let log = dir.join("galeng.log");

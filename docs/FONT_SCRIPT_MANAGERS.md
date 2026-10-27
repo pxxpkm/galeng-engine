@@ -214,7 +214,9 @@ Treat dialogue/explore scripts as a **first-class library**: browse, filter, man
 
 ## MVP status (implemented)
 
-Font Manager MVP landed: `Project.fonts` roles + optional scale, player `FontSet`/`TypeScale`, editor Fonts panel, Preview FontFace, click-room wired to Bold subset for dialogue/ui/title.
+Font Manager MVP landed: `Project.fonts` roles + optional scale, player `FontSet`/`TypeScale`, editor Fonts panel, click-room wired to a Bold subset for dialogue/ui/title.
+
+編輯器預覽的 FontFace 仍走 `/api/media/…`。Host 的媒體副檔名白名單沒有字型，所以預覽會靜默退回 sans-serif。這是審查 U3，尚未修。有字型面板不等於預覽已用上那隻字。
 
 
 ### Script Manager MVP (implemented)

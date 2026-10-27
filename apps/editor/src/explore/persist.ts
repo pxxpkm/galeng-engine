@@ -223,6 +223,35 @@ export function apiToExploreScene(raw: unknown): ExploreScene {
   };
 }
 
+/**
+ * Disk project wins on overlapping keys so a Settings save that landed after
+ * this document was loaded is not overwritten by a stale `_rawProject`.
+ * Explore-owned fields are still applied from `doc.project` afterwards.
+ * A missing project file (first save) keeps the in-memory raw snapshot.
+ */
+async function projectBaseForSave(
+  api: ExplorePersistApi,
+  raw: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    const disk = asRecord(await api.loadProject(), "project");
+    return { ...(raw ?? {}), ...disk };
+  } catch {
+    return raw;
+  }
+}
+
+/** Keep the open explore model; refresh raw with a project Settings just stored. */
+export function adoptSavedProjectRaw(doc: ExploreDoc, saved: object): ExploreDoc {
+  return {
+    ...doc,
+    _rawProject: {
+      ...(doc._rawProject ?? {}),
+      ...(saved as Record<string, unknown>),
+    },
+  };
+}
+
 export async function saveExploreDoc(
   api: ExplorePersistApi,
   doc: ExploreDoc,
@@ -232,7 +261,10 @@ export async function saveExploreDoc(
   _rawProject: Record<string, unknown>;
   _rawScene: Record<string, unknown>;
 }> {
-  const projectBody = exploreProjectToApi(doc.project, doc._rawProject);
+  const projectBody = exploreProjectToApi(
+    doc.project,
+    await projectBaseForSave(api, doc._rawProject),
+  );
   const sceneBody = exploreSceneToApi(doc.scene, doc._rawScene);
   const savedProject = await api.saveProject(projectBody);
   const savedScene = await api.saveScene(doc.scene.id, sceneBody);

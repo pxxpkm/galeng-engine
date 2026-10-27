@@ -9,11 +9,11 @@ import { FontPanel, type FontPanelHost } from "../v2/FontPanel";
 import { IconSettings, IconX } from "../v2/icons";
 import "../v2/v2.css";
 
-const TABLES = {
+const TABLES: Record<Locale, Record<string, string>> = {
   en,
   "zh-Hans": zhHans,
   "zh-Hant": zhHant,
-} as unknown as Record<Locale, Record<string, string>>;
+};
 
 const LOCALE_KEY = "galeng.locale";
 
@@ -65,9 +65,12 @@ type Page = "main" | "fonts" | "audio";
 export function ExploreSettingsDialog({
   open,
   onClose,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Workspace adopts the saved project so a later room save does not write stale raw. */
+  onSaved?: (project: Project) => void;
 }) {
   const locale = useMemo(() => detectEditorLocale(), [open]);
   const t = useMemo(() => editorT(locale), [locale]);
@@ -132,10 +135,11 @@ export function ExploreSettingsDialog({
       setProject(saved);
       setDirty(false);
       setStatus("已儲存");
+      onSaved?.(saved);
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : String(err));
     }
-  }, [project]);
+  }, [onSaved, project]);
 
   if (!open) return null;
 

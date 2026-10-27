@@ -1,23 +1,21 @@
 use galeng_schema::{PauseButtons, Slot, TitleButtons};
 
 use crate::assets::{fit_bottom_center, Bank};
+use crate::backlog;
 use crate::camera::map_rect;
 use crate::fb::{hash_rgb, Framebuffer, Rgba, HEIGHT, WIDTH};
 use crate::font::{GameFont, TypeScale};
-use crate::backlog;
-use crate::settings::{
-    self, Settings, AUTO_DELAY_ROW, AUTO_PLAY_ROW, EFFECTS_ROW, FULLSCREEN_ROW, SETTINGS_ROWS,
-    SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
-};
 use crate::gallery;
-use crate::music;
-use crate::title::{
-    title_caption, title_face, title_rect, title_spec, TITLE_COUNT,
-};
 use crate::menu::{
     index_to_slot, menu_box, menu_caption, menu_spec, slot_rect as file_slot_rect, slot_row_label,
     slot_title, SlotRow, MENU_COUNT, SLOT_COUNT,
 };
+use crate::music;
+use crate::settings::{
+    self, Settings, AUTO_DELAY_ROW, AUTO_PLAY_ROW, EFFECTS_ROW, FULLSCREEN_ROW, SETTINGS_ROWS,
+    SIMD_ROW, SKIP_UNREAD_ROW, TEXT_SPEED_ROW, UI_LANG_ROW, VSYNC_ROW,
+};
+use crate::title::{title_caption, title_face, title_rect, title_spec, TITLE_COUNT};
 use crate::vm::{Phase, View};
 
 /// Compact YU-NO–style bottom chrome (logical 1920×1080).
@@ -60,7 +58,12 @@ pub enum ButtonState {
     Pressed,
 }
 
-pub fn button_state(index: usize, selected: usize, hover: Option<usize>, pressed: Option<usize>) -> ButtonState {
+pub fn button_state(
+    index: usize,
+    selected: usize,
+    hover: Option<usize>,
+    pressed: Option<usize>,
+) -> ButtonState {
     if pressed == Some(index) {
         ButtonState::Pressed
     } else if let Some(h) = hover {
@@ -141,6 +144,8 @@ pub fn missing_scene_text(locale: &str, id: &str) -> String {
 pub enum Notice {
     Format,
     MissingBeat(String),
+    /// Explore refused the snapshot (pending action queue or error phase).
+    CannotSave,
 }
 
 pub fn format_save_notice(locale: &str) -> &'static str {
@@ -159,10 +164,19 @@ pub fn missing_beat_text(locale: &str, id: &str) -> String {
     }
 }
 
+pub fn cannot_save_notice(locale: &str) -> &'static str {
+    match locale {
+        "en" => "Cannot save yet. Finish the current action, then save.",
+        "zh-Hans" => "现在不能存档。请先完成当前动作，再存档。",
+        _ => "而家唔可以存檔。請先做完目前嘅動作，再存檔。",
+    }
+}
+
 pub fn draw_notice(fb: &mut Framebuffer, font: &GameFont, locale: &str, notice: &Notice) {
     let text = match notice {
         Notice::Format => format_save_notice(locale).to_string(),
         Notice::MissingBeat(id) => missing_beat_text(locale, id),
+        Notice::CannotSave => cannot_save_notice(locale).to_string(),
     };
     font.draw_text(
         fb,
@@ -179,19 +193,11 @@ pub fn draw_title_notice(fb: &mut Framebuffer, font: &GameFont, locale: &str, no
     let text = match notice {
         Notice::Format => format_save_notice(locale).to_string(),
         Notice::MissingBeat(id) => missing_beat_text(locale, id),
+        Notice::CannotSave => cannot_save_notice(locale).to_string(),
     };
     // Title layer: centered above the bottom edge so it is not under buttons.
-    font.draw_text(
-        fb,
-        200,
-        820,
-        30.0,
-        &text,
-        Rgba::rgb(255, 220, 180),
-        1520,
-    );
+    font.draw_text(fb, 200, 820, 30.0, &text, Rgba::rgb(255, 220, 180), 1520);
 }
-
 
 pub fn draw_view(
     fb: &mut Framebuffer,
@@ -220,9 +226,7 @@ pub fn draw_view(
     for ch in &view.chars {
         let to = char_stage_rect(ch, assets);
         let (x, y, w, h) = match view.prev_chars.iter().find(|p| p.id == ch.id) {
-            Some(prev)
-                if ch.slide_ms.unwrap_or(0) > 0 && char_pose_changed(prev, ch) =>
-            {
+            Some(prev) if ch.slide_ms.unwrap_or(0) > 0 && char_pose_changed(prev, ch) => {
                 let elapsed = slide_elapsed_ms.unwrap_or(u32::MAX);
                 let t = (elapsed as f32 / ch.slide_ms.unwrap_or(1) as f32).clamp(0.0, 1.0);
                 lerp_rect(char_stage_rect(prev, assets), to, t)
@@ -526,7 +530,12 @@ fn paint_cursor_glyph(buf: &mut [u8], kind: ExploreCursorKind) {
     let white = Rgba::rgb(255, 255, 255);
     let black = Rgba::rgb(20, 20, 28);
     let gold = Rgba::rgb(255, 220, 120);
-    let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
+    let outline = Rgba {
+        r: 10,
+        g: 10,
+        b: 16,
+        a: 220,
+    };
     match kind {
         ExploreCursorKind::Arrow => {
             // Classic pointer: filled triangle with dark outline (art-space pts → cs).
@@ -621,7 +630,12 @@ fn paint_cursor_glyph(buf: &mut [u8], kind: ExploreCursorKind) {
 
 fn paint_hand(buf: &mut [u8], use_mark: bool) {
     let white = Rgba::rgb(255, 255, 255);
-    let outline = Rgba { r: 10, g: 10, b: 16, a: 220 };
+    let outline = Rgba {
+        r: 10,
+        g: 10,
+        b: 16,
+        a: 220,
+    };
     let gold = Rgba::rgb(255, 200, 80);
     // Palm
     buf_fill_rect(buf, cs(6), cs(10), cs(14), cs(12), outline);
@@ -741,8 +755,18 @@ pub fn draw_explore_chrome(
     show_hotspot_outlines: bool,
 ) {
     if show_hotspot_outlines {
-        let outline = Rgba { r: 80, g: 200, b: 255, a: 120 };
-        let hover = Rgba { r: 255, g: 220, b: 80, a: 160 };
+        let outline = Rgba {
+            r: 80,
+            g: 200,
+            b: 255,
+            a: 120,
+        };
+        let hover = Rgba {
+            r: 255,
+            g: 220,
+            b: 80,
+            a: 160,
+        };
         for (id, shape) in hotspots {
             let color = if hover_hotspot == Some(id.as_str()) {
                 hover
@@ -870,7 +894,16 @@ pub fn draw_choice_buttons(
     pressed_choice: Option<usize>,
 ) {
     for i in 0..view.choices.len() {
-        let _ = draw_one_choice(fb, font, scale, view, i, choice_sel, hover_choice, pressed_choice);
+        let _ = draw_one_choice(
+            fb,
+            font,
+            scale,
+            view,
+            i,
+            choice_sel,
+            hover_choice,
+            pressed_choice,
+        );
     }
 }
 
@@ -989,14 +1022,7 @@ pub fn draw_music(
     selected: usize,
     playing: Option<usize>,
 ) {
-    draw_id_list(
-        fb,
-        font,
-        music::music_title(locale),
-        ids,
-        selected,
-        playing,
-    );
+    draw_id_list(fb, font, music::music_title(locale), ids, selected, playing);
 }
 
 fn draw_id_list(
@@ -1019,15 +1045,7 @@ fn draw_id_list(
             a: 180,
         },
     );
-    font.draw_text(
-        fb,
-        560,
-        200,
-        32.0,
-        heading,
-        Rgba::rgb(255, 230, 160),
-        1360,
-    );
+    font.draw_text(fb, 560, 200, 32.0, heading, Rgba::rgb(255, 230, 160), 1360);
     if ids.is_empty() {
         let (x, y, w, _h) = gallery::row_rect(0);
         font.draw_text(
@@ -1061,15 +1079,7 @@ fn draw_id_list(
 
 pub fn draw_movie_skip(fb: &mut Framebuffer, font: &GameFont, locale: &str) {
     let hint = crate::movie::skip_hint(locale);
-    font.draw_text(
-        fb,
-        1400,
-        1000,
-        28.0,
-        hint,
-        Rgba::rgb(230, 230, 230),
-        500,
-    );
+    font.draw_text(fb, 1400, 1000, 28.0, hint, Rgba::rgb(230, 230, 230), 500);
 }
 
 pub fn draw_cg(fb: &mut Framebuffer, assets: &mut Bank, logical: &str) {
@@ -1171,7 +1181,17 @@ pub fn draw_settings(
                 settings::effects_label(locale)
             };
             let label = format!("{}  {}", name, settings::on_off(locale, on));
-            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(
+                fb,
+                x,
+                y,
+                w,
+                h,
+                24,
+                scale.settings,
+                &label,
+                Rgba::rgb(28, 28, 36),
+            );
             continue;
         }
         if i == UI_LANG_ROW {
@@ -1180,7 +1200,17 @@ pub fn draw_settings(
                 settings::ui_lang_label(locale),
                 settings.ui_language.choice_label(locale)
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(
+                fb,
+                x,
+                y,
+                w,
+                h,
+                24,
+                scale.settings,
+                &label,
+                Rgba::rgb(28, 28, 36),
+            );
             continue;
         }
         if i == TEXT_SPEED_ROW {
@@ -1189,7 +1219,17 @@ pub fn draw_settings(
                 settings::text_speed_label(locale),
                 settings.text_speed
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(
+                fb,
+                x,
+                y,
+                w,
+                h,
+                24,
+                scale.settings,
+                &label,
+                Rgba::rgb(28, 28, 36),
+            );
             continue;
         }
         if i == AUTO_DELAY_ROW {
@@ -1198,12 +1238,32 @@ pub fn draw_settings(
                 settings::auto_delay_label(locale),
                 settings.auto_delay_ms
             );
-            font.draw_text_in_box(fb, x, y, w, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
+            font.draw_text_in_box(
+                fb,
+                x,
+                y,
+                w,
+                h,
+                24,
+                scale.settings,
+                &label,
+                Rgba::rgb(28, 28, 36),
+            );
             continue;
         }
         let vol = settings.get(i);
         let label = format!("{}  {vol}", settings::channel_label(locale, i));
-        font.draw_text_in_box(fb, x, y, 380, h, 24, scale.settings, &label, Rgba::rgb(28, 28, 36));
+        font.draw_text_in_box(
+            fb,
+            x,
+            y,
+            380,
+            h,
+            24,
+            scale.settings,
+            &label,
+            Rgba::rgb(28, 28, 36),
+        );
         let bar_x = x + 400;
         let bar_y = y + 28;
         let bar_w = w - 440;
@@ -1460,14 +1520,7 @@ fn draw_box(fb: &mut Framebuffer, assets: &mut Bank, msg_box: Option<&str>) {
     if let Some(logical) = msg_box {
         if let Some(pic) = assets.get(logical) {
             fb.blit_nearest(
-                pic.width,
-                pic.height,
-                &pic.rgba,
-                MSG_X,
-                MSG_Y,
-                MSG_W,
-                MSG_H,
-                pic.opaque,
+                pic.width, pic.height, &pic.rgba, MSG_X, MSG_Y, MSG_W, MSG_H, pic.opaque,
             );
             return;
         }
@@ -1487,13 +1540,14 @@ fn char_pose_changed(a: &galeng_schema::CharOnStage, b: &galeng_schema::CharOnSt
     a.slot != b.slot || a.x != b.x || a.y != b.y
 }
 
-fn lerp_rect(
-    from: (i32, i32, i32, i32),
-    to: (i32, i32, i32, i32),
-    t: f32,
-) -> (i32, i32, i32, i32) {
+fn lerp_rect(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32), t: f32) -> (i32, i32, i32, i32) {
     let mix = |a: i32, b: i32| (a as f32 + (b - a) as f32 * t).round() as i32;
-    (mix(from.0, to.0), mix(from.1, to.1), mix(from.2, to.2), mix(from.3, to.3))
+    (
+        mix(from.0, to.0),
+        mix(from.1, to.1),
+        mix(from.2, to.2),
+        mix(from.3, to.3),
+    )
 }
 
 fn char_stage_rect(ch: &galeng_schema::CharOnStage, assets: &mut Bank) -> (i32, i32, i32, i32) {
@@ -1514,10 +1568,7 @@ fn slot_rect(slot: Slot) -> (i32, i32, i32, i32) {
     }
 }
 
-pub fn letterbox(
-    window_w: u32,
-    window_h: u32,
-) -> (i32, i32, u32, u32, f32) {
+pub fn letterbox(window_w: u32, window_h: u32) -> (i32, i32, u32, u32, f32) {
     let scale = (window_w as f32 / WIDTH as f32).min(window_h as f32 / HEIGHT as f32);
     let w = (WIDTH as f32 * scale).round() as u32;
     let h = (HEIGHT as f32 * scale).round() as u32;
@@ -1585,7 +1636,17 @@ mod tests {
         let font = GameFont::load_system().expect("system font");
         let mut fb = Framebuffer::new();
         let (x, y, w, h) = (100, 200, 400, 56);
-        draw_button(&mut fb, &font, x, y, w, h, "開始遊戲", 32.0, ButtonState::Idle);
+        draw_button(
+            &mut fb,
+            &font,
+            x,
+            y,
+            w,
+            h,
+            "開始遊戲",
+            32.0,
+            ButtonState::Idle,
+        );
         let pixels = fb.count_nonblack_in(x as u32, y as u32, w as u32, h as u32);
         assert!(pixels > 40, "expected label pixels inside the button");
         let above = fb.count_nonblack_in(x as u32, (y - 8).max(0) as u32, w as u32, 6);
@@ -1597,7 +1658,11 @@ mod tests {
         let (x, y, w, h) = explore_action_rect();
         assert_eq!((x, y, w, h), (720, 820, 480, 52));
         assert!(y >= 0, "action y={y}");
-        assert!(y + h <= MSG_Y, "action overlaps message box: bottom={}", y + h);
+        assert!(
+            y + h <= MSG_Y,
+            "action overlaps message box: bottom={}",
+            y + h
+        );
         assert!(
             MSG_Y - (y + h) >= 8,
             "action needs ≥8px gap above msg box, gap={}",
@@ -1644,13 +1709,26 @@ mod tests {
         // Scene-ish mid-gray so near-white button stands out.
         fb.fill(Rgba::rgb(90, 90, 100));
         let (x, y, w, h) = explore_action_rect();
-        draw_explore_action_button(&mut fb, &font, &TypeScale::default(), x, y, w, h, "開 · 書桌", false);
+        draw_explore_action_button(
+            &mut fb,
+            &font,
+            &TypeScale::default(),
+            x,
+            y,
+            w,
+            h,
+            "開 · 書桌",
+            false,
+        );
         // Sample near-left interior (avoid centered glyph) — near-white, not dark Idle.
         let sx = x + 8;
         let sy = y + h / 2;
         let i = ((sy as u32 * WIDTH + sx as u32) * 4) as usize;
         let (r, g, b) = (fb.pixels[i], fb.pixels[i + 1], fb.pixels[i + 2]);
-        assert!(r > 200 && g > 200 && b > 200, "expected light fill, got rgb({r},{g},{b})");
+        assert!(
+            r > 200 && g > 200 && b > 200,
+            "expected light fill, got rgb({r},{g},{b})"
+        );
     }
 
     #[test]
@@ -1749,7 +1827,10 @@ mod tests {
         );
         // Top edge of hotspot rect must stay black (no cyan/yellow stroke).
         let edge = fb.count_nonblack_in(200, 200, 300, 2);
-        assert_eq!(edge, 0, "expected no hotspot outline stroke, got {edge} lit px");
+        assert_eq!(
+            edge, 0,
+            "expected no hotspot outline stroke, got {edge} lit px"
+        );
 
         // Debug flag still paints outlines.
         draw_explore_chrome(

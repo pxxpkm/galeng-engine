@@ -3,12 +3,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::assets::Source;
-use serde::{Deserialize, Serialize};
 use galeng_explore::ItemUseMode;
 use galeng_schema::{
-    validate_project_file, validate_scene_str, AutoAdvance, Beat, Camera, CharOnStage, ChoiceOption,
-    Cmp, Condition, ConditionPred, Exit, HotspotShape, Project, Scene, SceneKind, SetValue, Trans,
+    apply_set, condition_holds, validate_project_file, validate_scene_str, AutoAdvance, Beat,
+    Camera, CharOnStage, ChoiceOption, Exit, HotspotShape, Project, Scene, SceneKind, Trans,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VmError {
@@ -79,6 +79,10 @@ pub struct Runtime {
     backlog: Vec<crate::backlog::BacklogLine>,
     /// When set, start scene was Explore — Engine owns Call/Return / hit-test.
     explore: Option<galeng_explore::Engine>,
+    /// Beat whose `set` was already applied. Load marks the restored beat so
+    /// settle does not add it again. A later beat, or the same index in another
+    /// scene, still applies.
+    set_applied: Option<(String, usize)>,
 }
 
 fn load_dir_project(dir: &Path) -> Result<(Project, HashMap<String, Scene>), VmError> {
@@ -156,7 +160,10 @@ impl Runtime {
         let explore = if start_explore {
             // Engine enters start_scene (runs onEnter). Scene/beat CLI jump into
             // explore is not supported yet — always boots at project.start_scene.
-            Some(galeng_explore::Engine::new(project.clone(), scenes.clone())?)
+            Some(galeng_explore::Engine::new(
+                project.clone(),
+                scenes.clone(),
+            )?)
         } else {
             None
         };
@@ -176,6 +183,7 @@ impl Runtime {
             carried_bgm: None,
             backlog: Vec::new(),
             explore,
+            set_applied: None,
         };
         if rt.explore.is_none() {
             rt.settle();
@@ -261,11 +269,19 @@ impl Runtime {
             .and_then(|e| e.hit_test(x, y).map(str::to_string))
     }
 
-    pub fn explore_primary_action(&self, hotspot_id: &str) -> Option<galeng_explore::AvailableAction> {
-        self.explore.as_ref().and_then(|e| e.primary_action(hotspot_id))
+    pub fn explore_primary_action(
+        &self,
+        hotspot_id: &str,
+    ) -> Option<galeng_explore::AvailableAction> {
+        self.explore
+            .as_ref()
+            .and_then(|e| e.primary_action(hotspot_id))
     }
 
-    pub fn explore_available_actions(&self, hotspot_id: &str) -> Vec<galeng_explore::AvailableAction> {
+    pub fn explore_available_actions(
+        &self,
+        hotspot_id: &str,
+    ) -> Vec<galeng_explore::AvailableAction> {
         match &self.explore {
             Some(eng) => eng.available_actions(hotspot_id),
             None => Vec::new(),
@@ -281,7 +297,6 @@ impl Runtime {
             let _ = eng.interact_empty();
         }
     }
-
 
     pub fn vars(&self) -> &HashMap<String, i32> {
         &self.vars
@@ -319,43 +334,94 @@ impl Runtime {
             Some(asset) => asset,
             None => None,
         };
+        self.set_applied = Some((self.scene_id.clone(), self.beat_index));
         self.note_say(&beat_data);
         true
     }
 
-    pub fn to_save(&self) -> crate::save::SaveGame {
+    /// Snapshot the running session. Explore refuses while an action queue is
+    /// still pending; callers must not write a dialogue-only file in that case.
+    pub fn try_to_save(&self) -> Result<crate::save::SaveGame, VmError> {
+        let explore = if let Some(eng) = &self.explore {
+            Some(eng.try_to_save()?)
+        } else {
+            None
+        };
         let saved_at = unix_now();
+        let scene_id = explore
+            .as_ref()
+            .map(|ex| ex.scene_id.clone())
+            .unwrap_or_else(|| self.scene_id.clone());
+        let beat_index = explore
+            .as_ref()
+            .map(|ex| ex.beat_index)
+            .unwrap_or(self.beat_index);
         let title = self
             .scenes
-            .get(&self.scene_id)
+            .get(&scene_id)
             .and_then(|s| s.title.as_deref())
             .filter(|t| !t.is_empty())
-            .unwrap_or(self.scene_id.as_str());
+            .map(str::to_string)
+            .unwrap_or_else(|| scene_id.clone());
         let beat_id = self
             .scenes
-            .get(&self.scene_id)
-            .and_then(|s| s.beats.get(self.beat_index))
+            .get(&scene_id)
+            .and_then(|s| s.beats.get(beat_index))
             .and_then(|b| b.id.clone());
-        crate::save::SaveGame {
+        let vars = if let Some(ex) = &explore {
+            ex.vars.clone()
+        } else {
+            self.vars.iter().map(|(k, v)| (k.clone(), *v)).collect()
+        };
+        Ok(crate::save::SaveGame {
             schema_version: self.project.schema_version,
             game_id: self.project.id.clone(),
-            scene: self.scene_id.clone(),
-            beat_index: self.beat_index,
+            scene: scene_id,
+            beat_index,
             beat_id,
             save_format: crate::save::SAVE_FORMAT,
-            vars: self
-                .vars
-                .iter()
-                .map(|(k, v)| (k.clone(), *v))
-                .collect(),
+            vars,
             carried_bgm: self.view().bgm,
             saved_at,
-            label: Some(crate::save::format_slot_label(title, saved_at)),
-        }
+            label: Some(crate::save::format_slot_label(&title, saved_at)),
+            explore,
+        })
+    }
+
+    /// Dialogue tests and autosave call this only at a legal boundary.
+    pub fn to_save(&self) -> crate::save::SaveGame {
+        self.try_to_save()
+            .expect("to_save requires a saveable phase")
     }
 
     pub fn apply_save(&mut self, save: &crate::save::SaveGame) -> Result<(), VmError> {
         crate::save::check_save(save, &self.project.id, self.project.schema_version)?;
+        if let Some(explore_save) = &save.explore {
+            if let Some(eng) = self.explore.as_mut() {
+                eng.load_save(explore_save)?;
+            } else {
+                let mut eng =
+                    galeng_explore::Engine::new(self.project.clone(), self.scenes.clone())?;
+                eng.load_save(explore_save)?;
+                self.explore = Some(eng);
+            }
+            self.scene_id = explore_save.scene_id.clone();
+            self.beat_index = explore_save.beat_index;
+            self.vars = explore_save
+                .vars
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect();
+            self.carried_bgm = save.carried_bgm.clone();
+            self.last_say = None;
+            self.phase = Phase::Explore;
+            self.pending_fade_ms = None;
+            self.pending_se.clear();
+            return Ok(());
+        }
+        if self.explore.is_some() {
+            return Err(VmError::Save(crate::save::SaveError::MissingExplore));
+        }
         if !self.scenes.contains_key(&save.scene) {
             self.phase = Phase::MissingScene(save.scene.clone());
             return Ok(());
@@ -375,6 +441,7 @@ impl Runtime {
         self.phase = Phase::Dialogue;
         self.pending_fade_ms = None;
         self.pending_se.clear();
+        self.set_applied = Some((self.scene_id.clone(), self.beat_index));
         self.settle();
         Ok(())
     }
@@ -537,6 +604,7 @@ impl Runtime {
             if let Some(ms) = fade_ms(&beat) {
                 self.pending_fade_ms = Some(ms);
             }
+            self.apply_current_beat_set(&beat);
             self.note_say(&beat);
             self.queue_se(&beat);
             if beat_waits(&beat) {
@@ -544,6 +612,17 @@ impl Runtime {
             }
             self.beat_index += 1;
         }
+    }
+
+    fn apply_current_beat_set(&mut self, beat: &Beat) {
+        let here = (self.scene_id.clone(), self.beat_index);
+        if self.set_applied.as_ref() == Some(&here) {
+            return;
+        }
+        if let Some(set) = &beat.set {
+            apply_set(&mut self.vars, set);
+        }
+        self.set_applied = Some(here);
     }
 
     fn note_say(&mut self, beat: &Beat) {
@@ -587,7 +666,13 @@ impl Runtime {
         if self.phase != Phase::Dialogue {
             return None;
         }
-        match self.current_scene().beats.get(self.beat_index)?.fx.as_ref()? {
+        match self
+            .current_scene()
+            .beats
+            .get(self.beat_index)?
+            .fx
+            .as_ref()?
+        {
             galeng_schema::Fx::Wait { ms } => Some(*ms),
             _ => None,
         }
@@ -597,7 +682,13 @@ impl Runtime {
         if self.phase != Phase::Dialogue {
             return None;
         }
-        match self.current_scene().beats.get(self.beat_index)?.fx.as_ref()? {
+        match self
+            .current_scene()
+            .beats
+            .get(self.beat_index)?
+            .fx
+            .as_ref()?
+        {
             galeng_schema::Fx::Shake { ms } => Some(ms.unwrap_or(crate::fx::SHAKE_DEFAULT_MS)),
             _ => None,
         }
@@ -640,7 +731,13 @@ impl Runtime {
         if self.phase != Phase::Dialogue {
             return None;
         }
-        match self.current_scene().beats.get(self.beat_index)?.fx.as_ref()? {
+        match self
+            .current_scene()
+            .beats
+            .get(self.beat_index)?
+            .fx
+            .as_ref()?
+        {
             galeng_schema::Fx::Flash { ms } => Some(ms.unwrap_or(crate::fx::FLASH_DEFAULT_MS)),
             _ => None,
         }
@@ -747,7 +844,6 @@ impl Runtime {
         accumulate_visuals(self.current_scene(), beat_index)
     }
 }
-
 
 fn map_explore_phase(phase: &galeng_explore::Phase) -> Phase {
     match phase {
@@ -866,83 +962,23 @@ fn beat_waits(beat: &Beat) -> bool {
     }
     if matches!(
         &beat.fx,
-        Some(galeng_schema::Fx::Wait { .. } | galeng_schema::Fx::Shake { .. } | galeng_schema::Fx::Flash { .. })
+        Some(
+            galeng_schema::Fx::Wait { .. }
+                | galeng_schema::Fx::Shake { .. }
+                | galeng_schema::Fx::Flash { .. }
+        )
     ) {
         return true;
     }
-    beat.chars.as_ref().is_some_and(|list| {
-        list.iter().any(|ch| ch.slide_ms.is_some_and(|ms| ms > 0))
-    })
-}
-
-fn condition_holds(vars: &HashMap<String, i32>, cond: &Condition) -> bool {
-    cond.iter()
-        .all(|(name, pred)| pred_holds(vars.get(name).copied().unwrap_or(0), pred))
-}
-
-fn pred_holds(val: i32, pred: &ConditionPred) -> bool {
-    match pred {
-        ConditionPred::Bool(flag) => (val != 0) == *flag,
-        ConditionPred::Int(n) => val == *n,
-        ConditionPred::Text(_) => false,
-        ConditionPred::Cmp(cmp) => cmp_holds(val, cmp),
-    }
-}
-
-fn cmp_holds(val: i32, cmp: &Cmp) -> bool {
-    if cmp.gte.is_some_and(|n| val < n) {
-        return false;
-    }
-    if cmp.lte.is_some_and(|n| val > n) {
-        return false;
-    }
-    if cmp.gt.is_some_and(|n| val <= n) {
-        return false;
-    }
-    if cmp.lt.is_some_and(|n| val >= n) {
-        return false;
-    }
-    if let Some(eq) = &cmp.eq {
-        if json_eq_i32(val, eq) != true {
-            return false;
-        }
-    }
-    if let Some(ne) = &cmp.ne {
-        if json_eq_i32(val, ne) {
-            return false;
-        }
-    }
-    true
-}
-
-fn json_eq_i32(val: i32, value: &serde_json::Value) -> bool {
-    value
-        .as_i64()
-        .and_then(|n| i32::try_from(n).ok())
-        .is_some_and(|n| n == val)
-}
-
-fn apply_set(vars: &mut HashMap<String, i32>, set: &std::collections::BTreeMap<String, SetValue>) {
-    for (key, value) in set {
-        match value {
-            SetValue::Int(n) => {
-                vars.insert(key.clone(), *n);
-            }
-            SetValue::Bool(b) => {
-                vars.insert(key.clone(), i32::from(*b));
-            }
-            SetValue::Text(text) => {
-                if let Ok(delta) = text.parse::<i32>() {
-                    *vars.entry(key.clone()).or_insert(0) += delta;
-                }
-            }
-        }
-    }
+    beat.chars
+        .as_ref()
+        .is_some_and(|list| list.iter().any(|ch| ch.slide_ms.is_some_and(|ms| ms > 0)))
 }
 
 #[cfg(test)]
 mod cond_tests {
     use super::*;
+    use galeng_schema::{Cmp, Condition, ConditionPred};
     use std::collections::BTreeMap;
 
     fn gte(name: &str, n: i32) -> Condition {
@@ -971,5 +1007,3 @@ mod cond_tests {
         assert!(!condition_holds(&HashMap::new(), &gte("sora_affection", 3)));
     }
 }
-
-

@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const localesDir = join(dirname(fileURLToPath(import.meta.url)), "../locales");
 
-function load(name: string): Record<string, string> {
-  return JSON.parse(readFileSync(join(localesDir, name), "utf8")) as Record<string, string>;
+function load(name: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(join(localesDir, name), "utf8")) as Record<string, unknown>;
 }
 
 describe("i18n key parity", () => {
@@ -18,6 +18,18 @@ describe("i18n key parity", () => {
     const enKeys = Object.keys(en).sort();
     expect(Object.keys(hans).sort()).toEqual(enKeys);
     expect(Object.keys(hant).sort()).toEqual(enKeys);
+  });
+
+  it("stores only string values so editors can index the table", () => {
+    for (const [name, table] of [
+      ["en", en],
+      ["zh-Hans", hans],
+      ["zh-Hant", hant],
+    ] as const) {
+      for (const [key, value] of Object.entries(table)) {
+        expect(typeof value, `${name} ${key}`).toBe("string");
+      }
+    }
   });
 
   it("keeps the product name untranslated", () => {

@@ -15,25 +15,24 @@ fn load_click_room() -> Engine {
     let ending = fs::read_to_string(dir.join("ending.json")).unwrap();
     Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .expect("load click-room")
 }
 
 #[test]
-fn hit_test_rect_topmost_polygon_ignored() {
+fn hit_test_rect_and_topmost_polygon() {
     let eng = load_click_room();
     // desk: 600,500,420,220
     assert_eq!(eng.hit_test(700, 550), Some("desk"));
     // door: 1400,180,280,720
     assert_eq!(eng.hit_test(1500, 400), Some("door"));
-    // window is polygon — never hits
-    assert_eq!(eng.hit_test(200, 150), None);
-    // miss
+    // window polygon [[100,80],[400,80],[400,300],[100,260]] is last, so it wins
+    assert_eq!(eng.hit_test(200, 150), Some("window"));
+    // below the slanted edge, and left of the butler rect
+    assert_eq!(eng.hit_test(150, 280), None);
+    // inside the butler rect, below the window edge (bottom near y=280 at x=250)
+    assert_eq!(eng.hit_test(250, 400), Some("butler"));
     assert_eq!(eng.hit_test(0, 0), None);
 }
 
@@ -271,7 +270,21 @@ fn hide_disable_hotspot() {
         }
       ]
     }"#;
-    let mut eng = Engine::from_json(&project, &[("study", scene), ("dlg_butler", &fs::read_to_string(fixtures_dir().join("dlg_butler.json")).unwrap()), ("ending", &fs::read_to_string(fixtures_dir().join("ending.json")).unwrap())]).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", scene),
+            (
+                "dlg_butler",
+                &fs::read_to_string(fixtures_dir().join("dlg_butler.json")).unwrap(),
+            ),
+            (
+                "ending",
+                &fs::read_to_string(fixtures_dir().join("ending.json")).unwrap(),
+            ),
+        ],
+    )
+    .unwrap();
     eng.select_verb(Some("look"));
     eng.interact("desk").unwrap();
     assert_eq!(eng.hit_test(700, 550), None);
@@ -291,7 +304,21 @@ fn hide_disable_hotspot() {
         }
       ]
     }"#;
-    let mut eng = Engine::from_json(&project, &[("study", scene2), ("dlg_butler", &fs::read_to_string(fixtures_dir().join("dlg_butler.json")).unwrap()), ("ending", &fs::read_to_string(fixtures_dir().join("ending.json")).unwrap())]).unwrap();
+    let mut eng = Engine::from_json(
+        &project,
+        &[
+            ("study", scene2),
+            (
+                "dlg_butler",
+                &fs::read_to_string(fixtures_dir().join("dlg_butler.json")).unwrap(),
+            ),
+            (
+                "ending",
+                &fs::read_to_string(fixtures_dir().join("ending.json")).unwrap(),
+            ),
+        ],
+    )
+    .unwrap();
     eng.select_verb(Some("look"));
     eng.interact("desk").unwrap();
     assert_eq!(eng.hit_test(700, 550), None);
@@ -418,7 +445,11 @@ fn call_then_exit_next_preserves_stack_for_return() {
       "beats": [{ "say": { "speaker": "B", "text": "second" } }],
       "exit": { "type": "return" }
     }"#;
-    let mut eng = Engine::from_json(project, &[("room", room), ("dlg_a", dlg_a), ("dlg_b", dlg_b)]).unwrap();
+    let mut eng = Engine::from_json(
+        project,
+        &[("room", room), ("dlg_a", dlg_a), ("dlg_b", dlg_b)],
+    )
+    .unwrap();
     eng.select_verb(Some("talk"));
     eng.interact("npc").unwrap();
     assert_eq!(eng.scene_id(), "dlg_a");
@@ -637,8 +668,7 @@ fn explore_call_nested_dialogue_return_resumes_explore() {
       "beats": [{ "say": { "speaker": "B", "text": "back" } }],
       "exit": { "type": "return" }
     }"#;
-    let mut eng =
-        Engine::from_json(project, &[("room", room), ("A", a), ("B", b)]).unwrap();
+    let mut eng = Engine::from_json(project, &[("room", room), ("A", a), ("B", b)]).unwrap();
     eng.select_verb(Some("talk"));
     eng.interact("npc").unwrap();
     assert_eq!(eng.scene_id(), "A");
@@ -692,12 +722,54 @@ fn try_to_save_rejects_mid_saying() {
     eng.select_verb(Some("look"));
     eng.interact("a").unwrap();
     assert_eq!(eng.phase(), &Phase::Saying);
+    // The say is not last: setSwitch is still queued, and that queue is not saved.
     let err = eng.try_to_save().unwrap_err();
     assert!(matches!(err, Error::InvalidState(_)));
     eng.dismiss_say().unwrap();
     assert_eq!(eng.phase(), &Phase::Explore);
     let save = eng.try_to_save().unwrap();
     assert_eq!(save.scene_id, "r");
+}
+
+#[test]
+fn saying_line_round_trips_when_queue_is_empty() {
+    let project = r#"{
+      "id": "say",
+      "title": "Say",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "r",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let scene = r#"{
+      "id": "r",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "a", "name": "A", "shape": { "type": "rect", "x": 0, "y": 0, "w": 50, "h": 50 } }
+      ],
+      "interactions": [
+        {
+          "hotspot": "a",
+          "on": { "verb": "look" },
+          "rules": [{ "when": [], "do": [{ "type": "say", "text": "one", "speaker": "n" }] }]
+        }
+      ]
+    }"#;
+    let mut eng = Engine::from_json(project, &[("r", scene)]).unwrap();
+    eng.select_verb(Some("look"));
+    eng.interact("a").unwrap();
+    assert_eq!(eng.phase(), &Phase::Saying);
+    let save = eng.try_to_save().unwrap();
+    assert_eq!(save.say_text.as_deref(), Some("one"));
+    assert_eq!(save.say_speaker.as_deref(), Some("n"));
+
+    let mut eng2 = Engine::from_json(project, &[("r", scene)]).unwrap();
+    eng2.load_save(&save).unwrap();
+    assert_eq!(eng2.phase(), &Phase::Saying);
+    assert_eq!(eng2.view().say_text.as_deref(), Some("one"));
+    eng2.dismiss_say().unwrap();
+    assert_eq!(eng2.phase(), &Phase::Explore);
 }
 
 #[test]
@@ -709,11 +781,7 @@ fn click_room_examples_clearance() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .expect("examples/click-room");
 
@@ -743,7 +811,6 @@ fn click_room_examples_clearance() {
     assert_eq!(eng.phase(), &Phase::Saying);
 }
 
-
 #[test]
 fn desk_primary_open_then_take() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/click-room");
@@ -753,11 +820,7 @@ fn desk_primary_open_then_take() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .unwrap();
     eng.dismiss_say().unwrap();
@@ -785,11 +848,7 @@ fn empty_click_says_room_look() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .unwrap();
     eng.dismiss_say().unwrap();
@@ -828,18 +887,13 @@ fn butler_primary_is_talk() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .unwrap();
     eng.dismiss_say().unwrap();
     let a = eng.primary_action("butler").unwrap();
     assert_eq!(a.verb.as_deref(), Some("talk"));
 }
-
 
 #[test]
 fn available_actions_multi_cycles_by_index() {
@@ -851,11 +905,7 @@ fn available_actions_multi_cycles_by_index() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .unwrap();
     eng.dismiss_say().unwrap();
@@ -917,7 +967,8 @@ fn item_aim_vs_drag_match_different_rules() {
     assert_eq!(eng.view().say_text.as_deref(), Some("AIM_HIT"));
     eng.dismiss_say().unwrap();
 
-    eng.interact_with_item("box", "key", ItemUseMode::Drag).unwrap();
+    eng.interact_with_item("box", "key", ItemUseMode::Drag)
+        .unwrap();
     assert_eq!(eng.view().say_text.as_deref(), Some("DRAG_HIT"));
     eng.dismiss_say().unwrap();
 
@@ -942,7 +993,8 @@ fn item_aim_vs_drag_match_different_rules() {
     eng.interact("box").unwrap();
     assert_eq!(eng.view().say_text.as_deref(), Some("DEFAULT_AIM"));
     eng.dismiss_say().unwrap();
-    eng.interact_with_item("box", "key", ItemUseMode::Drag).unwrap();
+    eng.interact_with_item("box", "key", ItemUseMode::Drag)
+        .unwrap();
     assert_eq!(eng.view().say_text.as_deref(), Some("唔啱。"));
 }
 
@@ -956,22 +1008,15 @@ fn examples_click_room_drag_key_on_window() {
     let ending = fs::read_to_string(root.join("scenario/ending.json")).unwrap();
     let mut eng = Engine::from_json(
         &project,
-        &[
-            ("study", &study),
-            ("dlg_butler", &dlg),
-            ("ending", &ending),
-        ],
+        &[("study", &study), ("dlg_butler", &dlg), ("ending", &ending)],
     )
     .unwrap();
     eng.dismiss_say().unwrap();
     eng.give_item_for_test("key");
-    eng.interact_with_item("window", "key", ItemUseMode::Drag).unwrap();
+    eng.interact_with_item("window", "key", ItemUseMode::Drag)
+        .unwrap();
     assert!(
-        eng.view()
-            .say_text
-            .as_deref()
-            .unwrap_or("")
-            .contains("窗"),
+        eng.view().say_text.as_deref().unwrap_or("").contains("窗"),
         "got {:?}",
         eng.view().say_text
     );
@@ -980,4 +1025,80 @@ fn examples_click_room_drag_key_on_window() {
     eng.select_item(Some("key"));
     eng.interact("door").unwrap();
     assert_eq!(eng.view().say_text.as_deref(), Some("鎖匙對上，門開咗。"));
+}
+
+#[test]
+fn text_set_adds_and_compound_cmp_is_and() {
+    let project = r#"{
+      "id": "cmp",
+      "title": "Cmp",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "talk",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let talk = r#"{
+      "id": "talk",
+      "sceneKind": "dialogue",
+      "beats": [
+        { "say": { "speaker": "n", "text": "a" }, "set": { "score": "+1" } },
+        { "say": { "speaker": "n", "text": "b" }, "set": { "score": "+1" } }
+      ],
+      "exit": {
+        "type": "branch",
+        "if": { "score": { "eq": 1, "gt": 10 } },
+        "then": "yes",
+        "else": "no"
+      }
+    }"#;
+    let yes = r#"{ "id": "yes", "sceneKind": "dialogue", "beats": [{ "say": { "speaker": "n", "text": "yes" } }] }"#;
+    let no = r#"{ "id": "no", "sceneKind": "dialogue", "beats": [{ "say": { "speaker": "n", "text": "no" } }] }"#;
+    let mut eng = Engine::from_json(project, &[("talk", talk), ("yes", yes), ("no", no)]).unwrap();
+    assert_eq!(eng.view().vars.get("score"), Some(&1));
+    assert_eq!(eng.view().say_text.as_deref(), Some("a"));
+
+    let saved = eng.try_to_save().unwrap();
+    eng.load_save(&saved).unwrap();
+    assert_eq!(eng.view().vars.get("score"), Some(&1));
+    assert_eq!(eng.view().say_text.as_deref(), Some("a"));
+
+    eng.advance().unwrap();
+    assert_eq!(eng.view().vars.get("score"), Some(&2));
+    assert_eq!(eng.view().say_text.as_deref(), Some("b"));
+    eng.advance().unwrap();
+    assert_eq!(eng.scene_id(), "no");
+    assert_eq!(eng.view().vars.get("score"), Some(&2));
+}
+
+#[test]
+fn passing_compound_cmp_takes_then_branch() {
+    let project = r#"{
+      "id": "cmp",
+      "title": "Cmp",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "talk",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let talk = r#"{
+      "id": "talk",
+      "sceneKind": "dialogue",
+      "beats": [
+        { "say": { "speaker": "n", "text": "a" }, "set": { "score": "+12" } }
+      ],
+      "exit": {
+        "type": "branch",
+        "if": { "score": { "eq": 12, "gt": 10 } },
+        "then": "yes",
+        "else": "no"
+      }
+    }"#;
+    let yes = r#"{ "id": "yes", "sceneKind": "dialogue", "beats": [{ "say": { "speaker": "n", "text": "yes" } }] }"#;
+    let no = r#"{ "id": "no", "sceneKind": "dialogue", "beats": [{ "say": { "speaker": "n", "text": "no" } }] }"#;
+    let mut eng = Engine::from_json(project, &[("talk", talk), ("yes", yes), ("no", no)]).unwrap();
+    assert_eq!(eng.view().vars.get("score"), Some(&12));
+    eng.advance().unwrap();
+    assert_eq!(eng.scene_id(), "yes");
 }

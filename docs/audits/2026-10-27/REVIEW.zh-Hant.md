@@ -10,6 +10,22 @@
 
 本報告不把三套編輯器、視覺風格不統一等設計選擇直接定性為最高級 BUG。資料遺失、遊戲無法續玩與無法發布，優先於外觀整理。
 
+## 後續狀態（`work`，審查提交之上）
+
+以下是 `work` 分支在審查提交 `1ac1b36` 之上的修正，日期 2026-10-27 當日補記。原文各節保留審查當時的證據，沒有改寫。交接見倉庫根目錄 `HANDOFF.md`。
+
+| 編號 | 工作區狀態 | 仍未做 |
+|---|---|---|
+| U1 | 房間存檔前重讀磁碟上的 project，再疊探險自己的欄位。設定儲存成功後，工作區採用那份 raw。 | 主機 ETag。設定寫入若落在這次重讀和 PUT 之間，磁碟仍可能被房間存檔蓋掉。 |
+| K1 | 存檔格式 3，可選 `explore` 狀態。空動作佇列的台詞可存可讀。佇列未清或 Error 拒絕存檔；明確存檔會顯示「而家唔可以存檔」。沒有 explore 區塊的舊探險檔拒絕載入；純對話舊檔仍可載入。 | 未在 Windows 播放器視窗裡逐項點存讀。 |
+| U4 | 語系改回扁平字串。`editor.warnSaveExploreFromDialogue`、`editor.saveCancelled`。編輯器 `tsc --noEmit` 通過。 | 沒有重跑 `vite build`。 |
+| K5 | `galeng-schema` 的 `condition_holds` 供兩套 VM 使用。`Cmp` 的每個運算子都要同時成立。`score = 1` 且 `{eq: 1, gt: 10}` 走否分支。 | — |
+| K4 | 文字 `"+1"`／`"-2"` 是整數增量，解不出的文字略過。對話在進入節拍時套用 `beat.set`，每個 `(場景, 節拍)` 只套一次；讀檔先標上還原中的節拍，避免把存檔裡已有的增量再加一次。往下推進才套下一拍。從紀錄跳回舊句不改變量。探險讀檔不重新 settle，因此不會把同一拍再套一次。 | 跳回之後再往前重走，單筆記號已離開的節拍會再套用一次。 |
+| K6 | 執行期多邊形用與編輯器相同的奇偶射線。`(200, 150)` 點中書房的窗。 | 邊界上的點沿用編輯器的嚴格大於，不另訂一套吸附規則。 |
+| U2 | `mergeSaveResponse`：請求修訂號與目前修訂號相同，才採用回應並清 dirty。經典殼與 v2 的場景、專案分開計數；探險殼用一份文件號。重載、切場景、新建，以及設定存檔回寫 raw，都會推進號。出包前存檔若號已變，則中止出包。 | 沒有用延遲 PUT 在瀏覽器裡重現。磁碟上仍可能短暫留下較舊的正文。 |
+
+仍開着：K2、K3、U3、U5、D1–D5。第一批裡的 Settings 關閉保護、版本檢查與單檔原子替換都還沒做。
+
 ## 範圍與證據限制
 
 - 閱讀 README、硬體 SPEC、三份 docs 開發／審查文件、範例、schema、Rust 核心／player／host，以及 React 編輯器相關實作與測試。
@@ -192,7 +208,7 @@ SPEC 與 README 明確列出舊 Windows 與低規格目標，但 CI 為 windows-
 3. Font 文件先寫 planning only，末尾寫 implemented；實際端到端字型預覽仍被 U3 阻擋。「有元件」與「功能完成」要分開。
 4. 預設 `pnpm test` 把 `e2e/explore-smoke.spec.ts` 交給 Vitest，出現 Playwright test.describe runner 錯誤。應分清 unit 與 browser runner，不可把一個失敗 suite 說成全綠。
 5. `pnpm-lock.yaml` 未同步 editor manifest 的 Playwright／Node types，乾淨 frozen 安裝失敗。現環境以 checkout 外 lockfile 安裝作為開發 workaround；這不是倉庫發布流程已修好。
-6. 現有 player Explore 測試重點是 click-room 通關；本次檢查的該檔未覆蓋 K1 的完整存讀檔。Polygon ignored 的測試反而證明目前能力邊界被測試固定住。
+6. 審查當時，player Explore 測試重點是 click-room 通關，未覆蓋 K1 的完整存讀檔；`polygon ignored` 測試把點不到多邊形固定成預期。工作區後續已改這兩處測試，見上方「後續狀態」。審查當時的失敗紀錄仍在附錄。
 7. 現有 browser smoke 主要驗證「沒有 host 時顯示錯誤與重試」，不能代替有 host 的編輯→儲存→重載驗收。本次未執行 browser suite。
 
 ## 五、建議修復順序與驗收門檻

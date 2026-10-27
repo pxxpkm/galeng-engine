@@ -48,6 +48,7 @@ import {
   type CtxMenuActionId,
   type CtxMenuTarget,
 } from "./ctxMenuModel";
+import { mergeSaveResponse } from "../saveGeneration";
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";
@@ -58,6 +59,7 @@ import {
   OnEnterInspector,
 } from "./InspectorPanels";
 import {
+  adoptSavedProjectRaw,
   loadExploreDoc,
   loadSiblingExploreScenes,
   saveExploreDoc,
@@ -218,6 +220,17 @@ export function ExploreWorkspace({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const { doc, bus, dirty } = state;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const docGen = useRef(0);
+  const exploreDirtyRef = useRef(dirty);
+  exploreDirtyRef.current = dirty;
+  const commitWs = useCallback((next: WorkspaceState, bump: boolean) => {
+    if (bump) docGen.current += 1;
+    stateRef.current = next;
+    exploreDirtyRef.current = next.dirty;
+    setState(next);
+  }, []);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -293,45 +306,45 @@ export function ExploreWorkspace({
   }, [dirty]);
 
   const applyCmd = useCallback((cmd: Command) => {
-    setState((s) => {
-      const r = dispatch(s.bus, s.doc, cmd);
-      if (r.skipped) {
-        // ui-only / no content change — still adopt next doc if apply touched ui
-        return { ...s, doc: r.doc };
-      }
-      return { doc: r.doc, bus: r.bus, dirty: true };
-    });
-  }, []);
+    const s = stateRef.current;
+    const r = dispatch(s.bus, s.doc, cmd);
+    if (r.skipped) {
+      // ui-only / no content change — still adopt next doc if apply touched ui
+      commitWs({ ...s, doc: r.doc }, false);
+      return;
+    }
+    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+  }, [commitWs]);
 
   const doUndo = useCallback(() => {
-    setState((s) => {
-      const r = undo(s.bus, s.doc);
-      if (!r) return s;
-      return { doc: r.doc, bus: r.bus, dirty: true };
-    });
-  }, []);
+    const s = stateRef.current;
+    const r = undo(s.bus, s.doc);
+    if (!r) return;
+    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+  }, [commitWs]);
 
   const doRedo = useCallback(() => {
-    setState((s) => {
-      const r = redo(s.bus, s.doc);
-      if (!r) return s;
-      return { doc: r.doc, bus: r.bus, dirty: true };
-    });
-  }, []);
+    const s = stateRef.current;
+    const r = redo(s.bus, s.doc);
+    if (!r) return;
+    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+  }, [commitWs]);
 
   const setUi = useCallback((patch: Partial<ExploreDoc["ui"]>) => {
-    setState((s) => ({ ...s, doc: patchUi(s.doc, patch) }));
-  }, []);
+    const s = stateRef.current;
+    commitWs({ ...s, doc: patchUi(s.doc, patch) }, false);
+  }, [commitWs]);
 
   /** Canvas / hierarchy / matrix row: pick hotspot; rebind cell `on` if any. */
   const selectHotspot = useCallback(
     (id: string | null) => {
-      setState((s) => ({
-        ...s,
-        doc: patchUi(s.doc, selectionAfterHotspotPick(s.doc.ui, id)),
-      }));
+      const s = stateRef.current;
+      commitWs(
+        { ...s, doc: patchUi(s.doc, selectionAfterHotspotPick(s.doc.ui, id)) },
+        false,
+      );
     },
-    [],
+    [commitWs],
   );
 
   const handleCanvasContextAction = useCallback(
@@ -407,28 +420,35 @@ export function ExploreWorkspace({
       return;
     }
     setSaveStatus("儲存中…");
+    const requestRev = docGen.current;
     try {
-      const saved = await saveExploreDoc(persist, state.doc);
-      setState((s) => ({
-        ...s,
-        dirty: false,
-        doc: {
-          ...s.doc,
-          project: saved.project,
-          scene: saved.scene,
-          _rawProject: saved._rawProject,
-          _rawScene: saved._rawScene,
-        },
-      }));
+      const saved = await saveExploreDoc(persist, stateRef.current.doc);
+      const current = stateRef.current;
+      const nextDoc = {
+        ...current.doc,
+        project: saved.project,
+        scene: saved.scene,
+        _rawProject: saved._rawProject,
+        _rawScene: saved._rawScene,
+      };
+      const merged = mergeSaveResponse({
+        requestRev,
+        currentRev: docGen.current,
+        saved: nextDoc,
+        current: current.doc,
+      });
+      if (!merged.clearDirty) {
+        setSaveStatus("仍有未儲存修改");
+        return;
+      }
+      commitWs({ ...current, dirty: false, doc: merged.value }, false);
       setSaveStatus("已儲存");
       void refreshCatalog();
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog]);
+  }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog, commitWs]);
 
-  const exploreDirtyRef = useRef(dirty);
-  exploreDirtyRef.current = dirty;
   const exploreSaveRef = useRef(doSave);
   exploreSaveRef.current = doSave;
   useEffect(() => {
@@ -450,12 +470,12 @@ export function ExploreWorkspace({
     setSaveStatus("重載中…");
     try {
       const next = await loadExploreDoc(persist, state.doc.scene.id);
-      setState({ doc: next, bus: emptyBus(), dirty: false });
+      commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
       setSaveStatus("已重載");
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc.scene.id, dirty]);
+  }, [persist, state.doc.scene.id, dirty, commitWs]);
 
   const doSwitchScene = useCallback(
     async (sceneId: string) => {
@@ -471,7 +491,7 @@ export function ExploreWorkspace({
       setSaveStatus("切換中…");
       try {
         const next = await loadExploreDoc(persist, sceneId);
-        setState({ doc: next, bus: emptyBus(), dirty: false });
+        commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
         setSaveStatus(`已切換：${sceneId}`);
         void refreshCatalog();
       } catch (e) {
@@ -480,7 +500,7 @@ export function ExploreWorkspace({
         );
       }
     },
-    [persist, state.doc.scene.id, dirty, refreshCatalog],
+    [persist, state.doc.scene.id, dirty, refreshCatalog, commitWs],
   );
 
   const deleteSelectedHotspot = useCallback(() => {
@@ -654,7 +674,7 @@ export function ExploreWorkspace({
         if (prev.some((c) => c.id === id)) return prev;
         return [...prev, { id, kind: "explore", title: loaded.scene.title }];
       });
-      setState({ doc: loaded, bus: emptyBus(), dirty: false });
+      commitWs({ doc: loaded, bus: emptyBus(), dirty: false }, true);
       setCreatingScene(false);
       setSaveStatus(`已建立並切換：${id}`);
       void refreshCatalog();
@@ -671,6 +691,7 @@ export function ExploreWorkspace({
     effectiveCatalog,
     newSceneIdDraft,
     refreshCatalog,
+    commitWs,
   ]);
 
   const resolvedPackApi = useMemo(
@@ -718,25 +739,34 @@ export function ExploreWorkspace({
     }
     setPackScanProblems(null);
 
-    if (dirty) {
+    if (stateRef.current.dirty) {
       if (!persist) {
         setSaveStatus("請先存檔再出包（未接 persist）");
         return;
       }
       setSaveStatus("存檔後出包…");
+      const requestRev = docGen.current;
       try {
-        const saved = await saveExploreDoc(persist, state.doc);
-        setState((s) => ({
-          ...s,
-          dirty: false,
-          doc: {
-            ...s.doc,
-            project: saved.project,
-            scene: saved.scene,
-            _rawProject: saved._rawProject,
-            _rawScene: saved._rawScene,
-          },
-        }));
+        const saved = await saveExploreDoc(persist, stateRef.current.doc);
+        const current = stateRef.current;
+        const nextDoc = {
+          ...current.doc,
+          project: saved.project,
+          scene: saved.scene,
+          _rawProject: saved._rawProject,
+          _rawScene: saved._rawScene,
+        };
+        const merged = mergeSaveResponse({
+          requestRev,
+          currentRev: docGen.current,
+          saved: nextDoc,
+          current: current.doc,
+        });
+        if (!merged.clearDirty) {
+          setSaveStatus("仍有未儲存修改，未出包");
+          return;
+        }
+        commitWs({ ...current, dirty: false, doc: merged.value }, false);
       } catch (e) {
         setSaveStatus(`存檔失敗，未出包：${e instanceof Error ? e.message : String(e)}`);
         return;
@@ -761,6 +791,7 @@ export function ExploreWorkspace({
     state.doc,
     effectiveCatalog,
     knownSceneIds,
+    commitWs,
   ]);
 
   const problems = useMemo(
@@ -1114,7 +1145,14 @@ export function ExploreWorkspace({
         </div>
       </div>
 
-      <ExploreSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ExploreSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={(project) => {
+          const s = stateRef.current;
+          commitWs({ ...s, doc: adoptSavedProjectRaw(s.doc, project) }, true);
+        }}
+      />
 
       <div
         style={{
