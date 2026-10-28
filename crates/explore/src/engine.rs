@@ -7,7 +7,7 @@ use galeng_schema::{
 use serde::{Deserialize, Serialize};
 
 use crate::hit::{hit_test, is_enabled, is_visible, preds_hold};
-use crate::save::{override_key, parse_override_key, ExploreSave, PhaseSave};
+use crate::save::{override_key, parse_override_key, resolve_saved_beat, ExploreSave, PhaseSave};
 
 pub const BUILTIN_FALLBACK: &str = "……";
 
@@ -27,6 +27,8 @@ pub enum Error {
     GameMismatch { expected: String, got: String },
     #[error("invalid state: {0}")]
     InvalidState(String),
+    #[error("beat `{beat_id}` was not found in scene `{scene}`")]
+    BeatNotFound { scene: String, beat_id: String },
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 }
@@ -56,6 +58,10 @@ pub enum StackFrame {
     Dialogue {
         scene_id: String,
         beat_index: usize,
+        /// Stable id of the beat at `beat_index` when the frame was saved.
+        /// Old frames omit it and still resume by index.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        beat_id: Option<String>,
     },
 }
 
@@ -487,8 +493,13 @@ impl Engine {
             game_id: self.project.id.clone(),
             scene_id: self.scene_id.clone(),
             beat_index: self.beat_index,
+            beat_id: self.beat_id_of(&self.scene_id, self.beat_index),
             phase: PhaseSave::from(&self.phase),
-            call_stack: self.call_stack.clone(),
+            call_stack: self
+                .call_stack
+                .iter()
+                .map(|frame| self.snapshot_frame(frame))
+                .collect(),
             switches: self
                 .world
                 .switches
@@ -675,11 +686,15 @@ impl Engine {
                 return Err(Error::MissingScene(sid.clone()));
             }
         }
+        // Resolve before mutating so a missing id leaves the running scene alone.
+        let beat_index =
+            self.resolve_scene_beat(&save.scene_id, save.beat_id.as_deref(), save.beat_index)?;
+        let call_stack = self.resolve_call_stack(&save.call_stack)?;
 
         self.scene_id = save.scene_id.clone();
-        self.beat_index = save.beat_index;
+        self.beat_index = beat_index;
         self.phase = Phase::from(&save.phase);
-        self.call_stack = save.call_stack.clone();
+        self.call_stack = call_stack;
         self.world.switches = save.switches.iter().map(|(k, v)| (k.clone(), *v)).collect();
         self.world.vars = save.vars.iter().map(|(k, v)| (k.clone(), *v)).collect();
         self.world.inventory = save.inventory.clone();
@@ -835,10 +850,75 @@ impl Engine {
         });
     }
 
+    fn beat_id_of(&self, scene_id: &str, beat_index: usize) -> Option<String> {
+        self.scenes
+            .get(scene_id)
+            .and_then(|scene| scene.beats.get(beat_index))
+            .and_then(|beat| beat.id.clone())
+    }
+
+    fn snapshot_frame(&self, frame: &StackFrame) -> StackFrame {
+        match frame {
+            StackFrame::Dialogue {
+                scene_id,
+                beat_index,
+                ..
+            } => StackFrame::Dialogue {
+                scene_id: scene_id.clone(),
+                beat_index: *beat_index,
+                beat_id: self.beat_id_of(scene_id, *beat_index),
+            },
+            other => other.clone(),
+        }
+    }
+
+    fn resolve_scene_beat(
+        &self,
+        scene_id: &str,
+        beat_id: Option<&str>,
+        beat_index: usize,
+    ) -> Result<usize, Error> {
+        let scene = self
+            .scenes
+            .get(scene_id)
+            .ok_or_else(|| Error::MissingScene(scene_id.to_string()))?;
+        resolve_saved_beat(&scene.beats, beat_id, beat_index).ok_or_else(|| Error::BeatNotFound {
+            scene: scene_id.to_string(),
+            beat_id: beat_id
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("index {beat_index}")),
+        })
+    }
+
+    fn resolve_call_stack(&self, frames: &[StackFrame]) -> Result<Vec<StackFrame>, Error> {
+        let mut out = Vec::with_capacity(frames.len());
+        for frame in frames {
+            match frame {
+                StackFrame::Explore { .. } => out.push(frame.clone()),
+                StackFrame::Dialogue {
+                    scene_id,
+                    beat_index,
+                    beat_id,
+                } => {
+                    let resolved =
+                        self.resolve_scene_beat(scene_id, beat_id.as_deref(), *beat_index)?;
+                    out.push(StackFrame::Dialogue {
+                        scene_id: scene_id.clone(),
+                        beat_index: resolved,
+                        beat_id: beat_id.clone(),
+                    });
+                }
+            }
+        }
+        Ok(out)
+    }
+
     fn push_dialogue_frame(&mut self) {
+        let beat_id = self.beat_id_of(&self.scene_id, self.beat_index);
         self.call_stack.push(StackFrame::Dialogue {
             scene_id: self.scene_id.clone(),
             beat_index: self.beat_index,
+            beat_id,
         });
     }
 
@@ -891,6 +971,7 @@ impl Engine {
             StackFrame::Dialogue {
                 scene_id,
                 beat_index,
+                beat_id: _,
             } => {
                 self.scene_id = scene_id;
                 self.beat_index = beat_index;

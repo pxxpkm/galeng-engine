@@ -63,7 +63,10 @@ fn point_in_polygon(x: i32, y: i32, points: &[[i32; 2]]) -> bool {
 }
 
 pub fn is_visible(scene: &Scene, hs: &Hotspot, world: &WorldState) -> bool {
-    if let Some(v) = world.hotspot_visible.get(&(scene.id.clone(), hs.id.clone())) {
+    if let Some(v) = world
+        .hotspot_visible
+        .get(&(scene.id.clone(), hs.id.clone()))
+    {
         return *v;
     }
     match &hs.visible_if {
@@ -73,7 +76,10 @@ pub fn is_visible(scene: &Scene, hs: &Hotspot, world: &WorldState) -> bool {
 }
 
 pub fn is_enabled(scene: &Scene, hs: &Hotspot, world: &WorldState) -> bool {
-    if let Some(v) = world.hotspot_enabled.get(&(scene.id.clone(), hs.id.clone())) {
+    if let Some(v) = world
+        .hotspot_enabled
+        .get(&(scene.id.clone(), hs.id.clone()))
+    {
         return *v;
     }
     match &hs.enabled_if {

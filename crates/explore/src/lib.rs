@@ -6,6 +6,8 @@ pub mod engine;
 pub mod hit;
 pub mod save;
 
-pub use engine::{AvailableAction, Engine, Error, Phase, StackFrame, TraceLayer, View, BUILTIN_FALLBACK};
+pub use engine::{
+    AvailableAction, Engine, Error, Phase, StackFrame, TraceLayer, View, BUILTIN_FALLBACK,
+};
 pub use galeng_schema::ItemUseMode;
-pub use save::ExploreSave;
+pub use save::{align_explore_beat_id, resolve_saved_beat, BeatIdConflict, ExploreSave};

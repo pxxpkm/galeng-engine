@@ -363,11 +363,16 @@ impl Runtime {
             .filter(|t| !t.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| scene_id.clone());
-        let beat_id = self
+        let looked_up = self
             .scenes
             .get(&scene_id)
             .and_then(|s| s.beats.get(beat_index))
             .and_then(|b| b.id.clone());
+        // Explore snapshot and the outer slot must name the same beat.
+        let beat_id = match explore.as_ref().and_then(|ex| ex.beat_id.clone()) {
+            Some(id) => Some(id),
+            None => looked_up,
+        };
         let vars = if let Some(ex) = &explore {
             ex.vars.clone()
         } else {
@@ -397,16 +402,29 @@ impl Runtime {
     pub fn apply_save(&mut self, save: &crate::save::SaveGame) -> Result<(), VmError> {
         crate::save::check_save(save, &self.project.id, self.project.schema_version)?;
         if let Some(explore_save) = &save.explore {
+            let explore_save = galeng_explore::align_explore_beat_id(
+                explore_save.clone(),
+                &save.scene,
+                save.beat_id.as_deref(),
+            )
+            .map_err(|err| {
+                VmError::Explore(galeng_explore::Error::InvalidState(err.to_string()))
+            })?;
             if let Some(eng) = self.explore.as_mut() {
-                eng.load_save(explore_save)?;
+                eng.load_save(&explore_save)?;
             } else {
                 let mut eng =
                     galeng_explore::Engine::new(self.project.clone(), self.scenes.clone())?;
-                eng.load_save(explore_save)?;
+                eng.load_save(&explore_save)?;
                 self.explore = Some(eng);
             }
+            let resolved_beat = self
+                .explore
+                .as_ref()
+                .map(|eng| eng.view().beat_index)
+                .unwrap_or(explore_save.beat_index);
             self.scene_id = explore_save.scene_id.clone();
-            self.beat_index = explore_save.beat_index;
+            self.beat_index = resolved_beat;
             self.vars = explore_save
                 .vars
                 .iter()
