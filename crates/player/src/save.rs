@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "atomic_file.rs"]
+mod atomic_file;
+
 use serde::{Deserialize, Serialize};
 
 /// Hidden auto-save. Not listed in 01–09. F5/F9 stay on 00.
@@ -121,7 +124,9 @@ pub fn write_slot(dir: &Path, slot: u8, save: &SaveGame) -> Result<PathBuf, Save
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, serde_json::to_string_pretty(save)?)?;
+    // One slot file. Not a transaction with the thumbnail or another slot.
+    let body = serde_json::to_string_pretty(save)?;
+    atomic_file::replace_file(&path, body.as_bytes())?;
     Ok(path)
 }
 
@@ -416,6 +421,43 @@ mod tests {
             resolve_beat(&beats, Some("bmissing000000000"), 0),
             Resume::NotFound
         );
+    }
+
+    #[test]
+    fn write_slot_reads_back_the_same_json_and_keeps_original_on_failure() {
+        let tmp = std::env::temp_dir().join(format!("galeng-e01a-slot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let save = SaveGame {
+            schema_version: 1,
+            game_id: "a".into(),
+            scene: "park_01".into(),
+            beat_index: 2,
+            beat_id: None,
+            save_format: 3,
+            vars: BTreeMap::new(),
+            carried_bgm: None,
+            saved_at: 0,
+            label: Some("公園".into()),
+            explore: None,
+        };
+        let path = write_slot(&tmp, 1, &save).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text, serde_json::to_string_pretty(&save).unwrap());
+        assert_eq!(read_slot(&tmp, 1).unwrap(), save);
+        assert!(!tmp.join("slot-01.json.tmp").exists());
+
+        let before = fs::read(&path).unwrap();
+        let mut perms = fs::metadata(&tmp).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&tmp, perms).unwrap();
+        assert!(write_slot(&tmp, 1, &save).is_err());
+        let mut perms = fs::metadata(&tmp).unwrap().permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(&tmp, perms).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(!tmp.join("slot-01.json.tmp").exists());
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]

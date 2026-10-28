@@ -552,3 +552,78 @@ fn lists_scene_kind_from_raw_json_for_live_and_archive() {
     assert!(live.iter().all(|s| s.id != "study"));
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn atomic_saves_read_back_and_readonly_dir_keeps_original() {
+    let tmp = std::env::temp_dir().join(format!("galeng-e01a-host-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::copy(
+        repo_root().join("examples/prologue/galeng.json"),
+        tmp.join("galeng.json"),
+    )
+    .unwrap();
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let created = dir.create_scene("atom", Some("Atom")).unwrap();
+    let scene_path = dir.root.join("scenario/atom.json");
+    assert_eq!(
+        fs::read_to_string(&scene_path).unwrap(),
+        serde_json::to_string_pretty(&created).unwrap()
+    );
+    assert!(!dir.root.join("scenario/atom.json.tmp").exists());
+
+    let mut raw = serde_json::to_value(&created).unwrap();
+    raw["title"] = serde_json::json!("Atom 2");
+    let saved_scene = dir.save_scene("atom", &raw).unwrap();
+    assert_eq!(saved_scene.title.as_deref(), Some("Atom 2"));
+    assert_eq!(
+        fs::read_to_string(&scene_path).unwrap(),
+        serde_json::to_string_pretty(&saved_scene).unwrap()
+    );
+
+    let mut project = serde_json::to_value(dir.project().unwrap()).unwrap();
+    project["title"] = serde_json::json!("Atomic title");
+    let saved_project = dir.save_project(&project).unwrap();
+    assert_eq!(saved_project.title, "Atomic title");
+    let project_path = dir.root.join("galeng.json");
+    assert_eq!(
+        fs::read_to_string(&project_path).unwrap(),
+        serde_json::to_string_pretty(&saved_project).unwrap()
+    );
+    assert!(!dir.root.join("galeng.json.tmp").exists());
+
+    let project_before = fs::read(&project_path).unwrap();
+    let scene_before = fs::read(&scene_path).unwrap();
+    let root = dir.root.clone();
+    let scenario = root.join("scenario");
+    let restore = ReadOnlyGuard(vec![root.clone(), scenario.clone()]);
+    for path in [&root, &scenario] {
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(path, perms).unwrap();
+    }
+    assert!(dir.save_project(&project).is_err());
+    assert!(dir.save_scene("atom", &raw).is_err());
+    assert!(dir.create_scene("other", None).is_err());
+    assert_eq!(fs::read(&project_path).unwrap(), project_before);
+    assert_eq!(fs::read(&scene_path).unwrap(), scene_before);
+    assert!(!root.join("galeng.json.tmp").exists());
+    assert!(!scenario.join("atom.json.tmp").exists());
+    assert!(!scenario.join("other.json").exists());
+    assert!(!scenario.join("other.json.tmp").exists());
+    drop(restore);
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+struct ReadOnlyGuard(Vec<std::path::PathBuf>);
+impl Drop for ReadOnlyGuard {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            if let Ok(meta) = fs::metadata(path) {
+                let mut perms = meta.permissions();
+                perms.set_readonly(false);
+                let _ = fs::set_permissions(path, perms);
+            }
+        }
+    }
+}

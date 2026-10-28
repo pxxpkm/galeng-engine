@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod atomic_file;
 pub mod icon;
 pub mod sign;
 
@@ -92,10 +93,10 @@ impl ProjectDir {
             &serde_json::to_string(raw).map_err(|e| HostError::Msg(e.to_string()))?,
         )?;
         let path = self.root.join("galeng.json");
-        fs::write(
-            path,
-            serde_json::to_string_pretty(&project).map_err(|e| HostError::Msg(e.to_string()))?,
-        )?;
+        let body =
+            serde_json::to_string_pretty(&project).map_err(|e| HostError::Msg(e.to_string()))?;
+        // One file. Saving the project and a scene is not one transaction.
+        atomic_file::replace_file(&path, body.as_bytes())?;
         Ok(project)
     }
 
@@ -183,7 +184,7 @@ impl ProjectDir {
         };
         let json = serde_json::to_string_pretty(&scene).map_err(|e| HostError::Msg(e.to_string()))?;
         validate_scene_str(&json)?;
-        fs::write(path, json)?;
+        atomic_file::replace_file(&path, json.as_bytes())?;
         Ok(scene)
     }
 
@@ -372,7 +373,8 @@ impl ProjectDir {
             return Err(HostError::Msg("scene id does not match path".into()));
         }
         let path = self.scene_path(id)?;
-        fs::write(path, serde_json::to_string_pretty(&scene).map_err(|e| HostError::Msg(e.to_string()))?)?;
+        let body = serde_json::to_string_pretty(&scene).map_err(|e| HostError::Msg(e.to_string()))?;
+        atomic_file::replace_file(&path, body.as_bytes())?;
         Ok(scene)
     }
 
