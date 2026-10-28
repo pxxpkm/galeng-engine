@@ -77,7 +77,8 @@ pub struct Runtime {
     pending_se: Vec<String>,
     carried_bgm: Option<String>,
     backlog: Vec<crate::backlog::BacklogLine>,
-    /// When set, start scene was Explore — Engine owns Call/Return / hit-test.
+    /// When set, galeng-explore owns the scene: the start room was explore,
+    /// or dialogue gameplay handed off via next/goto/Call/Return.
     explore: Option<galeng_explore::Engine>,
     /// Beat whose `set` was already applied. Load marks the restored beat so
     /// settle does not add it again. A later beat, or the same index in another
@@ -261,6 +262,13 @@ impl Runtime {
             Some(eng) => eng.view().inventory.into_iter().collect(),
             None => Vec::new(),
         }
+    }
+
+    /// Switch value owned by the explore engine, if a handoff has happened.
+    pub fn explore_switch(&self, id: &str) -> Option<bool> {
+        self.explore
+            .as_ref()
+            .and_then(|eng| eng.view().switches.get(id).copied())
     }
 
     pub fn explore_hit(&self, x: i32, y: i32) -> Option<String> {
@@ -837,12 +845,46 @@ impl Runtime {
                     self.goto_scene(&else_goto);
                 }
             }
-            Some(Exit::Call { .. } | Exit::Return { .. }) => {
-                // Explore call stack is a later runtime. Do not crash the dialogue VM.
-                self.phase = Phase::Ended;
+            Some(Exit::Call { scene, trans }) => self.hand_off_exit(|eng| {
+                // beat_index is already `beats.len()`: the exit was consumed.
+                eng.call_from_here(&scene, trans)
+            }),
+            Some(Exit::Return { trans }) => {
+                self.hand_off_exit(|eng| eng.return_from_here(trans));
             }
             None => self.phase = Phase::Ended,
         }
+    }
+
+    /// Park the current dialogue frame and let the explore engine take Call/Return.
+    /// On failure the engine's error phase is kept. This does not pretend the story ended.
+    fn hand_off_exit(
+        &mut self,
+        op: impl FnOnce(&mut galeng_explore::Engine) -> Result<(), galeng_explore::Error>,
+    ) {
+        let mut eng = match galeng_explore::Engine::parked(
+            self.project.clone(),
+            self.scenes.clone(),
+            &self.scene_id,
+            self.beat_index,
+        ) {
+            Ok(eng) => eng,
+            Err(err) => {
+                self.phase = Phase::MissingScene(err.to_string());
+                return;
+            }
+        };
+        let _ = op(&mut eng);
+        self.adopt_engine(eng);
+    }
+
+    fn adopt_engine(&mut self, eng: galeng_explore::Engine) {
+        let ev = eng.view();
+        self.scene_id = ev.scene_id.clone();
+        self.beat_index = ev.beat_index;
+        self.phase = map_explore_phase(&ev.phase);
+        self.last_say = None;
+        self.explore = Some(eng);
     }
 
     fn goto_scene(&mut self, id: &str) {
@@ -851,6 +893,19 @@ impl Runtime {
             return;
         }
         self.carried_bgm = self.view().bgm;
+        if self
+            .scenes
+            .get(id)
+            .is_some_and(|scene| scene.scene_kind == SceneKind::Explore)
+        {
+            // Story next/goto enters THIS room (onEnter once). Not project.start_scene.
+            // Editor "Play from here" does not use this path; see load_from.
+            match galeng_explore::Engine::boot_at(self.project.clone(), self.scenes.clone(), id) {
+                Ok(eng) => self.adopt_engine(eng),
+                Err(err) => self.phase = Phase::MissingScene(err.to_string()),
+            }
+            return;
+        }
         self.scene_id = id.to_string();
         self.beat_index = 0;
         self.last_say = None;

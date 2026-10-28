@@ -146,19 +146,73 @@ pub struct Engine {
 impl Engine {
     pub fn new(project: Project, scenes: HashMap<String, Scene>) -> Result<Self, Error> {
         let start = project.start_scene.clone();
-        if !scenes.contains_key(&start) {
-            return Err(Error::MissingStart(start));
+        match Self::boot_at(project, scenes, &start) {
+            Err(Error::MissingScene(id)) if id == start => Err(Error::MissingStart(id)),
+            other => other,
         }
+    }
+
+    /// Enter `scene_id` on an empty call stack and run onEnter once.
+    /// Does not boot `project.start_scene`. Gameplay `next` / `goto` uses this.
+    /// Editor play-from-here does not: player `load_from` still calls [`Engine::new`].
+    pub fn boot_at(
+        project: Project,
+        scenes: HashMap<String, Scene>,
+        scene_id: &str,
+    ) -> Result<Self, Error> {
+        if !scenes.contains_key(scene_id) {
+            return Err(Error::MissingScene(scene_id.to_string()));
+        }
+        let mut eng = Self::blank(project, scenes, scene_id.to_string(), 0, Phase::Explore);
+        eng.enter_scene_keep_stack()?;
+        Ok(eng)
+    }
+
+    /// Sit on a dialogue scene at `beat_index` without settling, taking the exit, or running onEnter.
+    /// The dialogue VM parks at `beats.len()` before Call/Return so the stored frame does not re-enter that exit.
+    pub fn parked(
+        project: Project,
+        scenes: HashMap<String, Scene>,
+        scene_id: &str,
+        beat_index: usize,
+    ) -> Result<Self, Error> {
+        if !scenes.contains_key(scene_id) {
+            return Err(Error::MissingScene(scene_id.to_string()));
+        }
+        Ok(Self::blank(
+            project,
+            scenes,
+            scene_id.to_string(),
+            beat_index,
+            Phase::Dialogue,
+        ))
+    }
+
+    pub fn call_from_here(&mut self, scene: &str, trans: Option<String>) -> Result<(), Error> {
+        self.call_scene(scene, trans)
+    }
+
+    pub fn return_from_here(&mut self, trans: Option<String>) -> Result<(), Error> {
+        self.return_from_call(trans)
+    }
+
+    fn blank(
+        project: Project,
+        scenes: HashMap<String, Scene>,
+        scene_id: String,
+        beat_index: usize,
+        phase: Phase,
+    ) -> Self {
         let mut world = WorldState::default();
         for sw in &project.switches {
             world.switches.insert(sw.id.clone(), sw.init);
         }
-        let mut eng = Self {
+        Self {
             project,
             scenes,
-            scene_id: start,
-            beat_index: 0,
-            phase: Phase::Explore,
+            scene_id,
+            beat_index,
+            phase,
             selected_verb: None,
             pending_item: None,
             inventory_open: false,
@@ -171,9 +225,7 @@ impl Engine {
             last_trans: None,
             pending_se: Vec::new(),
             bgm: None,
-        };
-        eng.enter_scene_keep_stack()?;
-        Ok(eng)
+        }
     }
 
     pub fn from_json(project_json: &str, scenes: &[(&str, &str)]) -> Result<Self, Error> {

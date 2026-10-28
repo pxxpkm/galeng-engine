@@ -705,3 +705,183 @@ fn movie_beat_holds_and_skip_advances() {
     assert_eq!(rt.view().movie, None);
     let _ = fs::remove_dir_all(&tmp);
 }
+
+fn write_k2_project(tmp: &std::path::Path, start: &str, scenes: &[(&str, &str)]) {
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::write(
+        tmp.join("galeng.json"),
+        format!(
+            r#"{{
+              "id": "k2",
+              "title": "K2",
+              "schemaVersion": 2,
+              "resolution": {{ "width": 1920, "height": 1080 }},
+              "startScene": "{start}",
+              "locale": "zh-Hant",
+              "skipTitle": true
+            }}"#
+        ),
+    )
+    .unwrap();
+    for (id, body) in scenes {
+        fs::write(tmp.join(format!("scenario/{id}.json")), body).unwrap();
+    }
+}
+
+#[test]
+fn k2_dialogue_next_enters_that_explore_room() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k2-next-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let talk = r#"{
+      "id": "talk",
+      "beats": [{ "say": { "speaker": "n", "text": "go" } }],
+      "exit": { "type": "next", "goto": "room" }
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "desk", "name": "Desk", "shape": { "type": "rect", "x": 0, "y": 0, "w": 40, "h": 40 } }
+      ],
+      "onEnter": [
+        { "type": "say", "text": "entered" },
+        { "type": "setSwitch", "id": "entered", "value": true }
+      ]
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", talk), ("room", room)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert!(!rt.uses_explore());
+    assert_eq!(rt.view().say_text.as_deref(), Some("go"));
+    assert_eq!(rt.project.start_scene, "talk");
+    rt.click_advance();
+    assert_eq!(rt.view().scene_id, "room");
+    assert_eq!(rt.view().phase, Phase::Dialogue);
+    assert_eq!(rt.view().say_text.as_deref(), Some("entered"));
+    assert_ne!(rt.explore_switch("entered"), Some(true));
+    assert!(rt.uses_explore());
+    rt.click_advance();
+    assert_eq!(rt.view().phase, Phase::Explore);
+    assert_eq!(rt.view().scene_id, "room");
+    assert!(!rt.explore_hotspots().is_empty());
+    assert_eq!(rt.explore_switch("entered"), Some(true));
+    assert_eq!(rt.view().say_text, None);
+    rt.click_advance();
+    assert_eq!(rt.view().phase, Phase::Explore);
+    assert_eq!(rt.view().say_text, None);
+    assert_eq!(rt.explore_switch("entered"), Some(true));
+    assert_eq!(rt.project.start_scene, "talk");
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn k2_dialogue_call_explore_returns_to_caller_end() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k2-call-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let talk = r#"{
+      "id": "talk",
+      "beats": [{ "say": { "speaker": "n", "text": "go" } }],
+      "exit": { "type": "call", "scene": "room" }
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "hotspots": [
+        { "id": "door", "name": "Door", "shape": { "type": "rect", "x": 0, "y": 0, "w": 20, "h": 20 } }
+      ],
+      "onEnter": [
+        { "type": "say", "text": "entered" },
+        { "type": "setSwitch", "id": "entered", "value": true }
+      ],
+      "interactions": [{
+        "hotspot": "door",
+        "on": { "verb": "look" },
+        "rules": [{ "when": [], "do": [{ "type": "return" }] }]
+      }]
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", talk), ("room", room)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.view().say_text.as_deref(), Some("go"));
+    rt.click_advance();
+    assert_ne!(rt.view().phase, Phase::Ended);
+    assert_eq!(rt.view().scene_id, "room");
+    assert_eq!(rt.view().say_text.as_deref(), Some("entered"));
+    rt.click_advance();
+    assert_eq!(rt.view().phase, Phase::Explore);
+    assert!(!rt.explore_hotspots().is_empty());
+    assert_eq!(rt.explore_switch("entered"), Some(true));
+    rt.select_verb(Some("look"));
+    rt.interact_hotspot("door");
+    assert_eq!(rt.view().phase, Phase::Ended);
+    assert_eq!(rt.view().scene_id, "talk");
+    assert_eq!(rt.view().beat_index, 1);
+    assert_eq!(rt.view().say_text, None);
+    assert_eq!(rt.explore_switch("entered"), Some(true));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn k2_dialogue_call_dialogue_returns_past_the_call_site() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k2-dlg-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let a = r#"{
+      "id": "A",
+      "beats": [{ "say": { "speaker": "A", "text": "go" } }],
+      "exit": { "type": "call", "scene": "B" }
+    }"#;
+    let b = r#"{
+      "id": "B",
+      "beats": [{ "say": { "speaker": "B", "text": "back" } }],
+      "exit": { "type": "return" }
+    }"#;
+    write_k2_project(&tmp, "A", &[("A", a), ("B", b)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    rt.click_advance();
+    assert_ne!(rt.view().phase, Phase::Ended);
+    assert_eq!(rt.view().scene_id, "B");
+    assert_eq!(rt.view().say_text.as_deref(), Some("back"));
+    rt.click_advance();
+    assert_eq!(rt.view().phase, Phase::Ended);
+    assert_eq!(rt.view().scene_id, "A");
+    assert_eq!(rt.view().beat_index, 1);
+    assert_eq!(rt.view().say_text, None);
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn k2_top_level_return_is_an_error_not_ended() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k2-ret-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let talk = r#"{
+      "id": "talk",
+      "beats": [{ "say": { "speaker": "n", "text": "bye" } }],
+      "exit": { "type": "return" }
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", talk)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.view().say_text.as_deref(), Some("bye"));
+    rt.click_advance();
+    match rt.view().phase {
+        Phase::MissingScene(msg) => assert!(msg.contains("return"), "{msg}"),
+        other => panic!("expected return error, got {other:?}"),
+    }
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn k2_call_missing_scene_is_not_ended() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k2-miss-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let talk = r#"{
+      "id": "talk",
+      "beats": [{ "say": { "speaker": "n", "text": "go" } }],
+      "exit": { "type": "call", "scene": "missing" }
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", talk)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    rt.click_advance();
+    match rt.view().phase {
+        Phase::MissingScene(msg) => assert!(msg.contains("missing"), "{msg}"),
+        other => panic!("expected missing scene, got {other:?}"),
+    }
+    let _ = fs::remove_dir_all(&tmp);
+}
