@@ -223,32 +223,41 @@ export function apiToExploreScene(raw: unknown): ExploreScene {
   };
 }
 
+function isEnoent(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "ENOENT"
+  );
+}
+
 /**
- * Disk project wins on overlapping keys so a Settings save that landed after
- * this document was loaded is not overwritten by a stale `_rawProject`.
+ * Successful GET is the only base. Missing keys on disk stay missing, so a
+ * Settings delete is not filled back in from a stale `_rawProject`.
  * Explore-owned fields are still applied from `doc.project` afterwards.
- * A missing project file (first save) keeps the in-memory raw snapshot.
+ * Only a missing project file (ENOENT, first save) keeps the in-memory raw.
+ * HTTP and other load errors propagate so the room save fails closed.
  */
 async function projectBaseForSave(
   api: ExplorePersistApi,
   raw: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown> | undefined> {
   try {
-    const disk = asRecord(await api.loadProject(), "project");
-    return { ...(raw ?? {}), ...disk };
-  } catch {
-    return raw;
+    return asRecord(await api.loadProject(), "project");
+  } catch (err) {
+    if (isEnoent(err)) return raw;
+    throw err;
   }
 }
 
-/** Keep the open explore model; refresh raw with a project Settings just stored. */
+/**
+ * Replace raw with the project Settings just stored.
+ * Do not pad with the previous raw — absent keys are deletions.
+ */
 export function adoptSavedProjectRaw(doc: ExploreDoc, saved: object): ExploreDoc {
   return {
     ...doc,
-    _rawProject: {
-      ...(doc._rawProject ?? {}),
-      ...(saved as Record<string, unknown>),
-    },
+    _rawProject: { ...(saved as Record<string, unknown>) },
   };
 }
 

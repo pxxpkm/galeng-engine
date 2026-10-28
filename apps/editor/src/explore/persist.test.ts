@@ -424,6 +424,162 @@ describe("Explore persist (real file path)", () => {
     expect(reloaded.scene.hotspots.map((h) => h.id)).toEqual(["desk", "lamp"]);
   });
 
+  it("room save does not resurrect titleBgm, font, or musicGallery deleted on disk", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-delete-"));
+    await mkdir(path.join(root, "scenario"), { recursive: true });
+    const api = createFsPersistApi(root);
+    const projectSeed = {
+      id: "demo",
+      title: "Demo",
+      schemaVersion: 2,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "study",
+      locale: "zh-Hant",
+      font: "fonts/old.ttf",
+      titleBgm: "bgm/old",
+      musicGallery: [{ id: "theme", asset: "bgm/theme" }],
+      verbs: [{ id: "look", label: "看", builtin: true }],
+      items: [],
+      switches: [],
+      fallback: { perVerb: { look: "冇咩特別。" }, global: "……" },
+    };
+    const sceneSeed = {
+      id: "study",
+      title: "書房",
+      sceneKind: "explore",
+      hotspots: [
+        {
+          id: "desk",
+          name: "書桌",
+          shape: { type: "rect", x: 10, y: 20, w: 100, h: 80 },
+        },
+      ],
+      interactions: [],
+    };
+    const projectPath = path.join(root, "galeng.json");
+    await writeFile(projectPath, `${JSON.stringify(projectSeed, null, 2)}\n`, "utf8");
+    await writeFile(
+      path.join(root, "scenario", "study.json"),
+      `${JSON.stringify(sceneSeed, null, 2)}\n`,
+      "utf8",
+    );
+
+    let doc = await loadExploreDoc(api, "study");
+    const settingsSaved: Record<string, unknown> = { ...projectSeed };
+    delete settingsSaved.titleBgm;
+    delete settingsSaved.font;
+    delete settingsSaved.musicGallery;
+    await writeFile(projectPath, `${JSON.stringify(settingsSaved, null, 2)}\n`, "utf8");
+
+    // Memory raw still has the deleted keys. Disk is the source of truth.
+    let bus = emptyBus();
+    ({ bus, doc } = dispatch(
+      bus,
+      doc,
+      addHotspot({
+        id: "lamp",
+        name: "燈",
+        shape: { type: "rect", x: 1, y: 1, w: 20, h: 20 },
+      }),
+    ));
+    void bus;
+    await saveExploreDoc(api, doc);
+
+    const projectOnDisk = JSON.parse(await readFile(projectPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(projectOnDisk).not.toHaveProperty("titleBgm");
+    expect(projectOnDisk).not.toHaveProperty("font");
+    expect(projectOnDisk).not.toHaveProperty("musicGallery");
+
+    doc = adoptSavedProjectRaw(doc, settingsSaved);
+    expect(doc._rawProject).not.toHaveProperty("titleBgm");
+    expect(doc._rawProject).not.toHaveProperty("font");
+    expect(doc._rawProject).not.toHaveProperty("musicGallery");
+    expect(doc._rawProject?.id).toBe("demo");
+
+    await saveExploreDoc(api, doc);
+    const afterAdopt = JSON.parse(await readFile(projectPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(afterAdopt).not.toHaveProperty("titleBgm");
+    expect(afterAdopt).not.toHaveProperty("font");
+    expect(afterAdopt).not.toHaveProperty("musicGallery");
+
+    const reloaded = await loadExploreDoc(api, "study");
+    expect(reloaded._rawProject).not.toHaveProperty("titleBgm");
+    expect(reloaded._rawProject).not.toHaveProperty("font");
+    expect(reloaded._rawProject).not.toHaveProperty("musicGallery");
+    expect(reloaded.scene.hotspots.map((h) => h.id)).toEqual(["desk", "lamp"]);
+  });
+
+  it("rejects a non-ENOENT project GET and leaves disk bytes unchanged", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-get-fail-"));
+    await mkdir(path.join(root, "scenario"), { recursive: true });
+    const fsApi = createFsPersistApi(root);
+    const projectSeed = {
+      id: "demo",
+      title: "Demo",
+      schemaVersion: 2,
+      resolution: { width: 1920, height: 1080 },
+      startScene: "study",
+      locale: "zh-Hant",
+      titleBgm: "bgm/keep",
+      verbs: [{ id: "look", label: "看", builtin: true }],
+      items: [],
+      switches: [],
+      fallback: { perVerb: { look: "冇咩特別。" }, global: "……" },
+    };
+    const sceneSeed = {
+      id: "study",
+      sceneKind: "explore",
+      hotspots: [],
+      interactions: [],
+    };
+    const projectPath = path.join(root, "galeng.json");
+    const scenePath = path.join(root, "scenario", "study.json");
+    await writeFile(projectPath, `${JSON.stringify(projectSeed, null, 2)}\n`, "utf8");
+    await writeFile(scenePath, `${JSON.stringify(sceneSeed, null, 2)}\n`, "utf8");
+    const projectBefore = await readFile(projectPath);
+    const sceneBefore = await readFile(scenePath);
+    const doc = await loadExploreDoc(fsApi, "study");
+    const api = {
+      ...fsApi,
+      loadProject: async () => {
+        throw new Error("HTTP 500");
+      },
+    };
+    await expect(saveExploreDoc(api, doc)).rejects.toThrow("HTTP 500");
+    expect(await readFile(projectPath)).toEqual(projectBefore);
+    expect(await readFile(scenePath)).toEqual(sceneBefore);
+  });
+
+  it("first save keeps in-memory raw when the project file is missing", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "plane-explore-enoent-"));
+    const api = createFsPersistApi(root);
+    let doc = blankExploreDoc("study");
+    doc = {
+      ...doc,
+      _rawProject: {
+        id: "demo",
+        title: "Demo",
+        font: "fonts/first.ttf",
+        titleBgm: "bgm/first",
+        musicGallery: [{ id: "theme", asset: "bgm/theme" }],
+      },
+    };
+    await saveExploreDoc(api, doc);
+    const projectOnDisk = JSON.parse(
+      await readFile(path.join(root, "galeng.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(projectOnDisk.font).toBe("fonts/first.ttf");
+    expect(projectOnDisk.titleBgm).toBe("bgm/first");
+    expect(projectOnDisk.musicGallery).toEqual([{ id: "theme", asset: "bgm/theme" }]);
+    expect(projectOnDisk.id).toBe("demo");
+  });
+
   it("loads onEmptyClick from click-room study.json and round-trips", async () => {
     const { fileURLToPath } = await import("node:url");
     const root = path.resolve(
