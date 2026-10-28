@@ -117,15 +117,6 @@ mod tests {
         dir
     }
 
-    struct Writable(PathBuf);
-    impl Drop for Writable {
-        fn drop(&mut self) {
-            let mut perms = fs::metadata(&self.0).unwrap().permissions();
-            perms.set_readonly(false);
-            fs::set_permissions(&self.0, perms).unwrap();
-        }
-    }
-
     #[test]
     fn success_replaces_and_reads_back_the_same_json() {
         let dir = scratch("ok");
@@ -161,18 +152,18 @@ mod tests {
     }
 
     #[test]
-    fn read_only_dir_keeps_original_bytes() {
-        let dir = scratch("ro");
+    fn dir_dest_keeps_original_and_deletes_temp() {
+        let dir = scratch("dir-dest");
         let path = dir.join("galeng.json");
-        fs::write(&path, b"OLD-COMPLETE").unwrap();
-        let _restore = Writable(dir.clone());
-        let mut perms = fs::metadata(&dir).unwrap().permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(&dir, perms).unwrap();
+        // Windows ignores the readonly bit on a directory, so that does not
+        // fail the temp write. A directory at the destination makes both
+        // rename and MoveFileEx fail. The marker is the content that must stay.
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep.txt"), b"OLD-COMPLETE").unwrap();
         assert!(replace_file(&path, b"NEW-COMPLETE").is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"OLD-COMPLETE");
+        assert_eq!(fs::read(path.join("keep.txt")).unwrap(), b"OLD-COMPLETE");
+        assert!(path.is_dir());
         assert!(!dir.join("galeng.json.tmp").exists());
-        drop(_restore);
         let _ = fs::remove_dir_all(&dir);
     }
 }

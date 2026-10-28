@@ -448,14 +448,15 @@ mod tests {
         assert!(!tmp.join("slot-01.json.tmp").exists());
 
         let before = fs::read(&path).unwrap();
-        let mut perms = fs::metadata(&tmp).unwrap().permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(&tmp, perms).unwrap();
+        // Windows ignores the readonly bit on a directory, so that does not
+        // stop the temp write. A directory at the slot path makes rename and
+        // MoveFileEx fail; the marker is the original bytes that must remain.
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep.txt"), &before).unwrap();
         assert!(write_slot(&tmp, 1, &save).is_err());
-        let mut perms = fs::metadata(&tmp).unwrap().permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(&tmp, perms).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read(path.join("keep.txt")).unwrap(), before);
+        assert!(path.is_dir());
         assert!(!tmp.join("slot-01.json.tmp").exists());
         let _ = fs::remove_dir_all(&tmp);
     }

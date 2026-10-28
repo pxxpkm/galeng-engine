@@ -554,7 +554,7 @@ fn lists_scene_kind_from_raw_json_for_live_and_archive() {
 }
 
 #[test]
-fn atomic_saves_read_back_and_readonly_dir_keeps_original() {
+fn atomic_saves_read_back_and_dir_dest_keeps_original() {
     let tmp = std::env::temp_dir().join(format!("galeng-e01a-host-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(tmp.join("scenario")).unwrap();
@@ -596,34 +596,36 @@ fn atomic_saves_read_back_and_readonly_dir_keeps_original() {
     let scene_before = fs::read(&scene_path).unwrap();
     let root = dir.root.clone();
     let scenario = root.join("scenario");
-    let restore = ReadOnlyGuard(vec![root.clone(), scenario.clone()]);
-    for path in [&root, &scenario] {
-        let mut perms = fs::metadata(path).unwrap().permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(path, perms).unwrap();
-    }
+    let other_path = scenario.join("other.json");
+    let other_before = b"OTHER-ORIGINAL".as_slice();
+    // Windows ignores the readonly bit on a directory, so a read-only parent
+    // still accepts the temp file. A directory at the destination makes rename
+    // and MoveFileEx fail. The marker keeps the original bytes.
+    occupy_dest_dir(&project_path, &project_before);
+    occupy_dest_dir(&scene_path, &scene_before);
+    occupy_dest_dir(&other_path, other_before);
     assert!(dir.save_project(&project).is_err());
     assert!(dir.save_scene("atom", &raw).is_err());
     assert!(dir.create_scene("other", None).is_err());
-    assert_eq!(fs::read(&project_path).unwrap(), project_before);
-    assert_eq!(fs::read(&scene_path).unwrap(), scene_before);
+    assert_eq!(fs::read(project_path.join("keep.txt")).unwrap(), project_before);
+    assert_eq!(fs::read(scene_path.join("keep.txt")).unwrap(), scene_before);
+    assert_eq!(fs::read(other_path.join("keep.txt")).unwrap(), other_before);
+    assert!(project_path.is_dir());
+    assert!(scene_path.is_dir());
+    assert!(other_path.is_dir());
     assert!(!root.join("galeng.json.tmp").exists());
     assert!(!scenario.join("atom.json.tmp").exists());
-    assert!(!scenario.join("other.json").exists());
     assert!(!scenario.join("other.json.tmp").exists());
-    drop(restore);
     let _ = fs::remove_dir_all(&tmp);
 }
 
-struct ReadOnlyGuard(Vec<std::path::PathBuf>);
-impl Drop for ReadOnlyGuard {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            if let Ok(meta) = fs::metadata(path) {
-                let mut perms = meta.permissions();
-                perms.set_readonly(false);
-                let _ = fs::set_permissions(path, perms);
-            }
-        }
+/// Replace `path` with a directory whose `keep.txt` holds `marker`.
+fn occupy_dest_dir(path: &std::path::Path, marker: &[u8]) {
+    if path.is_dir() {
+        fs::remove_dir_all(path).unwrap();
+    } else if path.exists() {
+        fs::remove_file(path).unwrap();
     }
+    fs::create_dir(path).unwrap();
+    fs::write(path.join("keep.txt"), marker).unwrap();
 }
