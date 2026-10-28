@@ -37,7 +37,7 @@ import {
 } from "./dirty";
 import { registerShellSession } from "./shellGate";
 import { addMusicItem, setOptionalPath, setSkipTitle } from "./project";
-import { launchPlay } from "./play";
+import { launchPlay, playFromHereDecision, playFromStartBody, playNoticeKey, runPlayFromHere } from "./play";
 import { formatPackNote, packWarningsOf, type PackResult } from "./pack";
 import { exportAllScenes, exportScene, joinExportTexts, type ScriptFile } from "./exportScript";
 import { AuditionButton } from "./AuditionButton";
@@ -391,12 +391,43 @@ export function App() {
   }
 
   async function play() {
-    if (!scene) return;
+    if (!scene || !project) return;
+    const decision = playFromHereDecision({
+      sceneId: scene.id,
+      beat: beatIndex,
+      sceneKind: scene.sceneKind,
+      hotspots: scene.hotspots,
+      startScene: project.startScene,
+    });
+    try {
+      const outcome = await runPlayFromHere({
+        decision,
+        launch: () => {
+          if (decision.action !== "spawn") return Promise.resolve();
+          return launchPlay({
+            dirty: dirty || projectDirty,
+            save,
+            play: () => postJson("/api/play", decision.body),
+          });
+        },
+      });
+      if (outcome === "refused") {
+        setError(t("editor.playExploreRefused"));
+      } else {
+        setError(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function playFromStart() {
+    if (!project) return;
     try {
       await launchPlay({
         dirty: dirty || projectDirty,
         save,
-        play: () => postJson("/api/play", { scene: scene.id, beat: beatIndex }),
+        play: () => postJson("/api/play", playFromStartBody(project.startScene)),
       });
       setError(null);
     } catch (err) {
@@ -915,6 +946,17 @@ export function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty, projectDirty]);
 
+  const playDecision =
+    scene && project
+      ? playFromHereDecision({
+          sceneId: scene.id,
+          beat: beatIndex,
+          sceneKind: scene.sceneKind,
+          hotspots: scene.hotspots,
+          startScene: project.startScene,
+        })
+      : null;
+
   return (
     <div className="app">
       <header className="top">
@@ -946,9 +988,18 @@ export function App() {
         >
           {t("menu.save")}
         </button>
-        <button type="button" onClick={() => void play()}>
+        <button
+          type="button"
+          onClick={() => void play()}
+          title={playDecision ? t(playNoticeKey(playDecision.notice)) : undefined}
+        >
           {t("menu.playFromHere")}
         </button>
+        {playDecision?.action === "refuse" ? (
+          <button type="button" onClick={() => void playFromStart()}>
+            {t("editor.playFromStart")}
+          </button>
+        ) : null}
         <button type="button" onClick={addBeat}>
           {t("editor.addBeat")}
         </button>

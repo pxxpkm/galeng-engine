@@ -1,5 +1,6 @@
 import { Preview } from "../Preview";
 import { setCharOffset } from "../beats";
+import { playNoticeKey } from "../play";
 import type { Beat } from "../types";
 import type { Editor } from "./useEditorState";
 import { IconChevronL, IconChevronR, IconCopy, IconMusic, IconPlay, IconPlus, IconScene, IconTrash } from "./icons";
@@ -102,10 +103,16 @@ export function Stage({ ed }: { ed: Editor }) {
           className="v2-btn v2-btn-accent"
           onClick={() => void ed.play()}
           disabled={!ed.scene}
+          title={ed.playDecision ? t(playNoticeKey(ed.playDecision.notice)) : undefined}
         >
           <IconPlay />
           {t("menu.playFromHere")}
         </button>
+        {ed.playDecision?.action === "refuse" ? (
+          <button type="button" className="v2-btn" onClick={() => void ed.playFromStart()}>
+            {t("editor.playFromStart")}
+          </button>
+        ) : null}
       </div>
     </main>
   );

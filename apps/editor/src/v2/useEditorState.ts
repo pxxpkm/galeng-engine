@@ -38,7 +38,7 @@ import type { LiveIssue } from "../liveIssues";
 import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive } from "../scene";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "../saveIssues";
 import { emptyHistory, push, redo, undo } from "../history";
-import { launchPlay } from "../play";
+import { launchPlay, playFromHereDecision, playFromStartBody, runPlayFromHere } from "../play";
 import { formatPackNote, packWarningsOf, type PackResult } from "../pack";
 import { beatStepAudio } from "../previewState";
 import {
@@ -498,18 +498,51 @@ export function useEditorState() {
     })();
   }, [scenes, scenes.length, anyDirty, stillDirty, save, fail]);
 
+  const playDecision = useMemo(() => {
+    if (!scene || !project) return null;
+    return playFromHereDecision({
+      sceneId: scene.id,
+      beat: beatIndex,
+      sceneKind: scene.sceneKind,
+      hotspots: scene.hotspots,
+      startScene: project.startScene,
+    });
+  }, [scene, beatIndex, project]);
+
   const play = useCallback(async () => {
-    if (!scene) return;
+    if (!scene || !playDecision) return;
+    try {
+      const outcome = await runPlayFromHere({
+        decision: playDecision,
+        launch: () => {
+          if (playDecision.action !== "spawn") return Promise.resolve();
+          return launchPlay({
+            dirty: anyDirty,
+            save,
+            play: () => postJson("/api/play", playDecision.body),
+          });
+        },
+      });
+      if (outcome === "refused") {
+        pushToast("note", t("editor.playExploreRefused"));
+      }
+    } catch (err) {
+      fail(err);
+    }
+  }, [scene, playDecision, anyDirty, save, fail, pushToast, t]);
+
+  const playFromStart = useCallback(async () => {
+    if (!project) return;
     try {
       await launchPlay({
         dirty: anyDirty,
         save,
-        play: () => postJson("/api/play", { scene: scene.id, beat: beatIndex }),
+        play: () => postJson("/api/play", playFromStartBody(project.startScene)),
       });
     } catch (err) {
       fail(err);
     }
-  }, [scene, anyDirty, save, beatIndex, fail]);
+  }, [project, anyDirty, save, fail]);
 
   const setPackOutPersist = useCallback((value: string) => {
     setPackOut(value);
@@ -1349,6 +1382,8 @@ export function useEditorState() {
     applyRedo,
     save,
     play,
+    playFromStart,
+    playDecision,
     pack,
     packOpen,
     packOut,

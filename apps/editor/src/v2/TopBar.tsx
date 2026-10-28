@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateToExploreEditor } from "../editorRoute";
+import { playNoticeKey } from "../play";
 import type { Editor } from "./useEditorState";
 import {
   IconChevronDown,
@@ -204,10 +205,16 @@ export function TopBar({ ed }: { ed: Editor }) {
           className="v2-btn v2-btn-accent"
           onClick={() => void ed.play()}
           disabled={!ed.scene}
+          title={ed.playDecision ? t(playNoticeKey(ed.playDecision.notice)) : undefined}
         >
           <IconPlay />
           {t("menu.playFromHere")}
         </button>
+        {ed.playDecision?.action === "refuse" ? (
+          <button type="button" className="v2-btn" onClick={() => void ed.playFromStart()}>
+            {t("editor.playFromStart")}
+          </button>
+        ) : null}
       </div>
 
       <TopBarSep />
