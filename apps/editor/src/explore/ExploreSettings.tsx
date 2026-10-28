@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import en from "../../../../packages/i18n/locales/en.json";
 import zhHans from "../../../../packages/i18n/locales/zh-Hans.json";
 import zhHant from "../../../../packages/i18n/locales/zh-Hant.json";
 import { getJson, putJson } from "../api";
+import { mergeSaveResponse } from "../saveGeneration";
 import type { AssetMeta, Locale, Project } from "../types";
 import { AudioPanel, type AudioPanelHost } from "../v2/AudioPanel";
 import { FontPanel, type FontPanelHost } from "../v2/FontPanel";
@@ -56,6 +57,25 @@ export async function saveExploreProject(
   return api.putJson<Project>("/api/project", project);
 }
 
+/**
+ * Apply a settings PUT only when the dialog revision is still the one that
+ * was captured at send time. A patch during the request keeps the new draft.
+ */
+export function settleSettingsSave<T>(input: {
+  requestRev: number;
+  currentRev: number;
+  saved: T;
+  current: T;
+}): { project: T; clearDirty: boolean } {
+  const merged = mergeSaveResponse({
+    requestRev: input.requestRev,
+    currentRev: input.currentRev,
+    saved: input.saved,
+    current: input.current,
+  });
+  return { project: merged.value, clearDirty: merged.clearDirty };
+}
+
 type Page = "main" | "fonts" | "audio";
 
 /**
@@ -80,6 +100,8 @@ export function ExploreSettingsDialog({
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const projectRef = useRef<Project | null>(null);
+  const settingsRev = useRef(0);
 
   useEffect(() => {
     if (!open) {
@@ -94,6 +116,8 @@ export function ExploreSettingsDialog({
     void loadExploreProjectBundle()
       .then((bundle) => {
         if (cancelled) return;
+        settingsRev.current += 1;
+        projectRef.current = bundle.project;
         setProject(bundle.project);
         setAssets(bundle.assets);
         setDirty(false);
@@ -123,23 +147,38 @@ export function ExploreSettingsDialog({
   }, [open, onClose]);
 
   const patchProject = useCallback((next: Project) => {
+    settingsRev.current += 1;
+    projectRef.current = next;
     setProject(next);
     setDirty(true);
   }, []);
 
   const doSave = useCallback(async () => {
-    if (!project) return;
+    const body = projectRef.current;
+    if (!body) return;
+    const requestRev = settingsRev.current;
     setStatus("儲存中…");
     try {
-      const saved = await saveExploreProject(project);
-      setProject(saved);
+      const saved = await saveExploreProject(body);
+      const settled = settleSettingsSave({
+        requestRev,
+        currentRev: settingsRev.current,
+        saved,
+        current: projectRef.current ?? saved,
+      });
+      if (!settled.clearDirty) {
+        setStatus("仍有未儲存修改");
+        return;
+      }
+      projectRef.current = settled.project;
+      setProject(settled.project);
       setDirty(false);
       setStatus("已儲存");
-      onSaved?.(saved);
+      onSaved?.(settled.project);
     } catch (err: unknown) {
       setStatus(err instanceof Error ? err.message : String(err));
     }
-  }, [onSaved, project]);
+  }, [onSaved]);
 
   if (!open) return null;
 

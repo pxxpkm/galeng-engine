@@ -4,6 +4,7 @@ import {
   editorT,
   loadExploreProjectBundle,
   saveExploreProject,
+  settleSettingsSave,
 } from "./ExploreSettings";
 
 describe("detectEditorLocale / editorT", () => {
@@ -39,5 +40,58 @@ describe("loadExploreProjectBundle / saveExploreProject", () => {
     const saved = await saveExploreProject(project as never, { putJson: putJson as never });
     expect(saved).toEqual(project);
     expect(putJson).toHaveBeenCalledWith("/api/project", project);
+  });
+});
+
+describe("settleSettingsSave", () => {
+  it("keeps a newer draft when an in-flight save response is stale", async () => {
+    type Draft = { id: string; titleBgm?: string };
+    let project: Draft = { id: "demo", titleBgm: "bgm/a" };
+    let rev = 1;
+    let dirty = true;
+    let adopted: Draft | null = null;
+    let resolvePut: (value: Draft) => void = () => {};
+    const put = () =>
+      new Promise<Draft>((resolve) => {
+        resolvePut = resolve;
+      });
+
+    const requestRev = rev;
+    const pending = (async () => {
+      const saved = await put();
+      const settled = settleSettingsSave({
+        requestRev,
+        currentRev: rev,
+        saved,
+        current: project,
+      });
+      if (!settled.clearDirty) return;
+      project = settled.project;
+      dirty = false;
+      adopted = settled.project;
+    })();
+
+    rev += 1;
+    project = { id: "demo", titleBgm: "bgm/b" };
+    dirty = true;
+    resolvePut({ id: "demo", titleBgm: "bgm/a" });
+    await pending;
+
+    expect(project).toEqual({ id: "demo", titleBgm: "bgm/b" });
+    expect(dirty).toBe(true);
+    expect(adopted).toBeNull();
+  });
+
+  it("adopts the saved project when the revision is unchanged", () => {
+    const settled = settleSettingsSave({
+      requestRev: 3,
+      currentRev: 3,
+      saved: { id: "demo", titleBgm: "bgm/server" },
+      current: { id: "demo", titleBgm: "bgm/local" },
+    });
+    expect(settled).toEqual({
+      project: { id: "demo", titleBgm: "bgm/server" },
+      clearDirty: true,
+    });
   });
 });
