@@ -1,0 +1,60 @@
+{
+  "normal": "G\nGaleng\nClick Room\nNew scene\nDuplicate scene\nExport…\nSearch\nIssues\nSave\nPlay from here\nExplore\nScripts\nScenes\nMedia\nRoutes\n同管家傾偈\ndlg_butler\nend\n結局\nending\nend\n書房\nstudy\nend\n★\nNew sceneArchive sceneDelete scene\n同管家傾偈\nBeat 1 of 3\nPlay from here\nBeats\nScene exit\n#0\nDIALOGUE\nSpeaker\n管家\nLine\nNote\nVoice\nAuto-advance\nWait for click\nAfter voice\nAfter milliseconds\nSTAGE\nAUDIO\nVISUAL & EFFECTS\nOutline\nBG\nChar\nText\nBGM\nVoice\nSE\nAmb\nCG\n#0\n·\n·\n管家\n少爺，書房落鎖咗。\n·\n·\n·\n·\n·\n#1\n·\n·\n管家\n鎖匙應該喺書枱抽屜度。\n·\n·\n·\n·\n·\n#2\n·\n·\n管家\n開咗門就可以離開。\n·\n·\n·\n·\n·",
+  "modal": null,
+  "focus": [
+    {
+      "tag": "INPUT",
+      "text": "",
+      "title": null,
+      "insideDialog": true
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Cancel",
+      "title": null,
+      "insideDialog": true
+    },
+    {
+      "tag": "BODY",
+      "text": "\n    GGalengClick RoomNew sceneDuplicate sceneExport…SearchIssuesSavePlay from h",
+      "title": null,
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "New scene",
+      "title": "New scene",
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Duplicate scene",
+      "title": "Duplicate current scene as a new id",
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Export…",
+      "title": null,
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Search",
+      "title": "Search (Ctrl+K)",
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Issues",
+      "title": "Project issues",
+      "insideDialog": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Play from here",
+      "title": null,
+      "insideDialog": false
+    }
+  ]
+}

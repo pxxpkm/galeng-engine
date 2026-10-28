@@ -1,0 +1,76 @@
+{
+  "samples": [
+    {
+      "mode": "dialogue",
+      "width": 1440,
+      "height": 900,
+      "scroll": 1440,
+      "text": "G\nGaleng\nClick Room\nNew scene\nDuplicate scene\nExport…\nSearch\nIssues\nSave\nPlay from here\nExplore\nScripts\nScenes\nMedia\nRoutes\n同管家傾偈\ndlg_butler\nend\n結局\nending\nend\n書房\nstudy\nend\n★\nNew sceneArchive sceneDelete scene\n書房\nBeat 0 of 0\nPlay from here\nBeats\nScene exit\n#0\nDIALOGUE\nSpeaker\nLine\nNote\nVoice\nAuto-advance\nWait for click\nAfter voice\nAfter milliseconds\nSTAGE\nAUDIO\nVISUAL & EFFECTS\nOutline\nBG\nChar\nText\nBGM\nVoice\nSE\nAmb\nCG",
+      "offscreenButtons": [],
+      "dialogs": 0
+    },
+    {
+      "mode": "dialogue",
+      "width": 1280,
+      "height": 720,
+      "scroll": 1280,
+      "text": "G\nGaleng\nClick Room\nNew scene\nDuplicate scene\nExport…\nSearch\nIssues\nSave\nPlay from here\nExplore\nScripts\nScenes\nMedia\nRoutes\n同管家傾偈\ndlg_butler\nend\n結局\nending\nend\n書房\nstudy\nend\n★\nNew sceneArchive sceneDelete scene\n書房\nBeat 0 of 0\nPlay from here\nBeats\nScene exit\n#0\nDIALOGUE\nSpeaker\nLine\nNote\nVoice\nAuto-advance\nWait for click\nAfter voice\nAfter milliseconds\nSTAGE\nAUDIO\nVISUAL & EFFECTS\nOutline\nBG\nChar\nText\nBGM\nVoice\nSE\nAmb\nCG",
+      "offscreenButtons": [],
+      "dialogs": 0
+    },
+    {
+      "mode": "dialogue",
+      "width": 1024,
+      "height": 768,
+      "scroll": 1210,
+      "text": "G\nGaleng\nClick Room\nNew scene\nDuplicate scene\nExport…\nSearch\nIssues\nSave\nPlay from here\nExplore\nScripts\nScenes\nMedia\nRoutes\n同管家傾偈\ndlg_butler\nend\n結局\nending\nend\n書房\nstudy\nend\n★\nNew sceneArchive sceneDelete scene\n書房\nBeat 0 of 0\nPlay from here\nBeats\nScene exit\n#0\nDIALOGUE\nSpeaker\nLine\nNote\nVoice\nAuto-advance\nWait for click\nAfter voice\nAfter milliseconds\nSTAGE\nAUDIO\nVISUAL & EFFECTS\nOutline\nBG\nChar\nText\nBGM\nVoice\nSE\nAmb\nCG",
+      "offscreenButtons": [
+        {
+          "text": "Explore",
+          "title": "Open Explore editor (#explore)"
+        },
+        {
+          "text": "Scripts",
+          "title": "Scripts"
+        },
+        {
+          "text": "",
+          "title": "Keyboard shortcuts"
+        },
+        {
+          "text": "",
+          "title": "Settings"
+        }
+      ],
+      "dialogs": 0
+    },
+    {
+      "mode": "explore",
+      "width": 1440,
+      "height": 900,
+      "scroll": 1440,
+      "text": "plane-engine · Explore 編輯器\n已同步\n探險 · study\n復原\n重做\n場景\n同管家傾偈 (dlg_butler) ·對話（請用對話編輯器）\n結局 (ending)\n書房 (study)\n＋場景\n存檔\n重載\n更多 ▾\n對話\n選取\n畫熱區\n畫多邊形\n＋熱區\n複製格\n貼上格\n專案\n標題\n起始場景\n（選擇起始場景）\n同管家傾偈 (dlg_butler) ·對話\n結局 (ending) ·探險\n書房 (study) ·探險\n場景study\n標題\n背景\n轉場／毫秒已保留 · fade · 400ms\n熱區\n書桌desk\n門door\n管家butler\n窗window\n書桌\n門\n管家\n窗\n覆蓋率（資訊）：8/24 動詞格已填（不要求填滿）\n熱區\t看\t講\t拎\t用\t開\t去\t🎒黃銅鎖匙\n書桌\t▣\t·\t▣\t·\t▣\t·\t·\n門\t▣\t·\t·\t·\t·\t▣\t●\n管家\t●\t●\t·\t·\t·\t·\t·\n窗\t●\t·\t·\t·\t·\t·\t●\n屬性\n請選擇熱區或矩陣格\n入場動作\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n空白點擊\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n轉場預設\n呼叫場景至對話\n（無）\nfade_black\n返回\n（無）\nfade_black\n切換場景\n（無）\nfade_black\nPreset Browser\n轉場\n熱區巨集\n動作\n拾取物\n選中熱區：take → giveItem（首個物品）＋說一句\n套用\n問題\n資料庫\nTrace\n無問題",
+      "offscreenButtons": [],
+      "dialogs": 0
+    },
+    {
+      "mode": "explore",
+      "width": 1280,
+      "height": 720,
+      "scroll": 1280,
+      "text": "plane-engine · Explore 編輯器\n已同步\n探險 · study\n復原\n重做\n場景\n同管家傾偈 (dlg_butler) ·對話（請用對話編輯器）\n結局 (ending)\n書房 (study)\n＋場景\n存檔\n重載\n更多 ▾\n對話\n選取\n畫熱區\n畫多邊形\n＋熱區\n複製格\n貼上格\n專案\n標題\n起始場景\n（選擇起始場景）\n同管家傾偈 (dlg_butler) ·對話\n結局 (ending) ·探險\n書房 (study) ·探險\n場景study\n標題\n背景\n轉場／毫秒已保留 · fade · 400ms\n熱區\n書桌desk\n門door\n管家butler\n窗window\n書桌\n門\n管家\n窗\n覆蓋率（資訊）：8/24 動詞格已填（不要求填滿）\n熱區\t看\t講\t拎\t用\t開\t去\t🎒黃銅鎖匙\n書桌\t▣\t·\t▣\t·\t▣\t·\t·\n門\t▣\t·\t·\t·\t·\t▣\t●\n管家\t●\t●\t·\t·\t·\t·\t·\n窗\t●\t·\t·\t·\t·\t·\t●\n屬性\n請選擇熱區或矩陣格\n入場動作\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n空白點擊\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n轉場預設\n呼叫場景至對話\n（無）\nfade_black\n返回\n（無）\nfade_black\n切換場景\n（無）\nfade_black\nPreset Browser\n轉場\n熱區巨集\n動作\n拾取物\n選中熱區：take → giveItem（首個物品）＋說一句\n套用\n問題\n資料庫\nTrace\n無問題",
+      "offscreenButtons": [],
+      "dialogs": 0
+    },
+    {
+      "mode": "explore",
+      "width": 1024,
+      "height": 768,
+      "scroll": 1024,
+      "text": "plane-engine · Explore 編輯器\n已同步\n探險 · study\n復原\n重做\n場景\n同管家傾偈 (dlg_butler) ·對話（請用對話編輯器）\n結局 (ending)\n書房 (study)\n＋場景\n存檔\n重載\n更多 ▾\n對話\n選取\n畫熱區\n畫多邊形\n＋熱區\n複製格\n貼上格\n專案\n標題\n起始場景\n（選擇起始場景）\n同管家傾偈 (dlg_butler) ·對話\n結局 (ending) ·探險\n書房 (study) ·探險\n場景study\n標題\n背景\n轉場／毫秒已保留 · fade · 400ms\n熱區\n書桌desk\n門door\n管家butler\n窗window\n書桌\n門\n管家\n窗\n覆蓋率（資訊）：8/24 動詞格已填（不要求填滿）\n熱區\t看\t講\t拎\t用\t開\t去\t🎒黃銅鎖匙\n書桌\t▣\t·\t▣\t·\t▣\t·\t·\n門\t▣\t·\t·\t·\t·\t▣\t●\n管家\t●\t●\t·\t·\t·\t·\t·\n窗\t●\t·\t·\t·\t·\t·\t●\n屬性\n請選擇熱區或矩陣格\n入場動作\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n空白點擊\n對白\n設定開關\n給予物品\n移除物品\n呼叫場景\n返回\n切換場景\n（無說話者）\n✕\n＋對白\n＋設定開關\n＋給予物品\n＋移除物品\n＋呼叫場景\n＋返回\n＋切換場景\n轉場預設\n呼叫場景至對話\n（無）\nfade_black\n返回\n（無）\nfade_black\n切換場景\n（無）\nfade_black\nPreset Browser\n轉場\n熱區巨集\n動作\n拾取物\n選中熱區：take → giveItem（首個物品）＋說一句\n套用\n問題\n資料庫\nTrace\n無問題",
+      "offscreenButtons": [],
+      "dialogs": 0
+    }
+  ],
+  "errors": []
+}
