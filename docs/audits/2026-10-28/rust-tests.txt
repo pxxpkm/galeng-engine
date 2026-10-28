@@ -1,0 +1,202 @@
+   Compiling galeng-schema v0.1.3 (/workspace/galeng-engine/crates/schema)
+   Compiling galeng-packer v0.1.3 (/workspace/galeng-engine/crates/packer)
+   Compiling galeng-explore v0.1.0 (/workspace/galeng-engine/crates/explore)
+   Compiling galeng-host v0.1.3 (/workspace/galeng-engine/crates/host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.17s
+     Running unittests src/lib.rs (target/debug/deps/galeng_explore-f954a467336a4dc6)
+
+running 1 test
+test hit::tests::raycast_matches_editor_rules ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sm.rs (target/debug/deps/sm-301376256041e125)
+
+running 31 tests
+test butler_primary_is_talk ... ok
+test call_dialogue_return_restores_explore ... ok
+test available_actions_multi_cycles_by_index ... ok
+test call_then_exit_next_preserves_stack_for_return ... ok
+test call_then_choices_preserves_stack_for_return ... ok
+test click_room_examples_clearance ... ok
+test desk_primary_open_then_take ... ok
+test dialogue_exit_call_then_return_does_not_loop ... ok
+test door_locked_then_goto_clears_stack ... ok
+test explicit_goto_scene_action_still_clears_stack ... ok
+test examples_click_room_drag_key_on_window ... ok
+test empty_click_says_room_look ... ok
+test click_uses_hit_test ... ok
+test explore_call_nested_dialogue_return_resumes_explore ... ok
+test fallback_builtin_when_empty ... ok
+test fallback_per_verb_on_door_look ... ok
+test item_aim_vs_drag_match_different_rules ... ok
+test hit_test_rect_and_topmost_polygon ... ok
+test look_desk_default_and_after_switch ... ok
+test return_empty_stack_errors ... ok
+test hide_disable_hotspot ... ok
+test on_enter_runs ... ok
+test save_roundtrip_preserves_inventory_and_stack ... ok
+test saying_line_round_trips_when_queue_is_empty ... ok
+test save_schema_mismatch_rejects ... ok
+test transition_defaults_fill_missing_trans_on_call_and_return ... ok
+test try_to_save_rejects_mid_saying ... ok
+test passing_compound_cmp_takes_then_branch ... ok
+test use_key_on_desk_consumes ... ok
+test save_json_roundtrip ... ok
+test text_set_adds_and_compound_cmp_is_and ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (target/debug/deps/galeng_host-52c82f7b50c9cb4f)
+
+running 4 tests
+test sign::tests::off_skips_without_error ... ok
+test sign::tests::pfx_wins_over_store ... ok
+test sign::tests::off_when_unset ... ok
+test sign::tests::required_flag ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/galeng_host-8070e4228b37ccc2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scan.rs (target/debug/deps/scan-4b83db011d974d73)
+
+running 16 tests
+test asset_root_override_scans_and_scaffolds ... ok
+test creates_scene_in_temp_and_refuses_overwrite ... ok
+test deletes_live_and_archived_but_not_start ... ok
+test archives_then_restores_without_deleting ... ok
+test export_game_opts_does_not_touch_userdata ... ok
+test player_exe_in_finds_sibling ... ok
+test export_game_strict_fails_on_missing_asset ... ok
+test player_exe_picks_newest ... ok
+test resolve_media_audio_and_refuses_movie ... ok
+test resolve_media_png_and_rejects_dotdot ... ok
+test save_project_keeps_title_bgm_and_updates_cg ... ok
+test scans_prologue ... ok
+test webm_and_wmv_scan_as_movie ... ok
+test writes_script_export_utf8_without_bom ... ok
+test logical_from_asset_file_inside_ok_outside_err ... ok
+test export_game_writes_pak_and_optional_exe ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running unittests src/lib.rs (target/debug/deps/galeng_packer-36d65cf230b2e612)
+
+running 3 tests
+test entry_guard_tests::name_rejects_slash_dotdot_and_backslash ... ok
+test entry_guard_tests::size_cap_constant ... ok
+test entry_guard_tests::whitelist_excludes_input_json ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/galeng_packer-39e737c04e8bb91c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pack.rs (target/debug/deps/pack-8f3c4057871e01b6)
+
+running 16 tests
+test blocked_system_font_names ... ok
+test collect_refs_includes_pause_button_images ... ok
+test collect_refs_includes_title_button_images ... ok
+test open_missing_index_is_schema_1_empty_map ... ok
+test open_rejects_newer_pak_schema ... ok
+test open_rejects_schema_below_one_and_invalid_index ... ok
+test open_error_omits_disk_path ... ok
+test collect_refs_includes_explore_scene_bg_and_item_icons ... ok
+test missing_asset_warns_and_strict_does_not_write ... ok
+test pack_prologue_has_referenced_and_skips_unref ... ok
+test pack_reads_back_project_id ... ok
+test read_named_rejects_input_json_and_absolute_names ... ok
+test rejects_entry_when_uncompressed_size_over_cap ... ok
+test read_asset_rejects_poison_index_path_and_ext_mismatch ... ok
+test pack_includes_project_font_and_rejects_microsoft ... ok
+test pack_click_room_includes_explore_bg_and_item_icon ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running unittests src/lib.rs (target/debug/deps/galeng_schema-fea76ca85e4cd8d0)
+
+running 7 tests
+test eval::tests::range_and_eq_together ... ok
+test eval::tests::cmp_eq_bool_is_not_a_nonzero_test ... ok
+test eval::tests::text_set_is_a_delta_and_other_text_is_ignored ... ok
+test local::tests::default_is_project_assets ... ok
+test local::tests::override_and_scaffold ... ok
+test eval::tests::compound_eq_and_gt_are_both_required ... ok
+test eval::tests::empty_condition_holds ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fixtures.rs (target/debug/deps/fixtures-0f52e74b2eb8ef73)
+
+running 36 tests
+test beat_amb_null_closes ... ok
+test beat_camera_null_resets ... ok
+test beat_cg_null_closes ... ok
+test beat_char_offset_ok ... ok
+test beat_flash_ok ... ok
+test beat_id_round_trips ... ok
+test all_invalid_fixtures_rejected ... ok
+test character_text_rate_ok ... ok
+test english_fixture_ok ... ok
+test duplicate_beat_id_rejected ... ok
+test empty_required_string_error_includes_pointer ... ok
+test explore_project_fields_roundtrip ... ok
+test explore_predicates_roundtrip ... ok
+test home_01_without_exit_ok ... ok
+test font_optional ... ok
+test explore_fixture_deserializes ... ok
+test explore_actions_and_exit_roundtrip ... ok
+test icon_optional ... ok
+test illegal_beat_id_rejected ... ok
+test item_use_mode_defaults_aim_and_parses_drag ... ok
+test missing_scene_kind_is_dialogue ... ok
+test msg_box_optional ... ok
+test pause_buttons_optional ... ok
+test park_01_chinese_ok ... ok
+test park_02_without_exit_ok ... ok
+test project_rejects_wrong_resolution ... ok
+test prologue_project_ok ... ok
+test prologue_project_value_roundtrip ... ok
+test set_integer_overwrite_ok_relative_bare_plus_not ... ok
+test skip_title_true_is_accepted ... ok
+test title_bgm_optional ... ok
+test title_buttons_optional ... ok
+test title_movie_optional ... ok
+test unknown_exit_type_rejected ... ok
+test unknown_explore_action_rejected ... ok
+test prologue_scenes_value_roundtrip ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+   Doc-tests galeng_explore
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests galeng_host
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests galeng_packer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests galeng_schema
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

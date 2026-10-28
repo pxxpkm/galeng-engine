@@ -1,0 +1,111 @@
+$ pnpm -r test
+Scope: 3 of 4 workspace projects
+apps/editor test$ vitest run
+packages/i18n test$ vitest run
+packages/schema test$ vitest run
+packages/i18n test:  RUN  v3.2.7 /workspace/galeng-engine/packages/i18n
+packages/schema test:  RUN  v3.2.7 /workspace/galeng-engine/packages/schema
+apps/editor test:  RUN  v3.2.7 /workspace/galeng-engine/apps/editor
+packages/i18n test:  ✓ test/keys.test.ts (3 tests) 29ms
+packages/i18n test:  Test Files  1 passed (1)
+packages/i18n test:       Tests  3 passed (3)
+packages/i18n test:    Start at  01:19:09
+packages/i18n test:    Duration  821ms (transform 56ms, setup 0ms, collect 57ms, tests 29ms, environment 0ms, prepare 190ms)
+apps/editor test:  ✓ src/beats.test.ts (84 tests) 69ms
+packages/i18n test: Done
+apps/editor test:  ✓ src/explore/persist.test.ts (10 tests) 101ms
+packages/schema test:  ✓ test/validate.test.ts (36 tests) 22ms
+packages/schema test:  Test Files  1 passed (1)
+packages/schema test:       Tests  36 passed (36)
+packages/schema test:    Start at  01:19:09
+packages/schema test:    Duration  1.26s (transform 159ms, setup 0ms, collect 677ms, tests 22ms, environment 0ms, prepare 155ms)
+apps/editor test:  ✓ src/explore/clickRoomCommandBus.test.ts (2 tests) 60ms
+packages/schema test: Done
+apps/editor test:  ✓ src/explore/sceneCatalog.test.ts (9 tests) 33ms
+apps/editor test:  ✓ src/search.test.ts (13 tests) 16ms
+apps/editor test:  ✓ src/route.test.ts (18 tests) 29ms
+apps/editor test:  ✓ src/explore/problems.test.ts (30 tests) 25ms
+apps/editor test:  ✓ src/explore/clickRoomExample.test.ts (2 tests) 21ms
+apps/editor test:  ✓ src/explore/exploreBoot.test.ts (6 tests) 24ms
+apps/editor test:  ✓ src/explore/hotspotCaps.test.ts (6 tests) 19ms
+apps/editor test:  ✓ src/exportScript.test.ts (9 tests) 21ms
+apps/editor test:  ✓ src/vars.test.ts (6 tests) 13ms
+apps/editor test:  ✓ src/explore/canvas.test.ts (21 tests) 7ms
+apps/editor test:  ✓ src/overview.test.ts (8 tests) 11ms
+apps/editor test:  ✓ src/explore/inspectorModel.test.ts (17 tests) 10ms
+apps/editor test:  ✓ src/exit.test.ts (14 tests) 4ms
+apps/editor test:  ✓ src/explore/selection.test.ts (5 tests) 6ms
+apps/editor test:  ✓ src/explore/commandBus.test.ts (3 tests) 7ms
+apps/editor test:  ✓ src/scene.test.ts (5 tests) 16ms
+apps/editor test:  ✓ src/dirty.test.ts (8 tests) 13ms
+apps/editor test:  ✓ src/explore/presets.test.ts (5 tests) 9ms
+apps/editor test:  ✓ src/explore/effectLibrarySync.test.ts (6 tests) 4ms
+apps/editor test:  ✓ src/explore/goldenPath.test.ts (1 test) 8ms
+apps/editor test:  ✓ src/explore/packClient.test.ts (6 tests) 9ms
+apps/editor test:  ✓ src/explore/m3CallPath.test.ts (3 tests) 9ms
+apps/editor test:  ✓ src/explore/refCounts.test.ts (4 tests) 7ms
+apps/editor test:  ✓ src/explore/ctxMenuModel.test.ts (6 tests) 4ms
+apps/editor test:  ✓ src/explore/problemNavigate.test.ts (4 tests) 9ms
+apps/editor test:  ✓ src/explore/matrix.test.ts (3 tests) 4ms
+apps/editor test:  ✓ src/explore/exploreSettings.test.ts (3 tests) 15ms
+apps/editor test:  ✓ src/explore/copyPaste.test.ts (1 test) 6ms
+apps/editor test:  ✓ src/project.test.ts (16 tests) 8ms
+apps/editor test:  ✓ src/shellGate.test.ts (5 tests) 5ms
+apps/editor test:  ✓ src/explore/trace.test.ts (5 tests) 4ms
+apps/editor test:  ✓ src/liveIssues.test.ts (6 tests) 3ms
+apps/editor test:  ✓ src/explore/drawPolygonDraft.test.ts (7 tests) 4ms
+apps/editor test:  ✓ src/play.test.ts (3 tests) 6ms
+apps/editor test:  ✓ src/explore/hierarchyMeta.test.ts (2 tests) 8ms
+apps/editor test:  ✓ src/audioPanel.test.ts (10 tests) 19ms
+apps/editor test:  ✓ src/explore/hotspotPlacement.test.ts (1 test) 9ms
+apps/editor test:  ✓ src/assets.test.ts (7 tests) 3ms
+apps/editor test:  ✓ src/editorRoute.test.ts (4 tests) 5ms
+apps/editor test:  ✓ src/roster.test.ts (8 tests) 4ms
+apps/editor test:  ✓ src/previewState.test.ts (7 tests) 10ms
+apps/editor test:  ✓ src/history.test.ts (3 tests) 2ms
+apps/editor test:  ✓ src/pack.test.ts (3 tests) 2ms
+apps/editor test:  ✓ src/explore/exploreShortcuts.test.ts (7 tests) 6ms
+apps/editor test:  ✓ src/backup.test.ts (5 tests) 3ms
+apps/editor test:  ✓ src/titleLayout.test.ts (5 tests) 3ms
+apps/editor test:  ✓ src/explore/exploreCanvasHandles.test.ts (3 tests) 4ms
+apps/editor test:  ✓ src/saveIssues.test.ts (5 tests) 3ms
+apps/editor test:  ✓ src/goto.test.ts (6 tests) 18ms
+apps/editor test:  ✓ src/scriptLibrary.test.ts (3 tests) 2ms
+apps/editor test:  ✓ src/explore/missingBg.test.ts (4 tests) 2ms
+apps/editor test:  ✓ src/explore/transitions.test.ts (5 tests) 3ms
+apps/editor test:  ✓ src/saveGeneration.test.ts (2 tests) 2ms
+apps/editor test:  ✓ src/audition.test.ts (2 tests) 1ms
+apps/editor test:  ✓ src/media.test.ts (2 tests) 5ms
+apps/editor test:  ✓ src/explore/exploreCanvasBg.test.ts (3 tests) 2ms
+apps/editor test:  ✓ src/explore/sceneId.test.ts (4 tests) 2ms
+apps/editor test:  ✓ src/hash.test.ts (1 test) 1ms
+apps/editor test:  ✓ src/v2/uiVersion.test.ts (2 tests) 1ms
+apps/editor test: ⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+apps/editor test:  FAIL  e2e/explore-smoke.spec.ts [ e2e/explore-smoke.spec.ts ]
+apps/editor test: Error: Playwright Test did not expect test.describe() to be called here.
+apps/editor test: Most common reasons include:
+apps/editor test: - You are calling test.describe() in a configuration file.
+apps/editor test: - You are calling test.describe() in a file that is imported by the configuration file.
+apps/editor test: - You have two different versions of @playwright/test. This usually happens
+apps/editor test:   when one of the dependencies in your package.json depends on @playwright/test.
+apps/editor test: - You are calling test.describe() from an async test.describe() block. Only sync ones are supported.
+apps/editor test:  ❯ _TestTypeImpl._currentSuite ../../../.onboarding/js-lock/node_modules/.pnpm/playwright@1.64.1/node_modules/playwright/lib/common/index.js:2235:13
+apps/editor test:  ❯ _TestTypeImpl._describe ../../../.onboarding/js-lock/node_modules/.pnpm/playwright@1.64.1/node_modules/playwright/lib/common/index.js:2277:24
+apps/editor test:  ❯ Function.describe ../../../.onboarding/js-lock/node_modules/.pnpm/playwright@1.64.1/node_modules/playwright/lib/common/index.js:1169:12
+apps/editor test:  ❯ e2e/explore-smoke.spec.ts:16:6
+apps/editor test:      14| })();
+apps/editor test:      15|
+apps/editor test:      16| test.describe("explore smoke", () => {
+apps/editor test:        |      ^
+apps/editor test:      17|   test.beforeEach(({ }, testInfo) => {
+apps/editor test:      18|     if (skipReason) testInfo.skip(true, skipReason);
+apps/editor test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+apps/editor test:  Test Files  1 failed | 62 passed (63)
+apps/editor test:       Tests  464 passed (464)
+apps/editor test:    Start at  01:19:09
+apps/editor test:    Duration  8.21s (transform 2.01s, setup 0ms, collect 4.99s, tests 742ms, environment 8ms, prepare 5.00s)
+apps/editor test: Failed
+/workspace/galeng-engine/apps/editor:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @galeng/editor@ test: `vitest run`
+Exit status 1
+[ELIFECYCLE] Test failed. See above for more details.

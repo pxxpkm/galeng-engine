@@ -1,0 +1,23 @@
+import {readFileSync} from 'node:fs';
+import {apiToExploreProject,apiToExploreScene,saveExploreDoc,adoptSavedProjectRaw} from '/workspace/galeng-engine/apps/editor/src/explore/persist.ts';
+import {mergeSaveResponse} from '/workspace/galeng-engine/apps/editor/src/saveGeneration.ts';
+const p=JSON.parse(readFileSync('/workspace/galeng-engine/examples/click-room/galeng.json','utf8'));
+const s=JSON.parse(readFileSync('/workspace/galeng-engine/examples/click-room/scenario/study.json','utf8'));
+const raw={...p,titleBgm:'bgm/old'};
+let doc:any={project:apiToExploreProject(raw),scene:apiToExploreScene(s),_rawProject:raw,_rawScene:s};
+let disk:any={...raw};delete disk.titleBgm;
+doc=adoptSavedProjectRaw(doc,disk);
+const api:any={loadProject:async()=>structuredClone(disk),saveProject:async(p:any)=>disk=structuredClone(p),saveScene:async(_id:any,s:any)=>s};
+await saveExploreDoc(api,doc);
+console.log('U1 deletion: cleared titleBgm -> after room save:',disk.titleBgm);
+let rev=1,current='A',dirty=true,diskScene='';
+const a={requestRev:rev,body:current};
+rev++; current='B'; const b={requestRev:rev,body:current};
+function reply(req:any){diskScene=req.body;const m=mergeSaveResponse({requestRev:req.requestRev,currentRev:rev,saved:req.body,current});if(m.clearDirty){current=m.value;dirty=false;}}
+reply(b);reply(a);
+console.log('U2 overlapping saves: UI=',current,'dirty=',dirty,'disk=',diskScene);
+const {flushIfDirty}=await import('/workspace/galeng-engine/apps/editor/src/dirty.ts');
+let selected='old',edit='A',isDirty=true,revision=1;
+await flushIfDirty(isDirty,async()=>{const requestRev=revision;const body=edit;revision++;edit='B';const m=mergeSaveResponse({requestRev,currentRev:revision,saved:body,current:edit});if(m.clearDirty){edit=m.value;isDirty=false;}});
+selected='new';
+console.log('U2 scene navigation: selected=',selected,'unsaved edit=',edit,'still dirty=',isDirty,'(caller proceeds despite dirty)');

@@ -1,0 +1,3 @@
+U1 deletion: cleared titleBgm -> after room save: bgm/old
+U2 overlapping saves: UI= B dirty= false disk= A
+U2 scene navigation: selected= new unsaved edit= B still dirty= true (caller proceeds despite dirty)

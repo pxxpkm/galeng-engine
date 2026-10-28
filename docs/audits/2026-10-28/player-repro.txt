@@ -1,0 +1,24 @@
+warning: function `flash_started_for` is never used
+    --> /workspace/galeng-engine/crates/player/src/window.rs:2658:4
+     |
+2658 | fn flash_started_for(effects: bool, flash_ms: Option<u32>, now: Instant) -> Option<Instant> {
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `pause_edge` is never used
+    --> /workspace/galeng-engine/crates/player/src/window.rs:2667:4
+     |
+2667 | fn pause_edge(was_paused: bool, want_pause: bool) -> Option<bool> {
+     |    ^^^^^^^^^^
+
+warning: `galeng-player` (lib) generated 2 warnings
+   Compiling galeng-audit v0.1.0 (/workspace/.onboarding/audit)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
+     Running `target/debug/recheck`
+K2 dialogue->room: explore=false, phase=Ended
+K3 called voice: None
+saved beat_id=Some("b0000000000000001")
+saved b1 after inserting predecessor, next line=Some("line1") (expected line2)
+load bgm/a save after bgm/b: Some("bgm/b")
+K4 one-beat self-loop score=Some(1) (expected 2)
