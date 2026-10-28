@@ -133,6 +133,7 @@ export function useEditorState() {
   const dirtyRef = useRef(dirty);
   const projectDirtyRef = useRef(projectDirty);
   const sceneRev = useRef(0);
+  const deletingSceneRef = useRef<string | null>(null);
   const projectRev = useRef(0);
   sceneRef.current = scene;
   projectRef.current = project;
@@ -226,9 +227,11 @@ export function useEditorState() {
       .then((s) => {
         if (cancelled) return;
         if (
-          sceneRev.current !== loadedSceneRev ||
-          projectRev.current !== loadedProjectRev ||
-          dirtyRef.current || projectDirtyRef.current
+          sceneRef.current !== null && (
+            sceneRev.current !== loadedSceneRev ||
+            projectRev.current !== loadedProjectRev ||
+            dirtyRef.current || projectDirtyRef.current
+          )
         ) {
           restoreSelection();
           throw new Error(LEAVE_CANCELLED_MESSAGE);
@@ -380,6 +383,7 @@ export function useEditorState() {
       }
     }
     const sceneForKind = sceneRef.current;
+    if (sceneForKind && deletingSceneRef.current === sceneForKind.id) return;
     if (sceneForKind && dirtyRef.current) {
       if (sceneForKind.sceneKind === "explore") {
         const ok = window.confirm(tRef.current("editor.warnSaveExploreFromDialogue"));
@@ -614,17 +618,38 @@ export function useEditorState() {
       return;
     }
     const removed = scene.id;
-    await deleteJson(`/api/scenes/${removed}`);
-    const live = await getJson<SceneMeta[]>("/api/scenes");
-    setScenes(live);
-    setSceneId(
-      nextSceneAfterArchive(
-        removed,
-        removed,
-        project.startScene,
-        live.map((item) => item.id),
-      ),
-    );
+    if (deletingSceneRef.current) return;
+    deletingSceneRef.current = removed;
+    // Ignore responses from saves that were already in flight.
+    sceneRev.current += 1;
+    try {
+      await deleteJson(`/api/scenes/${removed}`);
+      if (sceneRef.current?.id === removed) {
+        sceneRev.current += 1;
+        sceneRef.current = null;
+        dirtyRef.current = false;
+        anyDirtyRef.current = projectDirtyRef.current;
+        pendingBeatRef.current = null;
+        setScene(null);
+        setSceneId(null);
+        setDirty(false);
+        setHistory(emptyHistory());
+        setBeatIndex(0);
+        setSelected([]);
+        setAnchor(0);
+        setBackupOffer(null);
+      }
+      clearBackup(globalThis.localStorage, removed);
+      setScenes((list) => list.filter((item) => item.id !== removed));
+      const live = await getJson<SceneMeta[]>("/api/scenes");
+      setScenes(live);
+      // Do not replace a different scene the user opened during deletion.
+      if (!sceneRef.current) {
+        setSceneId(nextSceneAfterArchive(removed, removed, project.startScene, live.map(item => item.id)));
+      }
+    } finally {
+      deletingSceneRef.current = null;
+    }
   }, [scene, project]);
 
   const deleteArchivedScene = useCallback(async (id: string) => {

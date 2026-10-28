@@ -1,3 +1,4 @@
+import { clearBackup } from "./backup";
 import { useEffect, useMemo, useRef, useState } from "react";
 import en from "../../../packages/i18n/locales/en.json";
 import zhHans from "../../../packages/i18n/locales/zh-Hans.json";
@@ -107,6 +108,7 @@ export function App() {
   const dirtyRef = useRef(dirty);
   const projectDirtyRef = useRef(projectDirty);
   const sceneRev = useRef(0);
+  const deletingSceneRef = useRef<string | null>(null);
   const projectRev = useRef(0);
   sceneRef.current = scene;
   projectRef.current = project;
@@ -172,9 +174,11 @@ export function App() {
       .then((s) => {
         if (cancelled) return;
         if (
-          sceneRev.current !== loadedSceneRev ||
-          projectRev.current !== loadedProjectRev ||
-          dirtyRef.current || projectDirtyRef.current
+          sceneRef.current !== null && (
+            sceneRev.current !== loadedSceneRev ||
+            projectRev.current !== loadedProjectRev ||
+            dirtyRef.current || projectDirtyRef.current
+          )
         ) {
           restoreSelection();
           throw new Error(LEAVE_CANCELLED_MESSAGE);
@@ -333,6 +337,7 @@ export function App() {
       }
     }
     const sceneForKind = sceneRef.current;
+    if (sceneForKind && deletingSceneRef.current === sceneForKind.id) return;
     if (!sceneForKind || !dirtyRef.current) {
       return;
     }
@@ -532,21 +537,38 @@ export function App() {
       return;
     }
     const removed = scene.id;
+    if (deletingSceneRef.current) return;
+    deletingSceneRef.current = removed;
+    // Ignore responses from saves that were already in flight.
+    sceneRev.current += 1;
     try {
       await deleteJson(`/api/scenes/${removed}`);
+      if (sceneRef.current?.id === removed) {
+        sceneRev.current += 1;
+        sceneRef.current = null;
+        dirtyRef.current = false;
+        classicDirtyRef.current = projectDirtyRef.current;
+        pendingBeatRef.current = null;
+        setScene(null);
+        setSceneId(null);
+        setDirty(false);
+        setHistory(emptyHistory());
+        setBeatIndex(0);
+        setSelected([]);
+        setAnchor(0);
+      }
+      clearBackup(globalThis.localStorage, removed);
+      setScenes((list) => list.filter((item) => item.id !== removed));
       const live = await getJson<SceneMeta[]>("/api/scenes");
       setScenes(live);
-      setSceneId(
-        nextSceneAfterArchive(
-          removed,
-          removed,
-          project.startScene,
-          live.map((item) => item.id),
-        ),
-      );
-      setError(null);
+      // Do not replace a different scene the user opened during deletion.
+      if (!sceneRef.current) {
+        setSceneId(nextSceneAfterArchive(removed, removed, project.startScene, live.map(item => item.id)));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      deletingSceneRef.current = null;
     }
   }
 

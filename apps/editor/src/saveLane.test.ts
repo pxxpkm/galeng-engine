@@ -186,3 +186,31 @@ describe("putJson lane", () => {
     await expect(second).resolves.toEqual({ v: "B" });
   });
 });
+
+describe("delete coordination", () => {
+  afterEach(() => { _resetLanesForTests(); vi.unstubAllGlobals(); });
+  it("deletes only after a pending PUT has completed", async () => {
+    const { deleteJson } = await import("./api");
+    let release!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>(r => { release = r; });
+    const sending = new Promise<void>(r => { started = r; });
+    let exists = true;
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_path: string, init: RequestInit) => {
+      calls.push(init.method!);
+      if (init.method === "PUT") { started(); await pending; exists = true; }
+      else exists = false;
+      return new Response("{}");
+    }));
+    const save = putJson("/api/scenes/b", {});
+    await sending;
+    const remove = deleteJson("/api/scenes/b");
+    await Promise.resolve();
+    expect(calls).toEqual(["PUT"]);
+    release();
+    await Promise.all([save, remove]);
+    expect(calls).toEqual(["PUT", "DELETE"]);
+    expect(exists).toBe(false);
+  });
+});

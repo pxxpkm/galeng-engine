@@ -1,3 +1,15 @@
+# N1 / N2 follow-up
+
+本節隨基於 `8b2e0b4` 的 N1／N2 修正一併提交；下方交接為歷史記錄。
+
+- N1：Settings 保留載入基準，只把本次改動／刪除套到 lane 內讀取的最新 project。巢狀物件按欄位合併，陣列視為整個欄位替換。儲存期間的新修改會重新套到伺服器回應並保持 dirty，下一次儲存不重送舊快照；關閉／重開前一次請求不更新新視窗。
+- N2：同一 scene path 的 DELETE 等候先前 PUT；刪除中禁止 editor 再送該場景的 save，舊回應因 revision 失效不能清理／覆蓋狀態。成功後清掉被刪場景正文、dirty、undo／redo、選擇與備份，再載入仍存在的場景；project 的未存修改保留。失敗則保留場景草稿與歷史。
+- 同步修正 v2 與 Classic。Chromium 直接驗證 v2 刪除成功／失敗，以及真實 Settings 視窗；Classic 此次由程式核對與 TypeScript build 驗證，未另做完整 UI 操作。
+- 驗證：`pnpm test` 528項通過（editor489、schema36、i18n3）；5項 Chromium 測試通過；正式前端建置通過。瀏覽器涵蓋舊載入競態、pending PUT→DELETE、刪除期間額外 save、project 保留、刪除失敗、Settings 動詞保留／欄位刪除／請求期間繼續編輯。
+- 未處理跨分頁 If-Match、服務端版本鎖及舊播放器缺陷；同頁 lane 不代表多客戶端交易保護。
+
+---
+
 # Current follow-up: third audit fixes
 
 2026-10-28：本節隨基於 `907337d` 的第三輪修正一併提交。下方原交接內容保留作歷史記錄，其 HEAD 與「未提交」狀態不代表目前版本。

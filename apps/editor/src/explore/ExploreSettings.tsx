@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import en from "../../../../packages/i18n/locales/en.json";
 import zhHans from "../../../../packages/i18n/locales/zh-Hans.json";
 import zhHant from "../../../../packages/i18n/locales/zh-Hant.json";
-import { getJson, putJson } from "../api";
+import { getJson, updateJson } from "../api";
 import { mergeSaveResponse } from "../saveGeneration";
+import { mergeProjectEdits } from "../projectEdits";
 import type { AssetMeta, Locale, Project } from "../types";
 import { AudioPanel, type AudioPanelHost } from "../v2/AudioPanel";
 import { FontPanel, type FontPanelHost } from "../v2/FontPanel";
@@ -51,10 +52,14 @@ export async function loadExploreProjectBundle(api: {
 }
 
 export async function saveExploreProject(
+  baseline: Project,
   project: Project,
-  api: { putJson: <T>(path: string, body: unknown) => Promise<T> } = { putJson },
+  api: { updateJson: typeof updateJson } = { updateJson },
 ): Promise<Project> {
-  return api.putJson<Project>("/api/project", project);
+  // Snapshot before waiting on the lane. Unchanged fields belong to the latest project.
+  const before = structuredClone(baseline);
+  const draft = structuredClone(project);
+  return api.updateJson<Project>("/api/project", latest => mergeProjectEdits(before, draft, latest));
 }
 
 /**
@@ -102,8 +107,11 @@ export function ExploreSettingsDialog({
   const [loadError, setLoadError] = useState<string | null>(null);
   const projectRef = useRef<Project | null>(null);
   const settingsRev = useRef(0);
+  const baselineRef = useRef<Project | null>(null);
+  const sessionRev = useRef(0);
 
   useEffect(() => {
+    sessionRev.current += 1;
     if (!open) {
       setPage("main");
       setDirty(false);
@@ -118,6 +126,7 @@ export function ExploreSettingsDialog({
         if (cancelled) return;
         settingsRev.current += 1;
         projectRef.current = bundle.project;
+        baselineRef.current = bundle.project;
         setProject(bundle.project);
         setAssets(bundle.assets);
         setDirty(false);
@@ -155,11 +164,16 @@ export function ExploreSettingsDialog({
 
   const doSave = useCallback(async () => {
     const body = projectRef.current;
-    if (!body) return;
+    const baseline = baselineRef.current;
+    if (!body || !baseline) return;
     const requestRev = settingsRev.current;
+    const requestSession = sessionRev.current;
     setStatus("儲存中…");
     try {
-      const saved = await saveExploreProject(body);
+      const saved = await saveExploreProject(baseline, body);
+      if (requestSession !== sessionRev.current) return;
+      baselineRef.current = saved;
+      onSaved?.(saved);
       const settled = settleSettingsSave({
         requestRev,
         currentRev: settingsRev.current,
@@ -167,6 +181,10 @@ export function ExploreSettingsDialog({
         current: projectRef.current ?? saved,
       });
       if (!settled.clearDirty) {
+        // Rebase only edits made while saving; do not replay the old full snapshot.
+        const rebased = mergeProjectEdits(body, projectRef.current ?? body, saved);
+        projectRef.current = rebased;
+        setProject(rebased);
         setStatus("仍有未儲存修改");
         return;
       }
@@ -174,8 +192,8 @@ export function ExploreSettingsDialog({
       setProject(settled.project);
       setDirty(false);
       setStatus("已儲存");
-      onSaved?.(settled.project);
     } catch (err: unknown) {
+      if (requestSession !== sessionRev.current) return;
       setStatus(err instanceof Error ? err.message : String(err));
     }
   }, [onSaved]);

@@ -34,12 +34,14 @@ describe("loadExploreProjectBundle / saveExploreProject", () => {
     expect(getJson).toHaveBeenCalledWith("/api/assets");
   });
 
-  it("saves project via putJson", async () => {
-    const project = { id: "demo", title: "Demo", startScene: "s1", locale: "zh-Hant" };
-    const putJson = vi.fn(async (_path: string, body: unknown) => body);
-    const saved = await saveExploreProject(project as never, { putJson: putJson as never });
-    expect(saved).toEqual(project);
-    expect(putJson).toHaveBeenCalledWith("/api/project", project);
+  it("merges settings edits into the latest project", async () => {
+    const base = { id: "demo", title: "Demo", startScene: "s1", locale: "en", titleBgm: "bgm/old" };
+    const project = { ...base, titleBgm: "bgm/new" };
+    const latest = { ...base, verbs: [{ id: "look", label: "NEW" }] };
+    const updateJson = vi.fn(async (_path: string, update: (current: unknown) => unknown) => update(latest));
+    const saved = await saveExploreProject(base as never, project as never, { updateJson: updateJson as never });
+    expect(saved).toEqual({ ...latest, titleBgm: "bgm/new" });
+    expect(updateJson).toHaveBeenCalledWith("/api/project", expect.any(Function));
   });
 });
 

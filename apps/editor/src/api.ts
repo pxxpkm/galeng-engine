@@ -48,9 +48,10 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function deleteJson<T>(path: string): Promise<T> {
-  const res = await fetch(path, { method: "DELETE" });
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-  return (await res.json()) as T;
+  // Drain earlier writes before deleting; otherwise a pending PUT can recreate it.
+  return enqueueLane(path, async () => {
+    const res = await fetch(path, { method: "DELETE" });
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()) as T;
+  });
 }
