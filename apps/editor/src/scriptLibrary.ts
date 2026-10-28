@@ -27,7 +27,18 @@ export interface ScriptRow {
   unresolvedGoto: boolean;
   speakers: string[];
   archived: boolean;
-  /** Full scene when loaded (for manuscript / text filter). */
+  /**
+   * Relative scene file. Set on a failed read so the row can name the file
+   * without pretending the body was an empty scene.
+   */
+  fileName?: string;
+  /**
+   * Set when this scene's body could not be read. Absent scene + this flag
+   * is a failure, not "Beat 0". Table-level failures are separate: they reject
+   * `loadScriptRows`'s caller instead of painting every row as empty.
+   */
+  loadError?: string;
+  /** Full scene when loaded (for manuscript / text filter). Never set on loadError. */
   scene?: Scene;
 }
 
@@ -104,6 +115,106 @@ export function scriptRowFromScene(
   };
 }
 
+/** Live scene body on disk: `scenario/<id>.json` (host `scene_path`). */
+export function sceneBodyFileName(id: string): string {
+  return `scenario/${id}.json`;
+}
+
+/**
+ * One scene GET failed. Do not synthesize `beats: []` — callers must not
+ * treat this row as an empty manuscript.
+ */
+export function scriptRowFromLoadFailure(
+  meta: { id: string; title?: string },
+  message: string,
+): ScriptRow {
+  return {
+    id: meta.id,
+    title: meta.title?.trim() || meta.id,
+    sceneKind: "dialogue",
+    beatCount: -1,
+    exitKind: "none",
+    hasCall: false,
+    hasReturn: false,
+    unresolvedGoto: false,
+    speakers: [],
+    archived: false,
+    fileName: sceneBodyFileName(meta.id),
+    loadError: message,
+  };
+}
+
+export type ExportScenesResult =
+  | { ok: true; scenes: Scene[] }
+  | { ok: false; missing: { id: string; fileName: string }[] };
+
+/**
+ * Live rows must all have a body. A `loadError` (or a live row with no scene)
+ * aborts the export and names the file. Archived meta rows are not failures.
+ */
+export function readableScenesForExport(rows: ScriptRow[]): ExportScenesResult {
+  const missing = rows
+    .filter((row) => !row.archived && (row.loadError || !row.scene))
+    .map((row) => ({
+      id: row.id,
+      fileName: row.fileName ?? sceneBodyFileName(row.id),
+    }));
+  if (missing.length > 0) return { ok: false, missing };
+  return {
+    ok: true,
+    scenes: rows.filter((row) => !row.archived).map((row) => row.scene as Scene),
+  };
+}
+
+/**
+ * Load live scene bodies. A single GET failure becomes that row's `loadError`
+ * and does not reject the whole list. Archived entries stay meta-only.
+ */
+export async function loadScriptRows(
+  live: SceneMeta[],
+  archived: SceneMeta[],
+  current: Scene | null,
+  fetchScene: (id: string) => Promise<Scene>,
+): Promise<ScriptRow[]> {
+  const allIds = new Set([...live, ...archived].map((m) => m.id));
+  const rows: ScriptRow[] = [];
+
+  for (const meta of live) {
+    if (current && current.id === meta.id) {
+      rows.push(scriptRowFromScene(current, { archived: false, allIds }));
+      continue;
+    }
+    try {
+      const scene = await fetchScene(meta.id);
+      rows.push(scriptRowFromScene(scene, { archived: false, allIds }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      rows.push(scriptRowFromLoadFailure(meta, message));
+    }
+  }
+
+  for (const meta of archived) {
+    rows.push(scriptRowFromMeta(meta, { archived: true, allIds }));
+  }
+
+  return rows.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Retry one live scene. Success replaces the failure; failure stays a loadError row. */
+export async function reloadScriptRow(
+  meta: { id: string; title?: string },
+  allIds: Set<string>,
+  fetchScene: () => Promise<Scene>,
+): Promise<ScriptRow> {
+  try {
+    const scene = await fetchScene();
+    return scriptRowFromScene(scene, { archived: false, allIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return scriptRowFromLoadFailure(meta, message);
+  }
+}
+
 /** Lightweight row from meta only (beat count unknown until full load). */
 export function scriptRowFromMeta(
   meta: SceneMeta,
@@ -146,6 +257,8 @@ export function filterScriptRows(rows: ScriptRow[], filters: ScriptFilters): Scr
   const q = filters.query.trim().toLowerCase();
   const speaker = filters.speaker.trim();
   return rows.filter((row) => {
+    // A failed read must stay visible. Hiding it looks like an empty library.
+    if (row.loadError) return true;
     if (filters.kind !== "all" && row.sceneKind !== filters.kind) return false;
     if (filters.unresolvedOnly && !row.unresolvedGoto) return false;
     if (filters.callReturn === "call" && !row.hasCall) return false;

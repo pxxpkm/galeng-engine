@@ -5,55 +5,15 @@ import {
   collectSpeakers,
   DEFAULT_SCRIPT_FILTERS,
   filterScriptRows,
-  scriptRowFromMeta,
-  scriptRowFromScene,
+  loadScriptRows,
+  readableScenesForExport,
+  reloadScriptRow,
   type ScriptFilters,
   type ScriptRow,
 } from "../scriptLibrary";
 import { navigateToExploreEditor } from "../editorRoute";
-import type { Scene, SceneMeta } from "../types";
+import type { Scene } from "../types";
 import type { Editor } from "./useEditorState";
-
-async function loadAllScenes(
-  live: SceneMeta[],
-  archived: SceneMeta[],
-  current: Scene | null,
-): Promise<ScriptRow[]> {
-  const allIds = new Set([...live, ...archived].map((m) => m.id));
-  const rows: ScriptRow[] = [];
-
-  async function loadOne(meta: SceneMeta, isArchived: boolean) {
-    try {
-      const scene =
-        current && current.id === meta.id && !isArchived
-          ? current
-          : await getJson<Scene>(
-              isArchived ? `/api/archived/${meta.id}` : `/api/scenes/${meta.id}`,
-            );
-      // Archived GET might not exist — host uses unarchive path. Fall back to meta-only.
-      rows.push(scriptRowFromScene(scene, { archived: isArchived, allIds }));
-    } catch {
-      rows.push(
-        scriptRowFromScene(
-          {
-            id: meta.id,
-            title: meta.title,
-            beats: [],
-            exit: meta.exit,
-          },
-          { archived: isArchived, allIds },
-        ),
-      );
-    }
-  }
-
-  for (const m of live) await loadOne(m, false);
-  for (const m of archived) {
-    // Archived bodies are not GET-able; meta-only until unarchived.
-    rows.push(scriptRowFromMeta(m, { archived: true, allIds }));
-  }
-  return rows.sort((a, b) => a.id.localeCompare(b.id));
-}
 
 export function ScriptLibrary({ ed }: { ed: Editor }) {
   const { t } = ed;
@@ -69,7 +29,12 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
     setBusy(true);
     setError(null);
     try {
-      const next = await loadAllScenes(ed.scenes, showArchived ? ed.archived : [], ed.scene);
+      const next = await loadScriptRows(
+        ed.scenes,
+        showArchived ? ed.archived : [],
+        ed.scene,
+        (id) => getJson<Scene>(`/api/scenes/${id}`),
+      );
       setRows(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -93,14 +58,21 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
   const selected = visible.find((r) => r.id === selectedId) ?? rows.find((r) => r.id === selectedId);
 
   useEffect(() => {
-    if (selected?.scene) {
-      setManuscript(exportScene(selected.scene));
-    } else {
+    if (selected?.loadError || !selected?.scene) {
       setManuscript("");
+      return;
     }
+    setManuscript(exportScene(selected.scene));
   }, [selected]);
 
+  async function retryRow(row: ScriptRow) {
+    const allIds = new Set([...ed.scenes, ...ed.archived].map((m) => m.id));
+    const next = await reloadScriptRow(row, allIds, () => getJson<Scene>(`/api/scenes/${row.id}`));
+    setRows((prev) => prev.map((r) => (r.id === row.id && !r.archived ? next : r)));
+  }
+
   async function openRow(row: ScriptRow) {
+    if (row.loadError) return;
     setSelectedId(row.id);
     if (row.archived) {
       await ed.unarchiveScene(row.id);
@@ -116,15 +88,15 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
   }
 
   async function exportAll() {
+    const decision = readableScenesForExport(rows);
+    if (!decision.ok) {
+      const list = decision.missing.map((m) => `${m.fileName} (${m.id})`).join(", ");
+      setError(`${t("editor.scriptsExportBlocked")} ${list}`);
+      return;
+    }
     setBusy(true);
     try {
-      const liveScenes: Scene[] = [];
-      for (const row of rows.filter((r) => !r.archived)) {
-        if (row.scene) liveScenes.push(row.scene);
-        else liveScenes.push(await getJson<Scene>(`/api/scenes/${row.id}`));
-      }
-      const files = exportAllScenes(liveScenes);
-      // Reuse export dialog
+      const files = exportAllScenes(decision.scenes);
       ed.openExportFiles(files);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -254,10 +226,12 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
                 if (row.hasReturn) flags.push("Return");
                 if (row.unresolvedGoto) flags.push("?");
                 if (row.archived) flags.push("arch");
+                const failed = Boolean(row.loadError);
                 return (
                   <tr
                     key={row.id + (row.archived ? ":a" : "")}
                     data-testid={`script-row-${row.id}`}
+                    data-load-error={failed ? "true" : undefined}
                     style={{
                       cursor: "pointer",
                       background:
@@ -269,12 +243,38 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
                   >
                     <td>
                       <code>{row.id}</code>
+                      {row.fileName ? (
+                        <div className="v2-hint" data-testid={`script-file-${row.id}`}>
+                          {row.fileName}
+                        </div>
+                      ) : null}
                     </td>
                     <td>{row.title}</td>
-                    <td>{row.sceneKind}</td>
-                    <td align="right">{row.beatCount < 0 ? "—" : row.beatCount}</td>
-                    <td>{row.exitKind}</td>
-                    <td>{flags.join(" · ") || "—"}</td>
+                    <td>{failed ? "—" : row.sceneKind}</td>
+                    <td align="right" data-testid={`script-beats-${row.id}`}>
+                      {failed || row.beatCount < 0 ? "—" : row.beatCount}
+                    </td>
+                    <td>{failed ? "—" : row.exitKind}</td>
+                    <td>
+                      {failed ? (
+                        <span>
+                          <span data-testid={`script-error-${row.id}`}>{row.loadError}</span>{" "}
+                          <button
+                            type="button"
+                            className="v2-btn"
+                            data-testid={`script-retry-${row.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void retryRow(row);
+                            }}
+                          >
+                            {t("editor.scriptsRetry")}
+                          </button>
+                        </span>
+                      ) : (
+                        flags.join(" · ") || "—"
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -295,7 +295,7 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
             <button
               type="button"
               className="v2-btn"
-              disabled={!selected}
+              disabled={!selected || Boolean(selected.loadError)}
               onClick={() => selected && void openRow(selected)}
             >
               {t("editor.scriptsOpen")}
@@ -311,7 +311,11 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
           </div>
           <textarea
             readOnly
-            value={manuscript || t("editor.scriptsManuscriptEmpty")}
+            value={
+              selected?.loadError
+                ? `${t("editor.scriptsLoadFailed")} ${selected.fileName ?? selected.id} (${selected.id})\n${selected.loadError}`
+                : manuscript || t("editor.scriptsManuscriptEmpty")
+            }
             style={{
               flex: 1,
               minHeight: 280,
