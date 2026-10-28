@@ -25,7 +25,12 @@ import {
 } from "../beats";
 import { playAudition, stopAudition } from "../audition";
 import { backupNeedsOffer, clearBackup, readBackup, writeBackup, type BackupSnap } from "../backup";
-import { flushIfDirty, shouldWarnUnload } from "../dirty";
+import {
+  flushThenAllowLeave,
+  LEAVE_CANCELLED_MESSAGE,
+  sceneLeaveBlocked,
+  shouldWarnUnload,
+} from "../dirty";
 import { registerShellSession } from "../shellGate";
 import { parseSceneId } from "../goto";
 import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
@@ -133,6 +138,11 @@ export function useEditorState() {
   projectRef.current = project;
   dirtyRef.current = dirty;
   projectDirtyRef.current = projectDirty;
+
+  const stillDirty = useCallback(
+    () => sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current),
+    [],
+  );
 
   const toastId = useRef(0);
   const beat = scene?.beats[beatIndex];
@@ -400,7 +410,7 @@ export function useEditorState() {
     void (async () => {
       try {
         if (params.sceneId) {
-          await flushIfDirty(anyDirty, save);
+          await flushThenAllowLeave(stillDirty(), save, stillDirty);
           setSceneId(params.sceneId);
         }
         if (params.openScripts) setScriptsOpen(true);
@@ -411,7 +421,7 @@ export function useEditorState() {
         fail(err);
       }
     })();
-  }, [scenes.length, anyDirty, save, fail]);
+  }, [scenes.length, anyDirty, stillDirty, save, fail]);
 
   const play = useCallback(async () => {
     if (!scene) return;
@@ -526,13 +536,13 @@ export function useEditorState() {
       if (!copy) {
         throw new Error(tRef.current("editor.badSceneId"));
       }
-      await flushIfDirty(anyDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
       await postJson<Scene>("/api/scenes", { id: copy.id });
       const saved = await putJson<Scene>(`/api/scenes/${copy.id}`, copy);
       setScenes((list) => upsertSceneMeta(list, saved));
       return saved;
     },
-    [scene, anyDirty, save],
+    [scene, stillDirty, save],
   );
 
   const archiveCurrentScene = useCallback(async () => {
@@ -542,7 +552,7 @@ export function useEditorState() {
     if (!canArchiveScene(scene.id, project.startScene)) {
       throw new Error(tRef.current("editor.cannotArchiveStart"));
     }
-    await flushIfDirty(anyDirty, save);
+    await flushThenAllowLeave(stillDirty(), save, stillDirty);
     await postJson(`/api/scenes/${scene.id}/archive`, {});
     const [live, hidden] = await Promise.all([
       getJson<SceneMeta[]>("/api/scenes"),
@@ -550,6 +560,9 @@ export function useEditorState() {
     ]);
     setScenes(live);
     setArchived(hidden);
+    if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
+      throw new Error(LEAVE_CANCELLED_MESSAGE);
+    }
     setSceneId(
       nextSceneAfterArchive(
         scene.id,
@@ -558,7 +571,7 @@ export function useEditorState() {
         live.map((item) => item.id),
       ),
     );
-  }, [scene, project, anyDirty, save]);
+  }, [scene, project, stillDirty, save]);
 
   const unarchiveScene = useCallback(async (id: string) => {
     const restored = await postJson<Scene>(`/api/scenes/${id}/unarchive`, {});
@@ -608,13 +621,13 @@ export function useEditorState() {
     async (id: string) => {
       if (id === sceneId) return;
       try {
-        await flushIfDirty(anyDirty, save);
+        await flushThenAllowLeave(stillDirty(), save, stillDirty);
         setSceneId(id);
       } catch (err) {
         fail(err);
       }
     },
-    [sceneId, anyDirty, save, fail],
+    [sceneId, stillDirty, save, fail],
   );
 
   const requestNewScene = useCallback(
@@ -626,7 +639,7 @@ export function useEditorState() {
           ((id) => {
             void (async () => {
               try {
-                await flushIfDirty(anyDirty, save);
+                await flushThenAllowLeave(stillDirty(), save, stillDirty);
                 setSceneId(id);
               } catch (err) {
                 fail(err);
@@ -635,7 +648,7 @@ export function useEditorState() {
           }),
       });
     },
-    [anyDirty, save, fail],
+    [stillDirty, save, fail],
   );
 
   const requestDupScene = useCallback(() => {
@@ -645,10 +658,14 @@ export function useEditorState() {
     setSceneDialog({
       kind: "dup",
       onCreated: (id) => {
+        if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
+          fail(new Error(LEAVE_CANCELLED_MESSAGE));
+          return;
+        }
         setSceneId(id);
       },
     });
-  }, [scene]);
+  }, [scene, fail]);
 
   const closeSceneDialog = useCallback(() => setSceneDialog(null), []);
 
@@ -951,14 +968,14 @@ export function useEditorState() {
         return;
       }
       try {
-        await flushIfDirty(anyDirty, save);
+        await flushThenAllowLeave(stillDirty(), save, stillDirty);
         pendingBeatRef.current = beat ?? 0;
         setSceneId(id);
       } catch (err) {
         fail(err);
       }
     },
-    [sceneId, pickBeat, anyDirty, save, fail],
+    [sceneId, pickBeat, stillDirty, save, fail],
   );
 
   const goToSearchHit = useCallback(

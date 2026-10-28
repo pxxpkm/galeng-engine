@@ -22,7 +22,12 @@ import { parseSceneId } from "./goto";
 import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive } from "./scene";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "./saveIssues";
 import { GotoSelect } from "./GotoSelect";
-import { flushIfDirty, shouldWarnUnload } from "./dirty";
+import {
+  flushThenAllowLeave,
+  LEAVE_CANCELLED_MESSAGE,
+  sceneLeaveBlocked,
+  shouldWarnUnload,
+} from "./dirty";
 import { registerShellSession } from "./shellGate";
 import { addMusicItem, setOptionalPath, setSkipTitle } from "./project";
 import { launchPlay } from "./play";
@@ -107,6 +112,10 @@ export function App() {
   projectRef.current = project;
   dirtyRef.current = dirty;
   projectDirtyRef.current = projectDirty;
+
+  function stillDirty() {
+    return sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current);
+  }
 
   const beat = scene?.beats[beatIndex];
   const lists = assetLists(assets);
@@ -423,7 +432,7 @@ export function App() {
       return;
     }
     try {
-      await flushIfDirty(dirty || projectDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
       setError(null);
       setSceneId(id);
     } catch (err) {
@@ -434,7 +443,7 @@ export function App() {
   async function dupScene() {
     if (!scene) return;
     try {
-      await flushIfDirty(dirty || projectDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
@@ -450,6 +459,9 @@ export function App() {
       await postJson<Scene>("/api/scenes", { id: copy.id });
       const saved = await putJson<Scene>(`/api/scenes/${copy.id}`, copy);
       setScenes((list) => upsertSceneMeta(list, saved));
+      if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
+        throw new Error(LEAVE_CANCELLED_MESSAGE);
+      }
       setSceneId(saved.id);
       setError(null);
     } catch (err) {
@@ -464,7 +476,7 @@ export function App() {
       return;
     }
     try {
-      await flushIfDirty(dirty || projectDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
       await postJson(`/api/scenes/${scene.id}/archive`, {});
       const [live, hidden] = await Promise.all([
         getJson<SceneMeta[]>("/api/scenes"),
@@ -472,6 +484,9 @@ export function App() {
       ]);
       setScenes(live);
       setArchived(hidden);
+      if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
+        throw new Error(LEAVE_CANCELLED_MESSAGE);
+      }
       setSceneId(
         nextSceneAfterArchive(
           scene.id,
@@ -540,7 +555,7 @@ export function App() {
 
   async function newScene() {
     try {
-      await flushIfDirty(dirty || projectDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
@@ -549,6 +564,10 @@ export function App() {
     if (!raw) return;
     const created = await createSceneFile(raw);
     if (created) {
+      if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
+        setError(LEAVE_CANCELLED_MESSAGE);
+        return;
+      }
       setSceneId(created.id);
     }
   }
@@ -613,7 +632,7 @@ export function App() {
       return;
     }
     try {
-      await flushIfDirty(dirty || projectDirty, save);
+      await flushThenAllowLeave(stillDirty(), save, stillDirty);
       pendingBeatRef.current = beat ?? 0;
       setSceneId(id);
     } catch (err) {

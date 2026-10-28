@@ -167,6 +167,22 @@ export function exploreCanvasKeyAction(
   }
 }
 
+/**
+ * True when a load that started at `seenGen` must not replace the workspace.
+ * Reloading may discard dirty state the user already confirmed (`discardedBeforeLoad`);
+ * an edit during the await bumps `docGen` or sets dirty from a clean baseline.
+ */
+export function exploreLoadRaced(input: {
+  seenGen: number;
+  docGen: number;
+  dirty: boolean;
+  discardedBeforeLoad: boolean;
+}): boolean {
+  if (input.docGen !== input.seenGen) return true;
+  if (input.dirty && !input.discardedBeforeLoad) return true;
+  return false;
+}
+
 export interface ExploreWorkspaceProps {
   initial: ExploreDoc;
   knownSceneIds?: Set<string>;
@@ -463,24 +479,38 @@ export function ExploreWorkspace({
       setSaveStatus("未接 persist");
       return;
     }
-    if (!confirmDiscardIfDirty(dirty)) {
+    const discardedBeforeLoad = exploreDirtyRef.current;
+    if (!confirmDiscardIfDirty(discardedBeforeLoad)) {
       setSaveStatus("已取消重載");
       return;
     }
+    const seenGen = docGen.current;
+    const sceneId = stateRef.current.doc.scene.id;
     setSaveStatus("重載中…");
     try {
-      const next = await loadExploreDoc(persist, state.doc.scene.id);
+      const next = await loadExploreDoc(persist, sceneId);
+      if (
+        exploreLoadRaced({
+          seenGen,
+          docGen: docGen.current,
+          dirty: exploreDirtyRef.current,
+          discardedBeforeLoad,
+        })
+      ) {
+        setSaveStatus("已取消重載：載入期間有新編輯");
+        return;
+      }
       commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
       setSaveStatus("已重載");
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [persist, state.doc.scene.id, dirty, commitWs]);
+  }, [persist, dirty, commitWs]);
 
   const doSwitchScene = useCallback(
     async (sceneId: string) => {
       if (!sceneId || sceneId === state.doc.scene.id) return;
-      if (dirty) {
+      if (dirty || exploreDirtyRef.current) {
         setSaveStatus("請先存檔再切換場景");
         return;
       }
@@ -488,9 +518,21 @@ export function ExploreWorkspace({
         setSaveStatus("未接 persist，無法切換場景");
         return;
       }
+      const seenGen = docGen.current;
       setSaveStatus("切換中…");
       try {
         const next = await loadExploreDoc(persist, sceneId);
+        if (
+          exploreLoadRaced({
+            seenGen,
+            docGen: docGen.current,
+            dirty: exploreDirtyRef.current,
+            discardedBeforeLoad: false,
+          })
+        ) {
+          setSaveStatus("已取消切換：載入期間有新編輯");
+          return;
+        }
         commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
         setSaveStatus(`已切換：${sceneId}`);
         void refreshCatalog();

@@ -34,16 +34,17 @@ export async function ensureShellCleanForLeave(
     if (typeof window !== "undefined") window.alert(msg);
   },
 ): Promise<boolean> {
-  if (!session || !session.getDirty()) {
+  const active = session;
+  if (!active || !active.getDirty()) {
     return true;
   }
   try {
-    await flushIfDirty(true, session.save);
+    await flushIfDirty(true, active.save, () => active.getDirty());
   } catch (err) {
     alertFn(err instanceof Error ? `${SAVE_FAIL}\n${err.message}` : SAVE_FAIL);
     return false;
   }
-  if (session.getDirty()) {
+  if (active.getDirty()) {
     alertFn(STILL_DIRTY);
     return false;
   }
