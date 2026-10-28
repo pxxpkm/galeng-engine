@@ -3,6 +3,7 @@ import { ASSET_GROUP_I18N, groupAssets, type AssetGroup } from "../assets";
 import { AuditionButton } from "../AuditionButton";
 import { isAudibleLogical, playAudition } from "../audition";
 import { encodeAssetDrag } from "../beats";
+import { assetCardAction } from "./modalFocus";
 import { mediaUrl } from "../media";
 import { canArchiveScene, canDeleteScene } from "../scene";
 import { buildRouteTree, overlayCurrent } from "../route";
@@ -134,6 +135,8 @@ function MediaPanel({ ed }: { ed: Editor }) {
                       <div
                         key={a.logical}
                         className="v2-asset"
+                        role="button"
+                        tabIndex={0}
                         draggable
                         title={a.logical}
                         onDragStart={(event) => {
@@ -141,6 +144,16 @@ function MediaPanel({ ed }: { ed: Editor }) {
                           event.dataTransfer.effectAllowed = "copy";
                         }}
                         onClick={() => {
+                          ed.applyMedia(a);
+                          if (isAudibleLogical(a.logical)) {
+                            playAudition(a.logical);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (assetCardAction(event.key, event.target === event.currentTarget) !== "apply") {
+                            return;
+                          }
+                          event.preventDefault();
                           ed.applyMedia(a);
                           if (isAudibleLogical(a.logical)) {
                             playAudition(a.logical);

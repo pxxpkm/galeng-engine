@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AssetOverview } from "../AssetOverview";
 import { liveIssues, type LiveIssue } from "../liveIssues";
 import { formatIssueText, interpolate } from "../saveIssues";
@@ -11,6 +11,7 @@ import { FontPanel } from "./FontPanel";
 import { ScriptLibrary } from "./ScriptLibrary";
 import { ProjectFields, ScreenButtonsFields } from "./ProjectFields";
 import { RosterEditor } from "./RosterEditor";
+import { bindModalElement } from "./modalFocus";
 import { switchUiVersion } from "./uiVersion";
 import type { Editor } from "./useEditorState";
 
@@ -25,16 +26,14 @@ function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+    const panel = panelRef.current;
+    if (!panel) return;
+    return bindModalElement(panel, () => onCloseRef.current());
+  }, []);
 
   return (
     <div
@@ -43,7 +42,13 @@ function Modal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className={`v2-modal${wide ? " v2-modal-wide" : ""}`} role="dialog" aria-label={title}>
+      <div
+        ref={panelRef}
+        className={`v2-modal${wide ? " v2-modal-wide" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="v2-modal-head">
           <h2>{title}</h2>
           <button type="button" className="v2-btn v2-btn-icon" onClick={onClose} title="Esc">

@@ -9,6 +9,7 @@ import type { AssetMeta, Locale, Project } from "../types";
 import { AudioPanel, type AudioPanelHost } from "../v2/AudioPanel";
 import { FontPanel, type FontPanelHost } from "../v2/FontPanel";
 import { IconSettings, IconX } from "../v2/icons";
+import { bindModalElement } from "../v2/modalFocus";
 import "../v2/v2.css";
 
 const TABLES: Record<Locale, Record<string, string>> = {
@@ -109,6 +110,9 @@ export function ExploreSettingsDialog({
   const settingsRev = useRef(0);
   const baselineRef = useRef<Project | null>(null);
   const sessionRev = useRef(0);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     sessionRev.current += 1;
@@ -145,15 +149,10 @@ export function ExploreSettingsDialog({
 
   useEffect(() => {
     if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+    const panel = panelRef.current;
+    if (!panel) return;
+    return bindModalElement(panel, () => onCloseRef.current());
+  }, [open]);
 
   const patchProject = useCallback((next: Project) => {
     settingsRev.current += 1;
@@ -236,7 +235,13 @@ export function ExploreSettingsDialog({
           if (event.target === event.currentTarget) onClose();
         }}
       >
-        <div className="v2-modal v2-modal-wide" role="dialog" aria-label={title}>
+        <div
+          ref={panelRef}
+          className="v2-modal v2-modal-wide"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
           <div className="v2-modal-head">
             <h2>{title}</h2>
             <button
