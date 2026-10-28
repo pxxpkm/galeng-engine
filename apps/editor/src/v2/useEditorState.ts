@@ -35,7 +35,8 @@ import { registerShellSession } from "../shellGate";
 import { parseSceneId } from "../goto";
 import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
 import type { LiveIssue } from "../liveIssues";
-import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive } from "../scene";
+import { duplicateScene, sceneIsOpen } from "../scene";
+import { runArchiveScene, runDeleteScene } from "../sceneRemoval";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "../saveIssues";
 import { emptyHistory, push, redo, undo } from "../history";
 import { launchPlay, playFromHereDecision, playFromStartBody, runPlayFromHere } from "../play";
@@ -137,6 +138,7 @@ export function useEditorState() {
   const [focusChoice, setFocusChoice] = useState<number | null>(null);
   const pendingBeatRef = useRef<number | null>(null);
   const sceneRef = useRef(scene);
+  const sceneIdRef = useRef(sceneId);
   const projectRef = useRef(project);
   const dirtyRef = useRef(dirty);
   const projectDirtyRef = useRef(projectDirty);
@@ -146,6 +148,7 @@ export function useEditorState() {
   const routedAwayRef = useRef(false);
   const leaveRef = useRef<() => Promise<unknown>>(async () => "clean");
   sceneRef.current = scene;
+  sceneIdRef.current = sceneId;
   projectRef.current = project;
   dirtyRef.current = dirty;
   projectDirtyRef.current = projectDirty;
@@ -669,36 +672,34 @@ export function useEditorState() {
     [scene, stillDirty, save],
   );
 
+  const archiveScene = useCallback(async (id: string) => {
+    const projectNow = projectRef.current;
+    if (!projectNow) {
+      throw new Error(tRef.current("editor.cannotArchiveStart"));
+    }
+    await runArchiveScene(id, {
+      startScene: projectNow.startScene,
+      currentId: sceneRef.current?.id ?? sceneIdRef.current,
+      cannot: tRef.current("editor.cannotArchiveStart"),
+      flushIfCurrent: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+      stillBlocked: () => sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current),
+      archive: (sceneId) => postJson(`/api/scenes/${sceneId}/archive`, {}),
+      loadLive: () => getJson<SceneMeta[]>("/api/scenes"),
+      loadArchived: () => getJson<SceneMeta[]>("/api/archived"),
+      setLive: setScenes,
+      setArchived,
+      openDialogue: (next) => setSceneId(next),
+      openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+    });
+  }, [stillDirty, save]);
+
   const archiveCurrentScene = useCallback(async () => {
-    if (!scene || !project) {
+    const id = sceneRef.current?.id;
+    if (!id) {
       throw new Error(tRef.current("editor.cannotArchiveStart"));
     }
-    if (!canArchiveScene(scene.id, project.startScene)) {
-      throw new Error(tRef.current("editor.cannotArchiveStart"));
-    }
-    await flushThenAllowLeave(stillDirty(), save, stillDirty);
-    await postJson(`/api/scenes/${scene.id}/archive`, {});
-    const [live, hidden] = await Promise.all([
-      getJson<SceneMeta[]>("/api/scenes"),
-      getJson<SceneMeta[]>("/api/archived"),
-    ]);
-    setScenes(live);
-    setArchived(hidden);
-    if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
-      throw new Error(LEAVE_CANCELLED_MESSAGE);
-    }
-    const nextId = nextSceneAfterArchive(
-      scene.id,
-      scene.id,
-      project.startScene,
-      live.map((item) => item.id),
-    );
-    if (listedKindOf(live, nextId) === "explore") {
-      navigateToExploreEditor({ sceneId: nextId });
-    } else {
-      setSceneId(nextId);
-    }
-  }, [scene, project, stillDirty, save]);
+    await archiveScene(id);
+  }, [archiveScene]);
 
   const unarchiveScene = useCallback(async (id: string) => {
     const restored = await postJson<Scene>(`/api/scenes/${id}/unarchive`, {});
@@ -706,27 +707,32 @@ export function useEditorState() {
     setArchived((list) => list.filter((item) => item.id !== restored.id));
   }, []);
 
-  const deleteCurrentScene = useCallback(async () => {
-    if (!scene || !project) {
+  const deleteScene = useCallback(async (id: string) => {
+    const projectNow = projectRef.current;
+    if (!projectNow) {
       throw new Error(tRef.current("editor.cannotDeleteStart"));
     }
-    if (!canDeleteScene(scene.id, project.startScene)) {
-      throw new Error(tRef.current("editor.cannotDeleteStart"));
-    }
-    const ok = window.confirm(
-      tRef.current("editor.deleteSceneConfirm").replaceAll("{id}", scene.id),
-    );
-    if (!ok) {
-      return;
-    }
-    const removed = scene.id;
-    if (deletingSceneRef.current) return;
-    deletingSceneRef.current = removed;
-    // Ignore responses from saves that were already in flight.
-    sceneRev.current += 1;
-    try {
-      await deleteJson(`/api/scenes/${removed}`);
-      if (sceneRef.current?.id === removed) {
+    await runDeleteScene(id, {
+      startScene: projectNow.startScene,
+      cannot: tRef.current("editor.cannotDeleteStart"),
+      confirm: (sceneId) =>
+        window.confirm(tRef.current("editor.deleteSceneConfirm").replaceAll("{id}", sceneId)),
+      isOpen: (sceneId) => sceneIsOpen(sceneRef.current?.id ?? null, sceneIdRef.current, sceneId),
+      loadedId: () => sceneRef.current?.id ?? null,
+      tryBegin: (sceneId) => {
+        if (deletingSceneRef.current) return false;
+        deletingSceneRef.current = sceneId;
+        return true;
+      },
+      end: () => {
+        deletingSceneRef.current = null;
+      },
+      ignoreInFlightSaves: () => {
+        sceneRev.current += 1;
+      },
+      deleteFile: (sceneId) => deleteJson(`/api/scenes/${sceneId}`),
+      clearLoaded: () => {
+        // Ignore a save response that lands as the document is dropped.
         sceneRev.current += 1;
         sceneRef.current = null;
         dirtyRef.current = false;
@@ -740,29 +746,23 @@ export function useEditorState() {
         setSelected([]);
         setAnchor(0);
         setBackupOffer(null);
-      }
-      clearBackup(globalThis.localStorage, removed);
-      setScenes((list) => list.filter((item) => item.id !== removed));
-      const live = await getJson<SceneMeta[]>("/api/scenes");
-      setScenes(live);
-      // Do not replace a different scene the user opened during deletion.
-      if (!sceneRef.current) {
-        const nextId = nextSceneAfterArchive(
-          removed,
-          removed,
-          project.startScene,
-          live.map((item) => item.id),
-        );
-        if (listedKindOf(live, nextId) === "explore") {
-          navigateToExploreEditor({ sceneId: nextId });
-        } else {
-          setSceneId(nextId);
-        }
-      }
-    } finally {
-      deletingSceneRef.current = null;
+      },
+      clearBackup: (sceneId) => clearBackup(globalThis.localStorage, sceneId),
+      dropFromList: (sceneId) => setScenes((list) => list.filter((item) => item.id !== sceneId)),
+      loadLive: () => getJson<SceneMeta[]>("/api/scenes"),
+      setLive: setScenes,
+      openDialogue: (next) => setSceneId(next),
+      openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+    });
+  }, []);
+
+  const deleteCurrentScene = useCallback(async () => {
+    const id = sceneRef.current?.id;
+    if (!id) {
+      throw new Error(tRef.current("editor.cannotDeleteStart"));
     }
-  }, [scene, project]);
+    await deleteScene(id);
+  }, [deleteScene]);
 
   const deleteArchivedScene = useCallback(async (id: string) => {
     const ok = window.confirm(
@@ -1393,6 +1393,8 @@ export function useEditorState() {
     browsePackOut,
     createScene,
     duplicateCurrentScene,
+    archiveScene,
+    deleteScene,
     archiveCurrentScene,
     unarchiveScene,
     deleteCurrentScene,

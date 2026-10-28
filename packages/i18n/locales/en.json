@@ -326,6 +326,7 @@
   "editor.cannotArchiveStart": "Cannot archive the start scene",
   "editor.deleteScene": "Delete scene",
   "editor.deleteSceneTitle": "Remove the current scene file from disk. Cannot undo.",
+  "editor.deleteSceneRowTitle": "Remove this scene file from disk. Cannot undo.",
   "editor.deleteSceneConfirm": "Delete “{id}”? The file will be removed and cannot be restored.",
   "editor.deleteArchived": "Delete forever",
   "editor.deleteArchivedConfirm": "Permanently delete archived “{id}”?",

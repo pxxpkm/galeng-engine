@@ -186,7 +186,10 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
           type="button"
           className="v2-btn"
           disabled={!ed.scene}
-          onClick={() => void ed.archiveCurrentScene()}
+          onClick={() => {
+            if (!ed.scene) return;
+            void ed.archiveScene(ed.scene.id).catch(ed.fail);
+          }}
         >
           {t("editor.archive")}
         </button>

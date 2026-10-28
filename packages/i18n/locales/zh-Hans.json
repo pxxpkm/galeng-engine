@@ -326,6 +326,7 @@
   "editor.cannotArchiveStart": "不能封存起始场景",
   "editor.deleteScene": "删除场景",
   "editor.deleteSceneTitle": "从磁盘删掉当前场景，不能还原",
+  "editor.deleteSceneRowTitle": "从磁盘删掉这个场景，不能还原",
   "editor.deleteSceneConfirm": "确定删除「{id}」？文件会拿掉，不能还原。",
   "editor.deleteArchived": "永久删除",
   "editor.deleteArchivedConfirm": "确定永久删除已封存的「{id}」？",

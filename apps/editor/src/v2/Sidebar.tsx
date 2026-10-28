@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ASSET_GROUP_I18N, groupAssets, type AssetGroup } from "../assets";
 import { AuditionButton } from "../AuditionButton";
 import { isAudibleLogical, playAudition } from "../audition";
 import { encodeAssetDrag } from "../beats";
 import { assetCardAction } from "./modalFocus";
 import { mediaUrl } from "../media";
-import { canArchiveScene, canDeleteScene } from "../scene";
+import { canArchiveScene, canDeleteScene, sceneRowMenuActions } from "../scene";
 import { buildRouteTree, overlayCurrent } from "../route";
 import { RouteTree, SceneExitHint } from "../RouteTree";
 import type { AssetMeta } from "../types";
@@ -176,39 +176,151 @@ function MediaPanel({ ed }: { ed: Editor }) {
   );
 }
 
+function menuPoint(x: number, y: number): { left: number; top: number } {
+  if (typeof window === "undefined") return { left: x, top: y };
+  const width = 210;
+  const height = 84;
+  return {
+    left: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - width)),
+    top: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - height)),
+  };
+}
+
+export function SceneRowMenu({
+  x,
+  y,
+  sceneId,
+  startScene,
+  t,
+  onArchive,
+  onDelete,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  sceneId: string;
+  startScene: string | undefined;
+  t: (key: string) => string;
+  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const actions = sceneRowMenuActions(sceneId, startScene);
+  const point = menuPoint(x, y);
+
+  useEffect(() => {
+    function onDown(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="v2-ctx-menu"
+      role="menu"
+      data-testid="scene-row-menu"
+      data-scene-id={sceneId}
+      style={{ left: point.left, top: point.top }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {actions.map((action) => (
+        <span key={action.id} className="v2-ctx-hit" title={t(action.titleKey)}>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`scene-row-${action.id}`}
+            disabled={action.disabled}
+            title={t(action.titleKey)}
+            onClick={() => {
+              if (action.disabled) return;
+              onClose();
+              if (action.id === "archive") onArchive(sceneId);
+              else onDelete(sceneId);
+            }}
+          >
+            {t(action.labelKey)}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ScenePanel({ ed }: { ed: Editor }) {
   const { t } = ed;
   const routeScenes = useMemo(() => overlayCurrent(ed.scenes, ed.scene), [ed.scenes, ed.scene]);
   const routeIds = useMemo(() => new Set(routeScenes.map((item) => item.id)), [routeScenes]);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const startScene = ed.project?.startScene;
   return (
     <div className="v2-side-panel">
       <div className="v2-side-scroll">
         {routeScenes.map((s) => (
-          <button
+          <div
             key={s.id}
-            type="button"
             className={`v2-scene${s.id === ed.sceneId ? " active" : ""}`}
-            onClick={() => void ed.selectScene(s.id)}
+            data-scene-id={s.id}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu({ id: s.id, x: event.clientX, y: event.clientY });
+            }}
           >
-            <IconScene />
-            <span className="v2-scene-text">
-              <span className="v2-scene-title">{s.title ?? s.id}</span>
-              {s.title ? <span className="v2-scene-id">{s.id}</span> : null}
-              {s.sceneKind ? (
-                <span className="v2-scene-kind">
-                  {s.sceneKind === "explore"
-                    ? t("editor.scriptsKindExplore")
-                    : t("editor.scriptsKindDialogue")}
+            <button
+              type="button"
+              className="v2-scene-main"
+              onClick={() => void ed.selectScene(s.id)}
+            >
+              <IconScene />
+              <span className="v2-scene-text">
+                <span className="v2-scene-title">{s.title ?? s.id}</span>
+                {s.title ? <span className="v2-scene-id">{s.id}</span> : null}
+                {s.sceneKind ? (
+                  <span className="v2-scene-kind">
+                    {s.sceneKind === "explore"
+                      ? t("editor.scriptsKindExplore")
+                      : t("editor.scriptsKindDialogue")}
+                  </span>
+                ) : null}
+                <SceneExitHint exit={s.exit} ids={routeIds} t={t} />
+              </span>
+              {s.id === startScene ? (
+                <span className="v2-scene-flag" title={t("editor.startScene")}>
+                  ★
                 </span>
               ) : null}
-              <SceneExitHint exit={s.exit} ids={routeIds} t={t} />
-            </span>
-            {s.id === ed.project?.startScene ? (
-              <span className="v2-scene-flag" title={t("editor.startScene")}>
-                ★
-              </span>
-            ) : null}
-          </button>
+            </button>
+            <button
+              type="button"
+              className="v2-scene-more"
+              aria-haspopup="menu"
+              aria-expanded={menu?.id === s.id}
+              aria-label={t("editor.moreMenu")}
+              title={t("editor.moreMenu")}
+              data-testid={`scene-more-${s.id}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                setMenu({ id: s.id, x: rect.left, y: rect.bottom + 4 });
+              }}
+            >
+              ⋯
+            </button>
+          </div>
         ))}
       </div>
       <div className="v2-side-foot">
@@ -219,18 +331,26 @@ function ScenePanel({ ed }: { ed: Editor }) {
         <button
           type="button"
           className="v2-btn v2-btn-block"
-          disabled={!canArchiveScene(ed.sceneId ?? "", ed.project?.startScene)}
+          disabled={!canArchiveScene(ed.sceneId ?? "", startScene)}
           title={t("editor.archiveTitle")}
-          onClick={() => void ed.archiveCurrentScene().catch(ed.fail)}
+          onClick={() => {
+            const id = ed.sceneId;
+            if (!id) return;
+            void ed.archiveScene(id).catch(ed.fail);
+          }}
         >
           {t("editor.archive")}
         </button>
         <button
           type="button"
           className="v2-btn v2-btn-block"
-          disabled={!canDeleteScene(ed.sceneId ?? "", ed.project?.startScene)}
+          disabled={!canDeleteScene(ed.sceneId ?? "", startScene)}
           title={t("editor.deleteSceneTitle")}
-          onClick={() => void ed.deleteCurrentScene().catch(ed.fail)}
+          onClick={() => {
+            const id = ed.sceneId;
+            if (!id) return;
+            void ed.deleteScene(id).catch(ed.fail);
+          }}
         >
           {t("editor.deleteScene")}
         </button>
@@ -259,6 +379,22 @@ function ScenePanel({ ed }: { ed: Editor }) {
           </div>
         ) : null}
       </div>
+      {menu ? (
+        <SceneRowMenu
+          x={menu.x}
+          y={menu.y}
+          sceneId={menu.id}
+          startScene={startScene}
+          t={t}
+          onArchive={(id) => {
+            void ed.archiveScene(id).catch(ed.fail);
+          }}
+          onDelete={(id) => {
+            void ed.deleteScene(id).catch(ed.fail);
+          }}
+          onClose={closeMenu}
+        />
+      ) : null}
     </div>
   );
 }

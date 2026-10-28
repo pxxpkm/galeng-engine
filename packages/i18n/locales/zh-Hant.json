@@ -326,6 +326,7 @@
   "editor.cannotArchiveStart": "不能封存起始場景",
   "editor.deleteScene": "刪除場景",
   "editor.deleteSceneTitle": "從磁碟刪掉當前場景，不能還原",
+  "editor.deleteSceneRowTitle": "從磁碟刪掉呢個場景，不能還原",
   "editor.deleteSceneConfirm": "確定刪除「{id}」？檔案會拿掉，不能還原。",
   "editor.deleteArchived": "永久刪除",
   "editor.deleteArchivedConfirm": "確定永久刪除已封存的「{id}」？",

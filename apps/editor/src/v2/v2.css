@@ -318,6 +318,12 @@
 .v2 .v2-ctx-menu button:disabled {
   opacity: 0.45;
 }
+.v2 .v2-ctx-hit {
+  display: flex;
+}
+.v2 .v2-ctx-hit > button {
+  flex: 1;
+}
 
 /* --- script sheet (outline view) --- */
 .v2 .v2-tl-corner .v2-sheet-toggle {
@@ -522,15 +528,51 @@
 }
 
 .v2 .v2-scene {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border-radius: 8px;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+.v2 .v2-scene-main {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
+  padding: 8px 28px 8px 10px;
+  color: inherit;
   border-radius: 8px;
+}
+.v2 .v2-scene-more {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   color: var(--muted);
-  transition: background 0.12s, color 0.12s;
+  opacity: 0;
+  pointer-events: none;
+  font-size: 16px;
+  line-height: 1;
+}
+.v2 .v2-scene:hover .v2-scene-more,
+.v2 .v2-scene:focus-within .v2-scene-more,
+.v2 .v2-scene-more[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.v2 .v2-scene-more:hover,
+.v2 .v2-scene-more:focus-visible {
+  background: var(--bg3);
+  color: var(--text);
 }
 .v2 .v2-scene:hover {
   background: var(--bg2);
