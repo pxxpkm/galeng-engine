@@ -1,3 +1,16 @@
+# Current follow-up: third audit fixes
+
+2026-10-28：本節隨基於 `907337d` 的第三輪修正一併提交。下方原交接內容保留作歷史記錄，其 HEAD 與「未提交」狀態不代表目前版本。
+
+- Dialogue v2／Classic：場景 GET effect 在 cleanup 後忽略舊請求；回應前比較 scene/project revision 與 dirty。載入期間有新編輯或請求失敗時恢復原場景選擇，保留正文、dirty 與 undo；恢復選擇不會再次載入舊場景覆蓋新編輯。
+- HTTP project persistence：`updateJson()` 把 GET、合併、PUT 放進與 Settings `putJson()` 共用的 lane。私有 PUT 不再巢狀排隊，避免 deadlock。這是同頁協調，不提供跨分頁／跨客戶端的服務端版本鎖。
+- 增加真正掛載 `useEditorState` 的 Chromium 回歸測試，以及 Settings 寫入／房間重讀交錯與 GET 失敗的測試。
+- 新增 Vitest config，保留 Vite 設定並排除 `e2e/**`，瀏覽器測試由 Playwright 執行。
+- 本輪驗證：`pnpm test` 全部524項通過；正式 editor build 通過；2項 Chromium 測試通過。Linux 使用系統 `/usr/bin/chromium` 與 checkout 外的 Playwright launch config，未驗證 Windows GUI。
+- 本輪未修改 Rust。前輪的 K2/K3、Explore beat ID／BGM 還原、單節拍循環等問題仍需另行修復，不應標為全項目已修完。
+
+---
+
 # Handoff
 
 日期：2026-10-27。下一輪先讀這份，再對照 `docs/audits/2026-10-27/REVIEW.zh-Hant.md` 的「後續狀態」。

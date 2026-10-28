@@ -4,7 +4,7 @@
  * Mapping helpers + injectable ExplorePersistApi (FS impl in persistFs.ts for Node tests).
  */
 
-import { getJson, putJson } from "../api";
+import { getJson, putJson, updateJson } from "../api";
 import { ensureBeatIds } from "../beats";
 import { loadExplore } from "./commands";
 import {
@@ -20,6 +20,8 @@ import {
 export interface ExplorePersistApi {
   loadProject(): Promise<unknown>;
   saveProject(body: unknown): Promise<unknown>;
+  /** Serialize the complete read/merge/write with other project writers. */
+  updateProject?(update: (current: unknown) => unknown): Promise<unknown>;
   loadScene(id: string): Promise<unknown>;
   saveScene(id: string, body: unknown): Promise<unknown>;
   /** Optional: list scenario ids for Call picker / Problems catalog. */
@@ -30,6 +32,7 @@ export function createHttpPersistApi(): ExplorePersistApi {
   return {
     loadProject: () => getJson("/api/project"),
     saveProject: (body) => putJson("/api/project", body),
+    updateProject: (update) => updateJson("/api/project", update),
     loadScene: (id) => getJson(`/api/scenes/${id}`),
     saveScene: (id, body) => putJson(`/api/scenes/${id}`, body),
     listSceneIds: async () => {
@@ -270,12 +273,20 @@ export async function saveExploreDoc(
   _rawProject: Record<string, unknown>;
   _rawScene: Record<string, unknown>;
 }> {
-  const projectBody = exploreProjectToApi(
-    doc.project,
-    await projectBaseForSave(api, doc._rawProject),
-  );
+  let projectBody: Record<string, unknown> = {};
+  const mergeProject = (raw: unknown) => {
+    projectBody = exploreProjectToApi(doc.project, asRecord(raw, "project"));
+    return projectBody;
+  };
+  let savedProject: unknown;
+  if (api.updateProject) {
+    savedProject = await api.updateProject(mergeProject);
+  } else {
+    // Local/injected backends retain their first-save ENOENT behavior.
+    projectBody = exploreProjectToApi(doc.project, await projectBaseForSave(api, doc._rawProject));
+    savedProject = await api.saveProject(projectBody);
+  }
   const sceneBody = exploreSceneToApi(doc.scene, doc._rawScene);
-  const savedProject = await api.saveProject(projectBody);
   const savedScene = await api.saveScene(doc.scene.id, sceneBody);
   // Refresh raw from what we wrote (FS api returns body; HTTP may too).
   const _rawProject = asRecord(

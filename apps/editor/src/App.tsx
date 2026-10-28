@@ -160,9 +160,25 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!sceneId) return;
+    if (!sceneId || sceneRef.current?.id === sceneId) return;
+    let cancelled = false;
+    const loadedSceneRev = sceneRev.current;
+    const loadedProjectRev = projectRev.current;
+    const restoreSelection = () => {
+      pendingBeatRef.current = null;
+      setSceneId(sceneRef.current?.id ?? null);
+    };
     getJson<Scene>(`/api/scenes/${sceneId}`)
       .then((s) => {
+        if (cancelled) return;
+        if (
+          sceneRev.current !== loadedSceneRev ||
+          projectRev.current !== loadedProjectRev ||
+          dirtyRef.current || projectDirtyRef.current
+        ) {
+          restoreSelection();
+          throw new Error(LEAVE_CANCELLED_MESSAGE);
+        }
         const idx = clampBeatIndex(pendingBeatRef.current, s.beats.length);
         pendingBeatRef.current = null;
         sceneRev.current += 1;
@@ -176,7 +192,12 @@ export function App() {
         setDirty(false);
         setHistory(emptyHistory());
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        restoreSelection();
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => { cancelled = true; };
   }, [sceneId]);
 
   function commit(next: Scene, nextBeat = beatIndex, nextSelected?: number[]) {

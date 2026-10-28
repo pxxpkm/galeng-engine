@@ -214,9 +214,25 @@ export function useEditorState() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (!sceneId) return;
+    if (!sceneId || sceneRef.current?.id === sceneId) return;
+    let cancelled = false;
+    const loadedSceneRev = sceneRev.current;
+    const loadedProjectRev = projectRev.current;
+    const restoreSelection = () => {
+      pendingBeatRef.current = null;
+      setSceneId(sceneRef.current?.id ?? null);
+    };
     getJson<Scene>(`/api/scenes/${sceneId}`)
       .then((s) => {
+        if (cancelled) return;
+        if (
+          sceneRev.current !== loadedSceneRev ||
+          projectRev.current !== loadedProjectRev ||
+          dirtyRef.current || projectDirtyRef.current
+        ) {
+          restoreSelection();
+          throw new Error(LEAVE_CANCELLED_MESSAGE);
+        }
         const idx = clampBeatIndex(pendingBeatRef.current, s.beats.length);
         pendingBeatRef.current = null;
         sceneRev.current += 1;
@@ -236,7 +252,12 @@ export function useEditorState() {
           clearBackup(globalThis.localStorage, s.id);
         }
       })
-      .catch(fail);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        restoreSelection();
+        fail(err);
+      });
+    return () => { cancelled = true; };
   }, [sceneId, fail]);
 
 
