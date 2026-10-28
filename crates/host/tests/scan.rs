@@ -494,3 +494,61 @@ fn logical_from_asset_file_inside_ok_outside_err() {
     let _ = fs::remove_file(&outside);
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn lists_scene_kind_from_raw_json_for_live_and_archive() {
+    use galeng_schema::SceneKind;
+
+    let tmp = std::env::temp_dir().join(format!("galeng-u02-kind-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::copy(
+        repo_root().join("examples/prologue/galeng.json"),
+        tmp.join("galeng.json"),
+    )
+    .unwrap();
+    let hotspot = r#"[{"id":"desk","name":"Desk","shape":{"type":"rect","x":0,"y":0,"w":10,"h":10}}]"#;
+    fs::write(
+        tmp.join("scenario/room.json"),
+        r#"{"id":"room","sceneKind":"explore"}"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("scenario/talk.json"),
+        format!(r#"{{"id":"talk","sceneKind":"dialogue","hotspots":{hotspot}}}"#),
+    )
+    .unwrap();
+    fs::write(
+        tmp.join("scenario/study.json"),
+        format!(r#"{{"id":"study","hotspots":{hotspot}}}"#),
+    )
+    .unwrap();
+    fs::write(tmp.join("scenario/line.json"), r#"{"id":"line"}"#).unwrap();
+
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let mut kinds: Vec<_> = dir
+        .list_scenes()
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.id, s.scene_kind))
+        .collect();
+    kinds.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        kinds,
+        vec![
+            ("line".to_string(), SceneKind::Dialogue),
+            ("room".to_string(), SceneKind::Explore),
+            ("study".to_string(), SceneKind::Explore),
+            ("talk".to_string(), SceneKind::Dialogue),
+        ]
+    );
+
+    dir.archive_scene("study").unwrap();
+    let hidden = dir.list_archived().unwrap();
+    assert_eq!(hidden.len(), 1);
+    assert_eq!(hidden[0].id, "study");
+    assert_eq!(hidden[0].scene_kind, SceneKind::Explore);
+    let live = dir.list_scenes().unwrap();
+    assert!(live.iter().all(|s| s.id != "study"));
+    let _ = fs::remove_dir_all(&tmp);
+}

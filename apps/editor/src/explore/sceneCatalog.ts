@@ -5,8 +5,9 @@
  */
 
 import { getJson } from "../api";
+import { inferListedSceneKind } from "../editorRoute";
 import type { ExplorePersistApi } from "./persist";
-import type { SceneCatalogEntry, SceneKind } from "./types";
+import type { SceneCatalogEntry } from "./types";
 
 function asRecord(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -77,14 +78,7 @@ export function sceneRawToCatalogEntry(raw: unknown): SceneCatalogEntry | null {
   const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : null;
   if (!id) return null;
 
-  const kindRaw = o.sceneKind;
-  const hasHotspots = Array.isArray(o.hotspots) && (o.hotspots as unknown[]).length > 0;
-  let kind: SceneKind = "dialogue";
-  if (kindRaw === "explore" || (kindRaw !== "dialogue" && hasHotspots)) {
-    kind = "explore";
-  } else if (kindRaw === "dialogue") {
-    kind = "dialogue";
-  }
+  const kind = inferListedSceneKind({ sceneKind: o.sceneKind, hotspots: o.hotspots });
 
   const title = typeof o.title === "string" ? o.title : undefined;
   const entry: SceneCatalogEntry = { id, kind, title };

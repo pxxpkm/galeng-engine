@@ -17,6 +17,9 @@ describe("scriptLibrary", () => {
 
   it("infers explore from hotspots", () => {
     expect(inferSceneKind({ id: "x", beats: [], hotspots: [{ id: "h" }] })).toBe("explore");
+    expect(inferSceneKind({ id: "x", beats: [], sceneKind: "dialogue", hotspots: [{ id: "h" }] })).toBe(
+      "dialogue",
+    );
     expect(inferSceneKind({ id: "x", beats: [], sceneKind: "dialogue" })).toBe("dialogue");
   });
 
@@ -140,6 +143,14 @@ describe("scriptLibrary", () => {
       { archived: true, allIds: new Set(["old"]) },
     );
     expect(archived.loadError).toBeUndefined();
+    expect(archived.sceneKind).toBe("dialogue");
+    const archivedRoom = scriptRowFromMeta(
+      { id: "study", title: "書房", sceneKind: "explore" },
+      { archived: true, allIds: new Set(["study"]) },
+    );
+    expect(archivedRoom.sceneKind).toBe("explore");
+    expect(archivedRoom.loadError).toBeUndefined();
+    expect(archivedRoom.scene).toBeUndefined();
     expect(readableScenesForExport([empty, archived]).ok).toBe(true);
 
     const failed = scriptRowFromLoadFailure({ id: "bad" }, "io");

@@ -1,6 +1,7 @@
 /**
  * Script Manager library helpers — filter/index scenes without schema change.
  */
+import { inferListedSceneKind } from "./editorRoute";
 import { exitHint } from "./route";
 import type { Exit, Scene, SceneMeta } from "./types";
 
@@ -63,10 +64,7 @@ export function exitKindOf(exit: Exit | undefined): ScriptExitKind {
 }
 
 export function inferSceneKind(scene: Scene): "dialogue" | "explore" {
-  if (scene.sceneKind === "explore") return "explore";
-  if (scene.sceneKind === "dialogue") return "dialogue";
-  if (Array.isArray(scene.hotspots) && scene.hotspots.length > 0) return "explore";
-  return "dialogue";
+  return inferListedSceneKind(scene);
 }
 
 function speakersInScene(scene: Scene): string[] {
@@ -225,7 +223,7 @@ export function scriptRowFromMeta(
   return {
     id: meta.id,
     title: meta.title?.trim() || meta.id,
-    sceneKind: "dialogue",
+    sceneKind: meta.sceneKind === "explore" ? "explore" : "dialogue",
     beatCount: -1,
     exitKind,
     hasCall: exitKind === "call",

@@ -154,6 +154,8 @@ export interface SceneMeta {
   id: string;
   title?: string;
   exit?: Exit;
+  /** From the host list. Absent on old fixtures; routing treats that as dialogue. */
+  sceneKind?: "dialogue" | "explore";
 }
 
 export interface Scene {

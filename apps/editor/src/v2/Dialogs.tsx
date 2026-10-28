@@ -60,12 +60,16 @@ function NewSceneDialog({ ed }: { ed: Editor }) {
   const { t } = ed;
   const dialog = ed.sceneDialog;
   const [value, setValue] = useState("");
+  const [displayTitle, setDisplayTitle] = useState("");
+  const [kind, setKind] = useState<"dialogue" | "explore">("dialogue");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (dialog) {
       setValue("");
+      setDisplayTitle("");
+      setKind("dialogue");
       setError(null);
       setBusy(false);
     }
@@ -79,9 +83,11 @@ function NewSceneDialog({ ed }: { ed: Editor }) {
     setError(null);
     try {
       const created =
-        dialog!.kind === "dup" ? await ed.duplicateCurrentScene(value) : await ed.createScene(value);
+        dialog!.kind === "dup"
+          ? await ed.duplicateCurrentScene(value)
+          : await ed.createScene(value, { title: displayTitle, kind });
       ed.closeSceneDialog();
-      dialog!.onCreated(created.id);
+      dialog!.onCreated(created.id, dialog!.kind === "new" ? kind : "dialogue");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -94,6 +100,30 @@ function NewSceneDialog({ ed }: { ed: Editor }) {
       onClose={ed.closeSceneDialog}
     >
       <div className="v2-modal-body">
+        {dialog.kind === "new" ? (
+          <div className="v2-field">
+            <span>{t("editor.newSceneKindLabel")}</span>
+            <label>
+              <input
+                type="radio"
+                name="new-scene-kind"
+                checked={kind === "dialogue"}
+                onChange={() => setKind("dialogue")}
+              />{" "}
+              {t("editor.newSceneKindDialogue")}
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="new-scene-kind"
+                checked={kind === "explore"}
+                onChange={() => setKind("explore")}
+              />{" "}
+              {t("editor.newSceneKindExplore")}
+            </label>
+            <p className="v2-hint">{t("editor.newSceneKindHint")}</p>
+          </div>
+        ) : null}
         <div className="v2-field">
           <label>{t("editor.sceneId")}</label>
           <input
@@ -110,6 +140,22 @@ function NewSceneDialog({ ed }: { ed: Editor }) {
             }}
           />
         </div>
+        {dialog.kind === "new" ? (
+          <div className="v2-field">
+            <label>{t("editor.newSceneDisplayTitle")}</label>
+            <input
+              type="text"
+              value={displayTitle}
+              onChange={(e) => setDisplayTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+          </div>
+        ) : null}
         {error ? <p className="v2-form-error">{error}</p> : null}
       </div>
       <div className="v2-modal-foot">

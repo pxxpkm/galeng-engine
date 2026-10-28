@@ -935,11 +935,24 @@ export function ExploreWorkspace({
               <select
                 data-testid="scene-switch"
                 value={doc.scene.id}
-                onChange={(e) => void doSwitchScene(e.target.value)}
-                title="切換探險場景（請先存檔）"
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const entry = effectiveCatalog.find((s) => s.id === id);
+                  if (entry?.kind === "dialogue") {
+                    if (dirty || exploreDirtyRef.current) {
+                      setSaveStatus("請先存檔再切換場景");
+                      e.target.value = doc.scene.id;
+                      return;
+                    }
+                    navigateToDialogueEditor({ sceneId: id });
+                    return;
+                  }
+                  void doSwitchScene(id);
+                }}
+                title="切換場景（請先存檔）"
               >
                 {effectiveCatalog.map((s) => (
-                  <option key={s.id} value={s.id} disabled={s.kind === "dialogue"}>
+                  <option key={s.id} value={s.id}>
                     {s.title ? `${s.title} (${s.id})` : s.id}
                     {s.kind === "dialogue" ? " ·對話（請用對話編輯器）" : ""}
                   </option>

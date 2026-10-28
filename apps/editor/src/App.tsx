@@ -19,6 +19,12 @@ import {
   type BranchForm,
   type ExitKind,
 } from "./exit";
+import {
+  commitSceneOpen,
+  dialogueStartupDecision,
+  listedKindOf,
+  navigateToExploreEditor,
+} from "./editorRoute";
 import { parseSceneId } from "./goto";
 import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive } from "./scene";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "./saveIssues";
@@ -149,7 +155,20 @@ export function App() {
         setAssets(a);
         setArchived(hidden);
         setAssetRoot(root);
-        setSceneId(p.startScene);
+        const hash = typeof location !== "undefined" ? location.hash : "";
+        const decision = dialogueStartupDecision(hash, s, p.startScene, false);
+        if (decision?.surface === "explore") {
+          try {
+            await flushThenAllowLeave(stillDirty(), save, stillDirty);
+          } catch (err) {
+            if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+            return;
+          }
+          if (cancelled) return;
+          navigateToExploreEditor({ sceneId: decision.sceneId });
+          return;
+        }
+        setSceneId(decision?.sceneId ?? p.startScene);
         setError(null);
       } catch (err) {
         if (!cancelled) setError(t("editor.hostDown"));
@@ -454,16 +473,17 @@ export function App() {
   }
 
   async function selectScene(id: string) {
-    if (id === sceneId) {
-      return;
-    }
-    try {
-      await flushThenAllowLeave(stillDirty(), save, stillDirty);
-      setError(null);
-      setSceneId(id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    const surface = listedKindOf(scenes, id);
+    if (surface === "dialogue" && id === sceneId) return;
+    const opened = await commitSceneOpen({
+      surface,
+      id,
+      flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+      openDialogue: (next) => setSceneId(next),
+      openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+      fail: (err) => setError(err instanceof Error ? err.message : String(err)),
+    });
+    if (opened !== "cancelled") setError(null);
   }
 
   async function dupScene() {
@@ -513,14 +533,17 @@ export function App() {
       if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
         throw new Error(LEAVE_CANCELLED_MESSAGE);
       }
-      setSceneId(
-        nextSceneAfterArchive(
-          scene.id,
-          scene.id,
-          project.startScene,
-          live.map((item) => item.id),
-        ),
+      const nextId = nextSceneAfterArchive(
+        scene.id,
+        scene.id,
+        project.startScene,
+        live.map((item) => item.id),
       );
+      if (listedKindOf(live, nextId) === "explore") {
+        navigateToExploreEditor({ sceneId: nextId });
+      } else {
+        setSceneId(nextId);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -563,7 +586,17 @@ export function App() {
       setScenes(live);
       // Do not replace a different scene the user opened during deletion.
       if (!sceneRef.current) {
-        setSceneId(nextSceneAfterArchive(removed, removed, project.startScene, live.map(item => item.id)));
+        const nextId = nextSceneAfterArchive(
+          removed,
+          removed,
+          project.startScene,
+          live.map((item) => item.id),
+        );
+        if (listedKindOf(live, nextId) === "explore") {
+          navigateToExploreEditor({ sceneId: nextId });
+        } else {
+          setSceneId(nextId);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -670,17 +703,23 @@ export function App() {
   }
 
   async function goToBeat(id: string, beat: number | null) {
-    if (id === sceneId) {
+    const surface = listedKindOf(scenes, id);
+    if (surface === "dialogue" && id === sceneId) {
       pickBeat(beat ?? 0);
       return;
     }
-    try {
-      await flushThenAllowLeave(stillDirty(), save, stillDirty);
-      pendingBeatRef.current = beat ?? 0;
-      setSceneId(id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    const opened = await commitSceneOpen({
+      surface,
+      id,
+      flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+      openDialogue: (next) => {
+        pendingBeatRef.current = beat ?? 0;
+        setSceneId(next);
+      },
+      openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+      fail: (err) => setError(err instanceof Error ? err.message : String(err)),
+    });
+    if (opened !== "cancelled") setError(null);
   }
 
   async function goToSearchHit(hit: SearchHit) {
@@ -1032,6 +1071,13 @@ export function App() {
               onClick={() => void selectScene(s.id)}
             >
               <span className="list-item-title">{s.title ?? s.id}</span>
+              {s.sceneKind ? (
+                <span className="hint">
+                  {s.sceneKind === "explore"
+                    ? t("editor.scriptsKindExplore")
+                    : t("editor.scriptsKindDialogue")}
+                </span>
+              ) : null}
               <SceneExitHint exit={s.exit} ids={routeIds} t={t} />
             </div>
           ))}

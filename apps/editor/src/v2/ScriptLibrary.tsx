@@ -11,7 +11,7 @@ import {
   type ScriptFilters,
   type ScriptRow,
 } from "../scriptLibrary";
-import { navigateToExploreEditor } from "../editorRoute";
+
 import type { Scene } from "../types";
 import type { Editor } from "./useEditorState";
 
@@ -77,14 +77,9 @@ export function ScriptLibrary({ ed }: { ed: Editor }) {
     if (row.archived) {
       await ed.unarchiveScene(row.id);
     }
-    // Explore rooms open in #explore — never load into dialogue Timeline.
-    if (row.sceneKind === "explore") {
-      ed.closeScripts();
-      navigateToExploreEditor({ sceneId: row.id });
-      return;
-    }
-    await ed.selectScene(row.id);
-    ed.closeScripts();
+    // Kind is passed explicitly: unarchive updates the list after this await.
+    const opened = await ed.selectScene(row.id, row.sceneKind);
+    if (opened) ed.closeScripts();
   }
 
   async function exportAll() {

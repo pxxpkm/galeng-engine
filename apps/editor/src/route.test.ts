@@ -216,4 +216,19 @@ describe("overlayCurrent / upsertSceneMeta", () => {
     const saved: Scene = { id: "park_02", title: "小路", beats: [], exit: { type: "next", goto: "home_01" } };
     expect(upsertSceneMeta([park02], saved)[0].exit).toEqual({ type: "next", goto: "home_01" });
   });
+
+  it("keeps inferred scene kind on the list row", () => {
+    const explore: Scene = { id: "study", title: "書房", beats: [], hotspots: [{ id: "desk" }] };
+    expect(upsertSceneMeta([], explore)[0]?.sceneKind).toBe("explore");
+    const explicit: Scene = {
+      id: "talk",
+      beats: [],
+      sceneKind: "dialogue",
+      hotspots: [{ id: "desk" }],
+    };
+    expect(upsertSceneMeta([], explicit)[0]?.sceneKind).toBe("dialogue");
+    const overlaid = overlayCurrent([{ id: "study", title: "old", sceneKind: "dialogue" }], explore);
+    expect(overlaid[0]?.sceneKind).toBe("explore");
+    expect(overlaid[0]?.title).toBe("書房");
+  });
 });

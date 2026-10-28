@@ -42,6 +42,15 @@ describe("sceneCatalog", () => {
     expect(e?.hasReturn).toBeUndefined();
   });
 
+  it("keeps explicit dialogue even when hotspots are present", () => {
+    const e = sceneRawToCatalogEntry({
+      id: "talk",
+      sceneKind: "dialogue",
+      hotspots: [{ id: "a" }],
+    });
+    expect(e?.kind).toBe("dialogue");
+  });
+
   it("loadSceneCatalog from FS lists click-room scenes", async () => {
     // apps/editor cwd when vitest runs from apps/editor
     const root = path.resolve(process.cwd(), "../../examples/click-room");

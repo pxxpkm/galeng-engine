@@ -41,7 +41,15 @@ import { emptyHistory, push, redo, undo } from "../history";
 import { launchPlay } from "../play";
 import { formatPackNote, packWarningsOf, type PackResult } from "../pack";
 import { beatStepAudio } from "../previewState";
-import { dialogueRouteParams } from "../editorRoute";
+import {
+  commitSceneOpen,
+  dialogueRouteParams,
+  dialogueStartupDecision,
+  listedKindOf,
+  navigateToExploreEditor,
+} from "../editorRoute";
+import { createHttpPersistApi, saveExploreDoc } from "../explore/persist";
+import { exploreDocForNewRoom } from "../sceneOpen";
 import { exportAllScenes, exportScene, type ScriptFile } from "../exportScript";
 import { upsertSceneMeta } from "../route";
 import { clampBeatIndex, loadScenesForSearch, type SearchHit } from "../search";
@@ -116,7 +124,7 @@ export function useEditorState() {
   });
   const [sceneDialog, setSceneDialog] = useState<{
     kind: "new" | "dup";
-    onCreated: (id: string) => void;
+    onCreated: (id: string, kind?: "dialogue" | "explore") => void;
   } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
@@ -135,6 +143,8 @@ export function useEditorState() {
   const sceneRev = useRef(0);
   const deletingSceneRef = useRef<string | null>(null);
   const projectRev = useRef(0);
+  const routedAwayRef = useRef(false);
+  const leaveRef = useRef<() => Promise<unknown>>(async () => "clean");
   sceneRef.current = scene;
   projectRef.current = project;
   dirtyRef.current = dirty;
@@ -201,7 +211,21 @@ export function useEditorState() {
         setAssets(a);
         setArchived(hidden);
         setAssetRoot(root);
-        setSceneId(p.startScene);
+        const hash = typeof location !== "undefined" ? location.hash : "";
+        const decision = dialogueStartupDecision(hash, s, p.startScene, true);
+        if (decision?.surface === "explore") {
+          try {
+            await leaveRef.current();
+          } catch (err) {
+            if (!cancelled) fail(err);
+            return;
+          }
+          if (cancelled) return;
+          routedAwayRef.current = true;
+          navigateToExploreEditor({ sceneId: decision.sceneId });
+          return;
+        }
+        setSceneId(decision?.sceneId ?? p.startScene);
       } catch (err) {
         if (!cancelled) {
           pushToast("error", tRef.current("editor.hostDown"));
@@ -425,12 +449,38 @@ export function useEditorState() {
     }
   }, [pushToast]);
 
+  leaveRef.current = () => flushThenAllowLeave(stillDirty(), save, stillDirty);
+
   // Deep link from Explore: #dialogue?scene=id&scripts=1
   const deepLinkDone = useRef(false);
   useEffect(() => {
     if (deepLinkDone.current || scenes.length === 0) return;
+    if (routedAwayRef.current) {
+      deepLinkDone.current = true;
+      return;
+    }
     const params = dialogueRouteParams(typeof location !== "undefined" ? location.hash : "");
     if (!params.sceneId && !params.openScripts) return;
+    if (params.sceneId && listedKindOf(scenes, params.sceneId) === "explore") {
+      deepLinkDone.current = true;
+      const sceneId = params.sceneId;
+      void (async () => {
+        const opened = await commitSceneOpen({
+          surface: "explore",
+          id: sceneId,
+          flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+          openDialogue: (next) => setSceneId(next),
+          openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+          fail,
+        });
+        if (opened === "cancelled") {
+          deepLinkDone.current = false;
+          return;
+        }
+        routedAwayRef.current = true;
+      })();
+      return;
+    }
     deepLinkDone.current = true;
     void (async () => {
       try {
@@ -446,7 +496,7 @@ export function useEditorState() {
         fail(err);
       }
     })();
-  }, [scenes.length, anyDirty, stillDirty, save, fail]);
+  }, [scenes, scenes.length, anyDirty, stillDirty, save, fail]);
 
   const play = useCallback(async () => {
     if (!scene) return;
@@ -542,15 +592,31 @@ export function useEditorState() {
     }
   }, [anyDirty, save, packOut, pushToast, fail]);
 
-  const createScene = useCallback(async (raw: string): Promise<Scene> => {
-    const id = parseSceneId(raw);
-    if (!id) {
-      throw new Error(tRef.current("editor.badSceneId"));
-    }
-    const created = await postJson<Scene>("/api/scenes", { id });
-    setScenes((list) => upsertSceneMeta(list, created));
-    return created;
-  }, []);
+  const createScene = useCallback(
+    async (
+      raw: string,
+      opts?: { title?: string; kind?: "dialogue" | "explore" },
+    ): Promise<Scene> => {
+      const id = parseSceneId(raw);
+      if (!id) {
+        throw new Error(tRef.current("editor.badSceneId"));
+      }
+      const title = opts?.title?.trim() || undefined;
+      if (opts?.kind === "explore") {
+        const rawProject = await getJson<Project>("/api/project");
+        const doc = exploreDocForNewRoom(rawProject, id, title);
+        await saveExploreDoc(createHttpPersistApi(), doc);
+        const loaded = await getJson<Scene>(`/api/scenes/${id}`);
+        const created: Scene = { ...loaded, beats: loaded.beats ?? [] };
+        setScenes((list) => upsertSceneMeta(list, created));
+        return created;
+      }
+      const created = await postJson<Scene>("/api/scenes", title ? { id, title } : { id });
+      setScenes((list) => upsertSceneMeta(list, created));
+      return created;
+    },
+    [],
+  );
 
   const duplicateCurrentScene = useCallback(
     async (raw: string): Promise<Scene> => {
@@ -588,14 +654,17 @@ export function useEditorState() {
     if (sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current)) {
       throw new Error(LEAVE_CANCELLED_MESSAGE);
     }
-    setSceneId(
-      nextSceneAfterArchive(
-        scene.id,
-        scene.id,
-        project.startScene,
-        live.map((item) => item.id),
-      ),
+    const nextId = nextSceneAfterArchive(
+      scene.id,
+      scene.id,
+      project.startScene,
+      live.map((item) => item.id),
     );
+    if (listedKindOf(live, nextId) === "explore") {
+      navigateToExploreEditor({ sceneId: nextId });
+    } else {
+      setSceneId(nextId);
+    }
   }, [scene, project, stillDirty, save]);
 
   const unarchiveScene = useCallback(async (id: string) => {
@@ -645,7 +714,17 @@ export function useEditorState() {
       setScenes(live);
       // Do not replace a different scene the user opened during deletion.
       if (!sceneRef.current) {
-        setSceneId(nextSceneAfterArchive(removed, removed, project.startScene, live.map(item => item.id)));
+        const nextId = nextSceneAfterArchive(
+          removed,
+          removed,
+          project.startScene,
+          live.map((item) => item.id),
+        );
+        if (listedKindOf(live, nextId) === "explore") {
+          navigateToExploreEditor({ sceneId: nextId });
+        } else {
+          setSceneId(nextId);
+        }
       }
     } finally {
       deletingSceneRef.current = null;
@@ -664,32 +743,39 @@ export function useEditorState() {
   }, []);
 
   const selectScene = useCallback(
-    async (id: string) => {
-      if (id === sceneId) return;
-      try {
-        await flushThenAllowLeave(stillDirty(), save, stillDirty);
-        setSceneId(id);
-      } catch (err) {
-        fail(err);
-      }
+    async (id: string, kind?: "dialogue" | "explore"): Promise<boolean> => {
+      const surface = listedKindOf(scenes, id, kind);
+      if (surface === "dialogue" && id === sceneId) return true;
+      const opened = await commitSceneOpen({
+        surface,
+        id,
+        flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+        openDialogue: (next) => setSceneId(next),
+        openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+        fail,
+      });
+      return opened !== "cancelled";
     },
-    [sceneId, stillDirty, save, fail],
+    [scenes, sceneId, stillDirty, save, fail],
   );
 
   const requestNewScene = useCallback(
-    (onCreated?: (id: string) => void) => {
+    (onCreated?: (id: string, kind?: "dialogue" | "explore") => void) => {
       setSceneDialog({
         kind: "new",
         onCreated:
           onCreated ??
-          ((id) => {
+          ((id, kind) => {
             void (async () => {
-              try {
-                await flushThenAllowLeave(stillDirty(), save, stillDirty);
-                setSceneId(id);
-              } catch (err) {
-                fail(err);
-              }
+              const surface = kind === "explore" ? "explore" : "dialogue";
+              await commitSceneOpen({
+                surface,
+                id,
+                flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+                openDialogue: (next) => setSceneId(next),
+                openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+                fail,
+              });
             })();
           }),
       });
@@ -1009,19 +1095,24 @@ export function useEditorState() {
 
   const goToBeat = useCallback(
     async (id: string, beat: number | null) => {
-      if (id === sceneId) {
+      const surface = listedKindOf(scenes, id);
+      if (surface === "dialogue" && id === sceneId) {
         pickBeat(beat ?? 0);
         return;
       }
-      try {
-        await flushThenAllowLeave(stillDirty(), save, stillDirty);
-        pendingBeatRef.current = beat ?? 0;
-        setSceneId(id);
-      } catch (err) {
-        fail(err);
-      }
+      await commitSceneOpen({
+        surface,
+        id,
+        flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
+        openDialogue: (next) => {
+          pendingBeatRef.current = beat ?? 0;
+          setSceneId(next);
+        },
+        openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+        fail,
+      });
     },
-    [sceneId, pickBeat, stillDirty, save, fail],
+    [scenes, sceneId, pickBeat, stillDirty, save, fail],
   );
 
   const goToSearchHit = useCallback(

@@ -181,6 +181,13 @@ function ScenePanel({ ed }: { ed: Editor }) {
             <span className="v2-scene-text">
               <span className="v2-scene-title">{s.title ?? s.id}</span>
               {s.title ? <span className="v2-scene-id">{s.id}</span> : null}
+              {s.sceneKind ? (
+                <span className="v2-scene-kind">
+                  {s.sceneKind === "explore"
+                    ? t("editor.scriptsKindExplore")
+                    : t("editor.scriptsKindDialogue")}
+                </span>
+              ) : null}
               <SceneExitHint exit={s.exit} ids={routeIds} t={t} />
             </span>
             {s.id === ed.project?.startScene ? (

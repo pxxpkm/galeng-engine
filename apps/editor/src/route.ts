@@ -1,4 +1,14 @@
+import { inferListedSceneKind } from "./editorRoute";
 import type { Exit, Scene, SceneMeta } from "./types";
+
+function metaFromScene(scene: Scene): SceneMeta {
+  return {
+    id: scene.id,
+    title: scene.title,
+    exit: scene.exit,
+    sceneKind: inferListedSceneKind(scene),
+  };
+}
 
 export type RouteEdgeKind = "next" | "choice" | "branchThen" | "branchElse";
 
@@ -36,15 +46,11 @@ export function overlayCurrent(metas: SceneMeta[], current: Scene | null): Scene
   if (!current) {
     return metas;
   }
-  return metas.map((meta) =>
-    meta.id === current.id
-      ? { id: current.id, title: current.title, exit: current.exit }
-      : meta,
-  );
+  return metas.map((meta) => (meta.id === current.id ? metaFromScene(current) : meta));
 }
 
 export function upsertSceneMeta(list: SceneMeta[], scene: Scene): SceneMeta[] {
-  const meta: SceneMeta = { id: scene.id, title: scene.title, exit: scene.exit };
+  const meta = metaFromScene(scene);
   const index = list.findIndex((item) => item.id === scene.id);
   if (index < 0) {
     return [...list, meta].sort((a, b) => a.id.localeCompare(b.id));

@@ -71,3 +71,79 @@ export function navigateToExploreEditor(opts?: { sceneId?: string }): void {
   const q = params.toString();
   location.hash = q ? `explore?${q}` : "explore";
 }
+
+export type ListedSceneKind = "dialogue" | "explore";
+
+/**
+ * Same rule as the host list and `sceneRawToCatalogEntry`: explicit explore,
+ * or not explicit dialogue while hotspots are present. Anything else is dialogue.
+ */
+export function inferListedSceneKind(input: {
+  sceneKind?: unknown;
+  hotspots?: unknown;
+}): ListedSceneKind {
+  const kindRaw = input.sceneKind;
+  const hasHotspots = Array.isArray(input.hotspots) && input.hotspots.length > 0;
+  if (kindRaw === "explore" || (kindRaw !== "dialogue" && hasHotspots)) return "explore";
+  return "dialogue";
+}
+
+/** Missing kind stays dialogue so old list fixtures do not bounce shells. */
+export function editorForScene(kind: ListedSceneKind | undefined | null): ListedSceneKind {
+  return kind === "explore" ? "explore" : "dialogue";
+}
+
+export function listedKindOf(
+  scenes: { id: string; sceneKind?: ListedSceneKind | null }[],
+  id: string,
+  explicit?: ListedSceneKind | null,
+): ListedSceneKind {
+  if (explicit === "explore" || explicit === "dialogue") return explicit;
+  return editorForScene(scenes.find((scene) => scene.id === id)?.sceneKind);
+}
+
+export type ShellStartup = { surface: ListedSceneKind; sceneId: string };
+
+/**
+ * One shot from a dialogue hash. An explore hash returns null so the shells
+ * do not bounce. `honorHashScene` is the v2 deep link; classic keeps opening
+ * the start scene unless the hash itself names an explore room.
+ */
+export function dialogueStartupDecision(
+  hash: string,
+  scenes: { id: string; sceneKind?: ListedSceneKind | null }[],
+  startScene: string | undefined,
+  honorHashScene: boolean,
+): ShellStartup | null {
+  if (editorRouteFromHash(hash) === "explore") return null;
+  const hashScene = dialogueRouteParams(hash).sceneId;
+  if (hashScene && listedKindOf(scenes, hashScene) === "explore") {
+    return { surface: "explore", sceneId: hashScene };
+  }
+  const openId = honorHashScene && hashScene ? hashScene : startScene;
+  if (!openId) return null;
+  return { surface: listedKindOf(scenes, openId), sceneId: openId };
+}
+
+/**
+ * Flush first. A throw leaves both shells alone so a refused leave never
+ * changes the hash or the dialogue scene id.
+ */
+export async function commitSceneOpen(opts: {
+  surface: ListedSceneKind;
+  id: string;
+  flush: () => Promise<unknown>;
+  openDialogue: (id: string) => void;
+  openExplore: (id: string) => void;
+  fail?: (err: unknown) => void;
+}): Promise<ListedSceneKind | "cancelled"> {
+  try {
+    await opts.flush();
+  } catch (err) {
+    opts.fail?.(err);
+    return "cancelled";
+  }
+  if (opts.surface === "explore") opts.openExplore(opts.id);
+  else opts.openDialogue(opts.id);
+  return opts.surface;
+}

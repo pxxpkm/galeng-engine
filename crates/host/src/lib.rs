@@ -6,6 +6,7 @@ pub mod sign;
 
 use galeng_schema::{
     validate_project_file, validate_project_str, validate_scene_str, Exit, Project, Scene,
+    SceneKind,
 };
 use serde::Serialize;
 
@@ -38,6 +39,23 @@ pub struct SceneMeta {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit: Option<Exit>,
+    /// Listed kind from raw JSON. Omitted `sceneKind` plus hotspots is explore,
+    /// matching the editor catalog. The validated default would hide that.
+    #[serde(rename = "sceneKind")]
+    pub scene_kind: SceneKind,
+}
+
+fn listed_scene_kind(raw: &serde_json::Value) -> SceneKind {
+    let kind_raw = raw.get("sceneKind").and_then(|v| v.as_str());
+    let has_hotspots = raw
+        .get("hotspots")
+        .and_then(|v| v.as_array())
+        .is_some_and(|spots| !spots.is_empty());
+    if kind_raw == Some("explore") || (kind_raw != Some("dialogue") && has_hotspots) {
+        SceneKind::Explore
+    } else {
+        SceneKind::Dialogue
+    }
 }
 
 #[derive(Serialize)]
@@ -100,11 +118,15 @@ impl ProjectDir {
             if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-            let scene = validate_scene_str(&fs::read_to_string(path)?)?;
+            let text = fs::read_to_string(&path)?;
+            let raw: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| HostError::Msg(e.to_string()))?;
+            let scene = validate_scene_str(&text)?;
             out.push(SceneMeta {
                 id: scene.id,
                 title: scene.title,
                 exit: scene.exit,
+                scene_kind: listed_scene_kind(&raw),
             });
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
