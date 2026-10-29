@@ -36,6 +36,7 @@ import { parseSceneId } from "../goto";
 import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
 import type { LiveIssue } from "../liveIssues";
 import { duplicateScene, sceneIsOpen } from "../scene";
+import { sceneLoadKeptForSceneEdit } from "../sceneLoadGuard";
 import { runArchiveScene, runDeleteScene } from "../sceneRemoval";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "../saveIssues";
 import { emptyHistory, push, redo, undo } from "../history";
@@ -245,7 +246,6 @@ export function useEditorState() {
     if (!sceneId || sceneRef.current?.id === sceneId) return;
     let cancelled = false;
     const loadedSceneRev = sceneRev.current;
-    const loadedProjectRev = projectRev.current;
     const restoreSelection = () => {
       pendingBeatRef.current = null;
       setSceneId(sceneRef.current?.id ?? null);
@@ -254,11 +254,12 @@ export function useEditorState() {
       .then((s) => {
         if (cancelled) return;
         if (
-          sceneRef.current !== null && (
-            sceneRev.current !== loadedSceneRev ||
-            projectRev.current !== loadedProjectRev ||
-            dirtyRef.current || projectDirtyRef.current
-          )
+          sceneLoadKeptForSceneEdit({
+            openSceneId: sceneRef.current?.id ?? null,
+            loadedSceneRev,
+            sceneRev: sceneRev.current,
+            sceneDirty: dirtyRef.current,
+          })
         ) {
           restoreSelection();
           throw new Error(LEAVE_CANCELLED_MESSAGE);

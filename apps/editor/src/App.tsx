@@ -27,6 +27,7 @@ import {
 } from "./editorRoute";
 import { parseSceneId } from "./goto";
 import { canArchiveScene, canDeleteScene, duplicateScene, nextSceneAfterArchive } from "./scene";
+import { sceneLoadKeptForSceneEdit } from "./sceneLoadGuard";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "./saveIssues";
 import { GotoSelect } from "./GotoSelect";
 import {
@@ -184,7 +185,6 @@ export function App() {
     if (!sceneId || sceneRef.current?.id === sceneId) return;
     let cancelled = false;
     const loadedSceneRev = sceneRev.current;
-    const loadedProjectRev = projectRev.current;
     const restoreSelection = () => {
       pendingBeatRef.current = null;
       setSceneId(sceneRef.current?.id ?? null);
@@ -193,11 +193,12 @@ export function App() {
       .then((s) => {
         if (cancelled) return;
         if (
-          sceneRef.current !== null && (
-            sceneRev.current !== loadedSceneRev ||
-            projectRev.current !== loadedProjectRev ||
-            dirtyRef.current || projectDirtyRef.current
-          )
+          sceneLoadKeptForSceneEdit({
+            openSceneId: sceneRef.current?.id ?? null,
+            loadedSceneRev,
+            sceneRev: sceneRev.current,
+            sceneDirty: dirtyRef.current,
+          })
         ) {
           restoreSelection();
           throw new Error(LEAVE_CANCELLED_MESSAGE);
