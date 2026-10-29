@@ -36,7 +36,12 @@ import { parseSceneId } from "../goto";
 import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
 import type { LiveIssue } from "../liveIssues";
 import { duplicateScene, sceneIsOpen } from "../scene";
-import { sceneLoadKeptForSceneEdit } from "../sceneLoadGuard";
+import {
+  departedSceneForLoad,
+  departureTicket,
+  planSceneLoad,
+  sceneDocumentHasLeft,
+} from "../sceneLoadGuard";
 import { runArchiveScene, runDeleteScene } from "../sceneRemoval";
 import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "../saveIssues";
 import { emptyHistory, push, redo, undo } from "../history";
@@ -146,6 +151,9 @@ export function useEditorState() {
   const sceneRev = useRef(0);
   const deletingSceneRef = useRef<string | null>(null);
   const projectRev = useRef(0);
+  const scenesRef = useRef(scenes);
+  const departedSceneRef = useRef<{ from: string; to: string } | null>(null);
+  scenesRef.current = scenes;
   const routedAwayRef = useRef(false);
   const leaveRef = useRef<() => Promise<unknown>>(async () => "clean");
   sceneRef.current = scene;
@@ -246,21 +254,44 @@ export function useEditorState() {
     if (!sceneId || sceneRef.current?.id === sceneId) return;
     let cancelled = false;
     const loadedSceneRev = sceneRev.current;
+    let plan: ReturnType<typeof planSceneLoad> | null = null;
+    const decide = () => {
+      if (plan) return plan;
+      const departedSceneId = departedSceneForLoad(departedSceneRef.current, sceneId);
+      departedSceneRef.current = null;
+      plan = planSceneLoad({
+        openSceneId: sceneRef.current?.id ?? null,
+        loadedSceneRev,
+        sceneRev: sceneRev.current,
+        sceneDirty: dirtyRef.current,
+        liveSceneIds: scenesRef.current.map((row) => row.id),
+        departedSceneId,
+      });
+      return plan;
+    };
     const restoreSelection = () => {
       pendingBeatRef.current = null;
       setSceneId(sceneRef.current?.id ?? null);
     };
+    const abandonLeftScene = () => {
+      sceneRev.current += 1;
+      sceneRef.current = null;
+      dirtyRef.current = false;
+      anyDirtyRef.current = projectDirtyRef.current;
+      pendingBeatRef.current = null;
+      setScene(null);
+      setSceneId(null);
+      setDirty(false);
+      setHistory(emptyHistory());
+      setBeatIndex(0);
+      setSelected([]);
+      setAnchor(0);
+      setBackupOffer(null);
+    };
     getJson<Scene>(`/api/scenes/${sceneId}`)
       .then((s) => {
         if (cancelled) return;
-        if (
-          sceneLoadKeptForSceneEdit({
-            openSceneId: sceneRef.current?.id ?? null,
-            loadedSceneRev,
-            sceneRev: sceneRev.current,
-            sceneDirty: dirtyRef.current,
-          })
-        ) {
+        if (!decide().apply) {
           restoreSelection();
           throw new Error(LEAVE_CANCELLED_MESSAGE);
         }
@@ -285,7 +316,8 @@ export function useEditorState() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        restoreSelection();
+        if (decide().restoreOpen) restoreSelection();
+        else abandonLeftScene();
         fail(err);
       });
     return () => { cancelled = true; };
@@ -412,6 +444,35 @@ export function useEditorState() {
     }
     const sceneForKind = sceneRef.current;
     if (sceneForKind && deletingSceneRef.current === sceneForKind.id) return;
+    if (
+      sceneForKind &&
+      sceneDocumentHasLeft({
+        sceneId: sceneForKind.id,
+        liveSceneIds: scenesRef.current.map((row) => row.id),
+        departedSceneId: departedSceneRef.current?.from ?? null,
+      })
+    ) {
+      // The file already left the live set. Do not PUT it back into scenario/.
+      dirtyRef.current = false;
+      anyDirtyRef.current = projectDirtyRef.current;
+      setDirty(false);
+      if (sceneIdRef.current === sceneForKind.id) {
+        sceneRev.current += 1;
+        sceneRef.current = null;
+        pendingBeatRef.current = null;
+        setScene(null);
+        setHistory(emptyHistory());
+        setBeatIndex(0);
+        setSelected([]);
+        setAnchor(0);
+        setBackupOffer(null);
+        setSceneId(null);
+      }
+      if (accepted) {
+        pushToast("note", tRef.current("editor.saved"));
+      }
+      return;
+    }
     if (sceneForKind && dirtyRef.current) {
       if (sceneForKind.sceneKind === "explore") {
         const ok = window.confirm(tRef.current("editor.warnSaveExploreFromDialogue"));
@@ -689,8 +750,14 @@ export function useEditorState() {
       loadArchived: () => getJson<SceneMeta[]>("/api/archived"),
       setLive: setScenes,
       setArchived,
-      openDialogue: (next) => setSceneId(next),
-      openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
+      openDialogue: (next) => {
+        departedSceneRef.current = departureTicket(id, next);
+        setSceneId(next);
+      },
+      openExplore: (next) => {
+        departedSceneRef.current = departureTicket(id, next);
+        navigateToExploreEditor({ sceneId: next });
+      },
     });
   }, [stillDirty, save]);
 
@@ -806,7 +873,10 @@ export function useEditorState() {
                 surface,
                 id,
                 flush: () => flushThenAllowLeave(stillDirty(), save, stillDirty),
-                openDialogue: (next) => setSceneId(next),
+                openDialogue: (next) => {
+                  departedSceneRef.current = departureTicket(sceneRef.current?.id, next);
+                  setSceneId(next);
+                },
                 openExplore: (next) => navigateToExploreEditor({ sceneId: next }),
                 fail,
               });
@@ -828,6 +898,7 @@ export function useEditorState() {
           fail(new Error(LEAVE_CANCELLED_MESSAGE));
           return;
         }
+        departedSceneRef.current = departureTicket(sceneRef.current?.id, id);
         setSceneId(id);
       },
     });
