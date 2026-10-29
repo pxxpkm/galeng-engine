@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import en from "../../../packages/i18n/locales/en.json";
 import zhHans from "../../../packages/i18n/locales/zh-Hans.json";
 import zhHant from "../../../packages/i18n/locales/zh-Hant.json";
-import { deleteJson, getJson, postJson, putJson } from "./api";
+import { deleteJson, getJson, isSaveConflict, postJson, putJson } from "./api";
 import { addStageChar, adjustIndexAfterMoveBeats, ambDisplay, applyAssetAt, beatSummary, cgDisplay, closeAmb, closeCg, duplicateBeat, encodeAssetDrag, encodeBeatDrag, ensureGalleryItem, fallbackStageCharId, inheritCamera, insertBeatAfter, MAX_STAGE_CHARS, moveBeats, normalizeIndices, parseAssetDrag, parseBeatDragSet, patchSay, patchStageChar, rangeIndices, removeBeatAt, removeBeatsAt, removeStageChar, resetCamera, seDisplay, selectionAfterMoveBeats, setAmb, setAutoAdvance, setBeatLabel, setBg, setBgMs, setBgTrans, setCameraField, setCharOffset, setCharSlideMs, setCg, setFx, setMovie, setSayVoice, setSe, toggleIndex } from "./beats";
 import { emptyHistory, push, redo, undo } from "./history";
 import {
@@ -89,6 +89,7 @@ export function App() {
   const [locale, setLocale] = useState<Locale>("zh-Hant");
   const t = (key: string) => TABLES[locale][key] ?? key;
   const [error, setError] = useState<string | null>(null);
+  const [offerReload, setOfferReload] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
   const [archived, setArchived] = useState<SceneMeta[]>([]);
@@ -358,6 +359,50 @@ export function App() {
     updateBeat((current) => patchSay(current, partial));
   }
 
+  function reportSaveError(err: unknown) {
+    if (isSaveConflict(err)) {
+      setOfferReload(true);
+      setError(t("editor.saveConflict"));
+      return;
+    }
+    setOfferReload(false);
+    setError(err instanceof Error ? err.message : String(err));
+  }
+
+  async function reloadFromDisk() {
+    try {
+      const p = await getJson<Project>("/api/project");
+      projectRev.current += 1;
+      projectRef.current = p;
+      projectDirtyRef.current = false;
+      setProject(p);
+      setProjectDirty(false);
+      const id = sceneIdRef.current;
+      if (id) {
+        const s = await getJson<Scene>(`/api/scenes/${id}`);
+        sceneRev.current += 1;
+        sceneRef.current = s;
+        dirtyRef.current = false;
+        classicDirtyRef.current = false;
+        setScene(s);
+        setDirty(false);
+        setHistory(emptyHistory());
+        setBeatIndex(0);
+        setSelected([0]);
+        setAnchor(0);
+        setScenes((list) => upsertSceneMeta(list, s));
+        clearBackup(globalThis.localStorage, s.id);
+      } else {
+        classicDirtyRef.current = false;
+      }
+      setOfferReload(false);
+      setError(null);
+    } catch (err) {
+      setOfferReload(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function save() {
     const projectNow = projectRef.current;
     const sceneNow = sceneRef.current;
@@ -472,11 +517,13 @@ export function App() {
       });
       if (outcome === "refused") {
         setError(t("editor.playExploreRefused"));
+        setOfferReload(false);
       } else {
         setError(null);
+        setOfferReload(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportSaveError(err);
     }
   }
 
@@ -489,8 +536,9 @@ export function App() {
         play: () => postJson("/api/play", playFromStartBody(project.startScene)),
       });
       setError(null);
+      setOfferReload(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportSaveError(err);
     }
   }
 
@@ -950,7 +998,7 @@ export function App() {
       if (key === "s") {
         event.preventDefault();
         void save().catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : String(err));
+          reportSaveError(err);
         });
         return;
       }
@@ -1043,7 +1091,7 @@ export function App() {
           type="button"
           onClick={() =>
             void save().catch((err: unknown) => {
-              setError(err instanceof Error ? err.message : String(err));
+              reportSaveError(err);
             })
           }
           disabled={!dirty && !projectDirty}
@@ -1150,7 +1198,16 @@ export function App() {
         t={t}
         tone="classic"
       />
-      {error ? <div className="error">{error}</div> : null}
+      {error ? (
+        <div className="error">
+          {error}
+          {offerReload ? (
+            <button type="button" onClick={() => void reloadFromDisk()}>
+              {t("editor.saveConflictReload")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {packNote && packWarnings.length > 0 ? (
         <div className="pack-warnings" role="status">
           {packNote}

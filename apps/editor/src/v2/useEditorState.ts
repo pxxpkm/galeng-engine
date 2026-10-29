@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import en from "../../../../packages/i18n/locales/en.json";
 import zhHans from "../../../../packages/i18n/locales/zh-Hans.json";
 import zhHant from "../../../../packages/i18n/locales/zh-Hant.json";
-import { deleteJson, getJson, postJson, putJson } from "../api";
+import { deleteJson, getJson, isSaveConflict, postJson, putJson } from "../api";
 import {
   adjustIndexAfterMoveBeats,
   applyAssetToMany,
@@ -95,6 +95,7 @@ export interface Toast {
   id: number;
   kind: "error" | "note";
   text: string;
+  action?: { label: string; run: () => void };
 }
 
 export function useEditorState() {
@@ -176,9 +177,9 @@ export function useEditorState() {
   }, []);
 
   const pushToast = useCallback(
-    (kind: Toast["kind"], text: string) => {
+    (kind: Toast["kind"], text: string, action?: Toast["action"]) => {
       const id = ++toastId.current;
-      setToasts((list) => [...list.slice(-3), { id, kind, text }]);
+      setToasts((list) => [...list.slice(-3), { id, kind, text, action }]);
       if (kind === "note") {
         setTimeout(() => dismissToast(id), 6000);
       }
@@ -186,12 +187,52 @@ export function useEditorState() {
     [dismissToast],
   );
 
+  const reloadFromDiskRef = useRef<() => Promise<void>>(async () => {});
+
   const fail = useCallback(
     (err: unknown) => {
+      if (isSaveConflict(err)) {
+        pushToast("error", tRef.current("editor.saveConflict"), {
+          label: tRef.current("editor.saveConflictReload"),
+          run: () => {
+            void reloadFromDiskRef.current();
+          },
+        });
+        return;
+      }
       pushToast("error", err instanceof Error ? err.message : String(err));
     },
     [pushToast],
   );
+
+  const reloadFromDisk = useCallback(async () => {
+    const p = await getJson<Project>("/api/project");
+    projectRev.current += 1;
+    projectRef.current = p;
+    projectDirtyRef.current = false;
+    setProject(p);
+    setProjectDirty(false);
+    const id = sceneIdRef.current;
+    if (id) {
+      const s = await getJson<Scene>(`/api/scenes/${id}`);
+      sceneRev.current += 1;
+      sceneRef.current = s;
+      dirtyRef.current = false;
+      anyDirtyRef.current = false;
+      setScene(s);
+      setDirty(false);
+      setHistory(emptyHistory());
+      setBeatIndex(0);
+      setSelected([0]);
+      setAnchor(0);
+      setScenes((list) => upsertSceneMeta(list, s));
+      clearBackup(globalThis.localStorage, s.id);
+    } else {
+      anyDirtyRef.current = false;
+    }
+    pushToast("note", tRef.current("editor.reloaded"));
+  }, [pushToast]);
+  reloadFromDiskRef.current = reloadFromDisk;
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);

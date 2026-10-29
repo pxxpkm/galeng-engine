@@ -659,3 +659,79 @@ fn occupy_dest_dir(path: &std::path::Path, marker: &[u8]) {
     fs::create_dir(path).unwrap();
     fs::write(path.join("keep.txt"), marker).unwrap();
 }
+
+#[test]
+fn if_match_second_writer_gets_conflict_and_disk_stays_first() {
+    let tmp = std::env::temp_dir().join(format!("galeng-e01b-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::copy(
+        repo_root().join("examples/prologue/galeng.json"),
+        tmp.join("galeng.json"),
+    )
+    .unwrap();
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let seen = dir.project_etag().unwrap();
+    assert!(seen.starts_with('"') && seen.ends_with('"'));
+
+    let mut first = serde_json::to_value(dir.project().unwrap()).unwrap();
+    first["title"] = serde_json::json!("First");
+    let mut second = first.clone();
+    second["title"] = serde_json::json!("Second");
+
+    assert!(dir.save_project_matched(&first, None).is_err());
+    assert_ne!(dir.project().unwrap().title, "First");
+
+    let new_tag = dir.save_project_matched(&first, Some(&seen)).unwrap();
+    assert_ne!(new_tag, seen);
+    assert_eq!(dir.project_etag().unwrap(), new_tag);
+    assert_eq!(dir.project().unwrap().title, "First");
+
+    match dir.save_project_matched(&second, Some(&seen)).unwrap_err() {
+        galeng_host::HostError::Conflict { etag, document } => {
+            assert_eq!(etag, new_tag);
+            assert_eq!(document["title"], "First");
+            let body = galeng_host::conflict_body(&etag, document);
+            assert_eq!(body["error"], "conflict");
+            assert_eq!(body["document"]["title"], "First");
+        }
+        other => panic!("expected conflict, got {other}"),
+    }
+    assert_eq!(dir.project().unwrap().title, "First");
+    let disk: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(tmp.join("galeng.json")).unwrap()).unwrap();
+    assert_eq!(disk["title"], "First");
+
+    dir.save_project_matched(&second, Some(&new_tag)).unwrap();
+    assert_eq!(dir.project().unwrap().title, "Second");
+
+    let created = dir.create_scene("room", Some("Room")).unwrap();
+    let scene_tag = dir.scene_etag("room").unwrap();
+    let mut scene_a = serde_json::to_value(&created).unwrap();
+    scene_a["title"] = serde_json::json!("Room A");
+    let mut scene_b = scene_a.clone();
+    scene_b["title"] = serde_json::json!("Room B");
+    let (_saved, scene_tag_2) = dir
+        .save_scene_matched("room", &scene_a, Some(&scene_tag))
+        .unwrap();
+    match dir
+        .save_scene_matched("room", &scene_b, Some(&scene_tag))
+        .unwrap_err()
+    {
+        galeng_host::HostError::Conflict { document, .. } => {
+            assert_eq!(document["title"], "Room A");
+        }
+        other => panic!("expected scene conflict, got {other}"),
+    }
+    assert_eq!(
+        dir.load_scene("room").unwrap().title.as_deref(),
+        Some("Room A")
+    );
+    dir.save_scene_matched("room", &scene_b, Some(&scene_tag_2))
+        .unwrap();
+    assert_eq!(
+        dir.load_scene("room").unwrap().title.as_deref(),
+        Some("Room B")
+    );
+    let _ = fs::remove_dir_all(&tmp);
+}

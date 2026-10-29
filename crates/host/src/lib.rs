@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 mod atomic_file;
 pub mod icon;
@@ -27,11 +28,49 @@ pub enum HostError {
     MissingAsset(String),
     #[error("pack: {0}")]
     Pack(#[from] galeng_packer::Error),
+    /// PUT `If-Match` was missing or did not match the bytes on disk.
+    #[error("conflict")]
+    Conflict {
+        etag: String,
+        document: serde_json::Value,
+    },
+}
+
+/// Stable strong ETag for the exact bytes of one file. Quoted, per HTTP.
+pub fn content_etag(bytes: &[u8]) -> String {
+    let mut hi = 0xcbf29ce484222325u64;
+    let mut lo = 0x84222325cbf29ce4u64;
+    for byte in bytes {
+        let b = u64::from(*byte);
+        hi ^= b;
+        hi = hi.wrapping_mul(0x100000001b3);
+        lo ^= b;
+        lo = lo.wrapping_mul(0x100000001b3);
+    }
+    format!("\"{hi:016x}{lo:016x}\"")
+}
+
+/// `If-Match` must be the current strong tag. Missing, `*`, and any other tag do not match.
+pub fn if_match_allows(current: &str, if_match: Option<&str>) -> bool {
+    match if_match.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(header) if header != "*" && header == current => true,
+        _ => false,
+    }
+}
+
+pub fn conflict_body(etag: &str, document: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "error": "conflict",
+        "etag": etag,
+        "document": document,
+    })
 }
 
 #[derive(Clone)]
 pub struct ProjectDir {
     pub root: PathBuf,
+    /// One check-then-write at a time inside this process. Not a cross-process lock.
+    write: Arc<Mutex<()>>,
 }
 
 #[derive(Serialize)]
@@ -81,7 +120,69 @@ impl ProjectDir {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, HostError> {
         let root = root.as_ref().canonicalize()?;
         validate_project_file(root.join("galeng.json"))?;
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            write: Arc::new(Mutex::new(())),
+        })
+    }
+
+    fn lock_write(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.write.lock().unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn etag_of(&self, path: &Path) -> Result<String, HostError> {
+        Ok(content_etag(&fs::read(path)?))
+    }
+
+    pub fn project_etag(&self) -> Result<String, HostError> {
+        self.etag_of(&self.root.join("galeng.json"))
+    }
+
+    pub fn scene_etag(&self, id: &str) -> Result<String, HostError> {
+        self.etag_of(&self.scene_path(id)?)
+    }
+
+    /// Write `galeng.json` only when `if_match` is the current file tag.
+    /// Returns the tag of the bytes just written.
+    pub fn save_project_matched(
+        &self,
+        raw: &serde_json::Value,
+        if_match: Option<&str>,
+    ) -> Result<String, HostError> {
+        let _guard = self.lock_write();
+        let path = self.root.join("galeng.json");
+        let current = self.etag_of(&path)?;
+        if !if_match_allows(&current, if_match) {
+            return Err(HostError::Conflict {
+                etag: current,
+                document: self.project_document()?,
+            });
+        }
+        self.save_project(raw)?;
+        self.etag_of(&path)
+    }
+
+    /// Write one scene file only when `if_match` is the current file tag.
+    pub fn save_scene_matched(
+        &self,
+        id: &str,
+        raw: &serde_json::Value,
+        if_match: Option<&str>,
+    ) -> Result<(Scene, String), HostError> {
+        let _guard = self.lock_write();
+        let path = self.scene_path(id)?;
+        let current = self.etag_of(&path)?;
+        if !if_match_allows(&current, if_match) {
+            let scene = self.load_scene(id)?;
+            let document = serde_json::to_value(&scene).map_err(|e| HostError::Msg(e.to_string()))?;
+            return Err(HostError::Conflict {
+                etag: current,
+                document,
+            });
+        }
+        let scene = self.save_scene(id, raw)?;
+        let etag = self.etag_of(&path)?;
+        Ok((scene, etag))
     }
 
     pub fn project(&self) -> Result<Project, HostError> {

@@ -60,6 +60,7 @@ import {
 } from "./InspectorPanels";
 import {
   adoptSavedProjectRaw,
+  exploreSaveStatus,
   loadExploreDoc,
   loadSiblingExploreScenes,
   saveExploreDoc,
@@ -461,7 +462,7 @@ export function ExploreWorkspace({
       setSaveStatus("已儲存");
       void refreshCatalog();
     } catch (e) {
-      setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
+      setSaveStatus(exploreSaveStatus(e));
     }
   }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog, commitWs]);
 

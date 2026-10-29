@@ -4,7 +4,8 @@ use std::process::Command;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
@@ -107,16 +108,28 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn get_project(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    app.project.project_document().map(Json).map_err(map_err)
+async fn get_project(State(app): State<Arc<App>>) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let doc = app.project.project_document().map_err(map_err)?;
+    let etag = app.project.project_etag().map_err(map_err)?;
+    Ok(([(header::ETAG, etag)], Json(doc)))
 }
 
 async fn put_project(
     State(app): State<Arc<App>>,
+    headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    app.project.save_project(&body).map_err(map_err)?;
-    app.project.project_document().map(Json).map_err(map_err)
+) -> Response {
+    let if_match = header_str(&headers, header::IF_MATCH);
+    match app.project.save_project_matched(&body, if_match) {
+        Ok(etag) => match app.project.project_document() {
+            Ok(doc) => (StatusCode::OK, [(header::ETAG, etag)], Json(doc)).into_response(),
+            Err(err) => map_err(err).into_response(),
+        },
+        Err(galeng_host::HostError::Conflict { etag, document }) => {
+            conflict_response(&etag, document)
+        }
+        Err(err) => map_err(err).into_response(),
+    }
 }
 
 async fn list_scenes(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -135,24 +148,26 @@ struct NewScene {
 async fn create_scene(
     State(app): State<Arc<App>>,
     Json(body): Json<NewScene>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let scene = app
         .project
         .create_scene(&body.id, body.title.as_deref())
         .map_err(map_err)?;
-    serde_json::to_value(&scene)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    let etag = app.project.scene_etag(&scene.id).map_err(map_err)?;
+    let value = serde_json::to_value(&scene)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(([(header::ETAG, etag)], Json(value)))
 }
 
 async fn get_scene(
     State(app): State<Arc<App>>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let scene = app.project.load_scene(&id).map_err(map_err)?;
-    serde_json::to_value(&scene)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    let etag = app.project.scene_etag(&id).map_err(map_err)?;
+    let value = serde_json::to_value(&scene)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(([(header::ETAG, etag)], Json(value)))
 }
 
 async fn list_archived(
@@ -175,11 +190,12 @@ async fn archive_scene(
 async fn unarchive_scene(
     State(app): State<Arc<App>>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let scene = app.project.unarchive_scene(&id).map_err(map_err)?;
-    serde_json::to_value(&scene)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    let etag = app.project.scene_etag(&scene.id).map_err(map_err)?;
+    let value = serde_json::to_value(&scene)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(([(header::ETAG, etag)], Json(value)))
 }
 
 async fn delete_scene(
@@ -201,12 +217,20 @@ async fn delete_archived(
 async fn put_scene(
     State(app): State<Arc<App>>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let scene = app.project.save_scene(&id, &body).map_err(map_err)?;
-    serde_json::to_value(&scene)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+) -> Response {
+    let if_match = header_str(&headers, header::IF_MATCH);
+    match app.project.save_scene_matched(&id, &body, if_match) {
+        Ok((scene, etag)) => match serde_json::to_value(&scene) {
+            Ok(doc) => (StatusCode::OK, [(header::ETAG, etag)], Json(doc)).into_response(),
+            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+        },
+        Err(galeng_host::HostError::Conflict { etag, document }) => {
+            conflict_response(&etag, document)
+        }
+        Err(err) => map_err(err).into_response(),
+    }
 }
 
 async fn get_media(
@@ -366,6 +390,19 @@ async fn play(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn conflict_response(etag: &str, document: serde_json::Value) -> Response {
+    (
+        StatusCode::CONFLICT,
+        [(header::ETAG, etag.to_string())],
+        Json(galeng_host::conflict_body(etag, document)),
+    )
+        .into_response()
+}
+
 fn map_err(err: galeng_host::HostError) -> (StatusCode, String) {
     use galeng_host::HostError::*;
     let code = match &err {
@@ -374,6 +411,7 @@ fn map_err(err: galeng_host::HostError) -> (StatusCode, String) {
         Pack(galeng_packer::Error::Strict(_)) => StatusCode::BAD_REQUEST,
         Pack(_) => StatusCode::INTERNAL_SERVER_ERROR,
         Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Conflict { .. } => StatusCode::CONFLICT,
     };
     (code, err.to_string())
 }

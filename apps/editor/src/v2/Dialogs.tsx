@@ -506,6 +506,18 @@ function Toasts({ ed }: { ed: Editor }) {
       {ed.toasts.map((toast) => (
         <div key={toast.id} className={`v2-toast v2-toast-${toast.kind}`}>
           <span className="v2-toast-text">{toast.text}</span>
+          {toast.action ? (
+            <button
+              type="button"
+              className="v2-toast-action"
+              onClick={() => {
+                toast.action?.run();
+                ed.dismissToast(toast.id);
+              }}
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
           <button
             type="button"
             className="v2-toast-close"

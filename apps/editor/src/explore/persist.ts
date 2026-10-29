@@ -4,7 +4,7 @@
  * Mapping helpers + injectable ExplorePersistApi (FS impl in persistFs.ts for Node tests).
  */
 
-import { getJson, putJson, updateJson } from "../api";
+import { getJson, isSaveConflict, putJson, updateJson } from "../api";
 import { ensureBeatIds } from "../beats";
 import { loadExplore } from "./commands";
 import {
@@ -262,6 +262,13 @@ export function adoptSavedProjectRaw(doc: ExploreDoc, saved: object): ExploreDoc
     ...doc,
     _rawProject: { ...(saved as Record<string, unknown>) },
   };
+}
+
+export const EXPLORE_CONFLICT_STATUS = "衝突：磁碟已改，草稿留住。請用「重載」。";
+
+export function exploreSaveStatus(err: unknown): string {
+  if (isSaveConflict(err)) return EXPLORE_CONFLICT_STATUS;
+  return `錯誤：${err instanceof Error ? err.message : String(err)}`;
 }
 
 export async function saveExploreDoc(
