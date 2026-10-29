@@ -522,10 +522,11 @@ impl Runtime {
     fn view_from_explore(&self, eng: &galeng_explore::Engine) -> View {
         let ev = eng.view();
         let phase = map_explore_phase(&ev.phase);
-        let bg = eng.display_bg_asset();
+        // Room plate: scene `bg`, else the nearest caller. Beat `bg` is separate.
+        let room_bg = eng.display_bg_asset();
         let bgm = ev.bgm.clone().or_else(|| self.carried_bgm.clone());
-        View {
-            bg,
+        let mut view = View {
+            bg: room_bg.clone(),
             chars: Vec::new(),
             prev_chars: Vec::new(),
             char_slide_ms: None,
@@ -540,13 +541,45 @@ impl Runtime {
             phase,
             scene_id: ev.scene_id.clone(),
             beat_index: ev.beat_index,
+            // Explore settle still does not hold on fx. Timing stays out of this view.
             fx_wait_ms: None,
             fx_shake_ms: None,
             fx_flash_ms: None,
             movie: None,
             amb: None,
             camera: Camera::default(),
+        };
+        // Active scene, not the saved caller frame. A called dialogue is the
+        // current scene; a hotspot line stays on the explore room.
+        let Some(scene) = self.scenes.get(&ev.scene_id) else {
+            return view;
+        };
+        if scene.scene_kind != SceneKind::Dialogue {
+            return view;
         }
+        let visuals = accumulate_visuals(scene, ev.beat_index);
+        let showing = matches!(
+            ev.phase,
+            galeng_explore::Phase::Saying | galeng_explore::Phase::Dialogue
+        );
+        view.bg = visuals.bg.clone().or(room_bg);
+        view.chars = visuals.chars;
+        view.cg = visuals.cg.clone().flatten();
+        view.amb = visuals.amb.clone().flatten();
+        view.camera = visuals.camera.clone().flatten().unwrap_or_default();
+        if let Some(command) = visuals.bgm.clone() {
+            view.bgm = command;
+            view.bgm_fade_ms = visuals.bgm_fade_ms.unwrap_or(0);
+        }
+        if showing {
+            view.prev_chars = accumulated_prev_chars(scene, ev.beat_index);
+            view.char_slide_ms = char_slide_ms_at(scene, ev.beat_index);
+            if let Some(beat) = scene.beats.get(ev.beat_index) {
+                view.voice = beat.say.as_ref().and_then(|say| say.voice.clone());
+                view.movie = beat.movie.as_ref().map(|movie| movie.asset.clone());
+            }
+        }
+        view
     }
 
     pub fn speaker_display(&self, speaker: &str) -> String {
@@ -721,36 +754,17 @@ impl Runtime {
     }
 
     fn prev_chars(&self) -> Vec<CharOnStage> {
-        if self.phase != Phase::Dialogue || self.beat_index == 0 {
+        if self.phase != Phase::Dialogue {
             return Vec::new();
         }
-        accumulate_visuals(self.current_scene(), self.beat_index - 1).chars
+        accumulated_prev_chars(self.current_scene(), self.beat_index)
     }
 
     fn current_char_slide_ms(&self) -> Option<u32> {
         if self.phase != Phase::Dialogue {
             return None;
         }
-        let curr = self.current_scene().beats.get(self.beat_index)?;
-        let list = curr.chars.as_ref()?;
-        let prev = self.prev_chars();
-        let mut max = 0u32;
-        for ch in list {
-            let Some(ms) = ch.slide_ms.filter(|n| *n > 0) else {
-                continue;
-            };
-            let Some(old) = prev.iter().find(|p| p.id == ch.id) else {
-                continue;
-            };
-            if old.slot != ch.slot || old.x != ch.x || old.y != ch.y {
-                max = max.max(ms);
-            }
-        }
-        if max == 0 {
-            None
-        } else {
-            Some(max)
-        }
+        char_slide_ms_at(self.current_scene(), self.beat_index)
     }
 
     fn current_fx_flash_ms(&self) -> Option<u32> {
@@ -965,6 +979,37 @@ pub fn preview_snapshot(scene: &Scene, beat_index: usize) -> PreviewSnap {
         voice: say.and_then(|s| s.voice.clone()),
         amb: visuals.amb.flatten(),
         camera: visuals.camera.flatten().unwrap_or_default(),
+    }
+}
+
+fn accumulated_prev_chars(scene: &Scene, beat_index: usize) -> Vec<CharOnStage> {
+    if beat_index == 0 {
+        Vec::new()
+    } else {
+        accumulate_visuals(scene, beat_index - 1).chars
+    }
+}
+
+fn char_slide_ms_at(scene: &Scene, beat_index: usize) -> Option<u32> {
+    let curr = scene.beats.get(beat_index)?;
+    let list = curr.chars.as_ref()?;
+    let prev = accumulated_prev_chars(scene, beat_index);
+    let mut max = 0u32;
+    for ch in list {
+        let Some(ms) = ch.slide_ms.filter(|n| *n > 0) else {
+            continue;
+        };
+        let Some(old) = prev.iter().find(|p| p.id == ch.id) else {
+            continue;
+        };
+        if old.slot != ch.slot || old.x != ch.x || old.y != ch.y {
+            max = max.max(ms);
+        }
+    }
+    if max == 0 {
+        None
+    } else {
+        Some(max)
     }
 }
 

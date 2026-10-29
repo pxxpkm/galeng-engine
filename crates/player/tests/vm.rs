@@ -867,6 +867,140 @@ fn k2_top_level_return_is_an_error_not_ended() {
     let _ = fs::remove_dir_all(&tmp);
 }
 
+/// K3: a dialogue called from an explore room uses dialogue accumulation.
+/// A hotspot line in the room keeps the room plate and empty portraits.
+#[test]
+fn k3_called_dialogue_uses_dialogue_view() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k3-call-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "bg": { "asset": "bg/room" },
+      "hotspots": [
+        { "id": "npc", "name": "Npc", "shape": { "type": "rect", "x": 0, "y": 0, "w": 20, "h": 20 }, "defaultVerb": "talk" }
+      ],
+      "interactions": [{
+        "hotspot": "npc",
+        "on": { "verb": "talk" },
+        "rules": [{ "when": [], "do": [{ "type": "call", "scene": "talk" }] }]
+      }]
+    }"#;
+    let talk = r#"{
+      "id": "talk",
+      "sceneKind": "dialogue",
+      "beats": [
+        {
+          "bg": { "asset": "bg/dlg" },
+          "chars": [{ "id": "sora", "face": "smile", "slot": "left" }],
+          "cg": "cg/still",
+          "amb": "amb/room",
+          "bgm": { "asset": "bgm/talk", "fadeMs": 200 },
+          "camera": { "x": 12, "y": -4, "zoom": 110 },
+          "movie": { "asset": "movie/op" },
+          "say": { "speaker": "sora", "text": "line-a", "voice": "voice/sora/1" }
+        },
+        {
+          "chars": [{ "id": "sora", "face": "smile", "slot": "center", "slideMs": 300 }],
+          "cg": null,
+          "say": { "speaker": "sora", "text": "line-b", "voice": "voice/sora/2" }
+        }
+      ],
+      "exit": { "type": "return" }
+    }"#;
+    write_k2_project(&tmp, "room", &[("room", room), ("talk", talk)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.view().scene_id, "room");
+    assert!(rt.view().chars.is_empty());
+    rt.interact_hotspot("npc");
+    let view = rt.view();
+    assert_eq!(view.scene_id, "talk");
+    assert_eq!(view.phase, Phase::Dialogue);
+    assert_eq!(view.say_text.as_deref(), Some("line-a"));
+    assert_eq!(view.say_speaker.as_deref(), Some("sora"));
+    assert_eq!(view.bg.as_deref(), Some("bg/dlg"));
+    assert_eq!(view.chars.len(), 1);
+    assert_eq!(view.chars[0].id, "sora");
+    assert_eq!(view.chars[0].slot, galeng_schema::Slot::Left);
+    assert!(view.prev_chars.is_empty());
+    assert_eq!(view.voice.as_deref(), Some("voice/sora/1"));
+    assert_eq!(view.cg.as_deref(), Some("cg/still"));
+    assert_eq!(view.amb.as_deref(), Some("amb/room"));
+    assert_eq!(view.movie.as_deref(), Some("movie/op"));
+    assert_eq!(view.bgm.as_deref(), Some("bgm/talk"));
+    assert_eq!(view.bgm_fade_ms, 200);
+    assert_eq!(view.camera.x, 12);
+    assert_eq!(view.camera.zoom, 110);
+    rt.click_advance();
+    let view = rt.view();
+    assert_eq!(view.say_text.as_deref(), Some("line-b"));
+    assert_eq!(view.chars[0].slot, galeng_schema::Slot::Center);
+    assert_eq!(view.prev_chars[0].slot, galeng_schema::Slot::Left);
+    assert_eq!(view.char_slide_ms, Some(300));
+    assert_eq!(view.voice.as_deref(), Some("voice/sora/2"));
+    assert_eq!(view.cg, None);
+    assert_eq!(view.amb.as_deref(), Some("amb/room"));
+    assert_eq!(view.movie, None);
+    assert_eq!(view.bg.as_deref(), Some("bg/dlg"));
+    rt.click_advance();
+    let view = rt.view();
+    assert_eq!(view.scene_id, "room");
+    assert_eq!(view.phase, Phase::Explore);
+    assert!(view.chars.is_empty());
+    assert_eq!(view.voice, None);
+    assert_eq!(view.cg, None);
+    assert_eq!(view.amb, None);
+    assert_eq!(view.bg.as_deref(), Some("bg/room"));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn k3_hotspot_say_keeps_room_plate_and_empty_portraits() {
+    let tmp = std::env::temp_dir().join(format!("galeng-k3-hot-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "bg": { "asset": "bg/room" },
+      "beats": [
+        {
+          "chars": [{ "id": "sora", "face": "smile", "slot": "left" }],
+          "cg": "cg/should-not-show",
+          "amb": "amb/should-not-show",
+          "say": { "speaker": "sora", "text": "not a hotspot line", "voice": "voice/nope" }
+        }
+      ],
+      "hotspots": [
+        { "id": "desk", "name": "Desk", "shape": { "type": "rect", "x": 0, "y": 0, "w": 20, "h": 20 }, "defaultVerb": "look" }
+      ],
+      "interactions": [{
+        "hotspot": "desk",
+        "on": { "verb": "look" },
+        "rules": [{ "when": [], "do": [{ "type": "say", "speaker": "n", "text": "a desk" }] }]
+      }]
+    }"#;
+    write_k2_project(&tmp, "room", &[("room", room)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert!(rt.view().chars.is_empty());
+    assert_eq!(rt.view().bg.as_deref(), Some("bg/room"));
+    rt.interact_hotspot("desk");
+    let view = rt.view();
+    assert_eq!(view.scene_id, "room");
+    assert_eq!(view.phase, Phase::Dialogue);
+    assert_eq!(view.say_text.as_deref(), Some("a desk"));
+    assert_eq!(view.say_speaker.as_deref(), Some("n"));
+    assert_eq!(view.bg.as_deref(), Some("bg/room"));
+    assert!(view.chars.is_empty(), "hotspot lines do not take beat portraits");
+    assert!(view.prev_chars.is_empty());
+    assert_eq!(view.char_slide_ms, None);
+    assert_eq!(view.voice, None);
+    assert_eq!(view.cg, None);
+    assert_eq!(view.amb, None);
+    assert_eq!(view.movie, None);
+    assert_eq!(view.camera, galeng_schema::Camera::default());
+    let _ = fs::remove_dir_all(&tmp);
+}
+
 #[test]
 fn k2_call_missing_scene_is_not_ended() {
     let tmp = std::env::temp_dir().join(format!("galeng-k2-miss-{}", std::process::id()));
