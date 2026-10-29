@@ -1,8 +1,8 @@
 //! Zip-compatible `game.pak`: referenced assets + scenario JSON.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use galeng_schema::{validate_project_file, validate_scene_str, Project, Scene};
@@ -282,8 +282,15 @@ pub fn pack_with(
     out: impl AsRef<Path>,
     opts: PackOpts,
 ) -> Result<PackReport, Error> {
-    let project_dir = project_dir.as_ref();
-    let out = out.as_ref();
+    pack_with_inner(project_dir.as_ref(), out.as_ref(), opts, false)
+}
+
+fn pack_with_inner(
+    project_dir: &Path,
+    out: &Path,
+    opts: PackOpts,
+    fail_before_rename: bool,
+) -> Result<PackReport, Error> {
     let project_bytes = fs::read(project_dir.join("galeng.json"))?;
     let project = validate_project_file(project_dir.join("galeng.json"))?;
     let (scenes, scene_files, mut warnings) = load_scenes(project_dir)?;
@@ -347,33 +354,131 @@ pub fn pack_with(
         return Err(Error::Strict(warnings.join("; ")));
     }
 
-    if let Some(parent) = out.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
-        }
-    }
-    let file = File::create(out)?;
-    let mut zip = ZipWriter::new(file);
-    write_entry(&mut zip, "galeng.json", &project_bytes)?;
-    for (name, bytes) in &scene_files {
-        write_entry(&mut zip, name, bytes)?;
-    }
-    for (name, bytes) in &asset_bytes {
-        write_entry(&mut zip, name, bytes)?;
-    }
     let index = PakIndex {
         schema_version: PAK_SCHEMA,
         assets: assets.clone(),
     };
     let index_bytes = serde_json::to_vec_pretty(&index).map_err(|e| Error::Msg(e.to_string()))?;
-    write_entry(&mut zip, "index.json", &index_bytes)?;
-    zip.finish()?;
+
+    // Destination is replaced only after the temp zip is finished. Every
+    // failure, including the test injection, returns Err and deletes the temp.
+    write_pak_atomic(out, fail_before_rename, |zip| {
+        write_entry(zip, "galeng.json", &project_bytes)?;
+        for (name, bytes) in &scene_files {
+            write_entry(zip, name, bytes)?;
+        }
+        for (name, bytes) in &asset_bytes {
+            write_entry(zip, name, bytes)?;
+        }
+        write_entry(zip, "index.json", &index_bytes)?;
+        Ok(())
+    })?;
 
     Ok(PackReport {
         warnings,
         scenes: scenes.into_iter().map(|s| s.id).collect(),
         assets,
     })
+}
+
+/// `<file>` → `<file>.tmp` in the same directory (`game.pak` → `game.pak.tmp`).
+fn pak_temp_path(out: &Path) -> Result<PathBuf, Error> {
+    let name = out
+        .file_name()
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| Error::Msg("pak output has no file name".into()))?;
+    let mut tmp_name = std::ffi::OsString::from(name);
+    tmp_name.push(".tmp");
+    match out.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => Ok(parent.join(tmp_name)),
+        _ => Ok(PathBuf::from(tmp_name)),
+    }
+}
+
+/// Write the zip beside `out`, fsync when the platform allows it, then rename.
+///
+/// The destination is not opened until that rename. A crash mid-write leaves
+/// the previous complete pak. Any error deletes the temp, so a failed pack
+/// does not leave a partial pak at the final path and is not `Ok`.
+///
+/// On Windows, `std::fs::rename` does not replace an existing file.
+/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` does.
+fn write_pak_atomic(
+    out: &Path,
+    fail_before_rename: bool,
+    write_body: impl FnOnce(&mut ZipWriter<File>) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let tmp = pak_temp_path(out)?;
+    let result = (|| -> Result<(), Error> {
+        if let Some(parent) = out.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)?;
+        let mut zip = ZipWriter::new(file);
+        write_body(&mut zip)?;
+        let finished = zip.finish()?;
+        if let Err(err) = finished.sync_all() {
+            if err.kind() != io::ErrorKind::Unsupported {
+                return Err(err.into());
+            }
+        }
+        drop(finished);
+        if fail_before_rename {
+            return Err(Error::Msg("injected pack failure".into()));
+        }
+        rename_over(&tmp, out)?;
+        #[cfg(unix)]
+        if let Some(parent) = out.parent() {
+            if !parent.as_os_str().is_empty() {
+                if let Ok(dir) = File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// `std::fs::rename` replaces on Unix. On Windows it errors when `to` exists,
+/// so use `MoveFileExW` + `MOVEFILE_REPLACE_EXISTING` there.
+#[cfg(windows)]
+fn rename_over(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    fn wide(path: &Path) -> Vec<u16> {
+        path.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    let from_w = wide(from);
+    let to_w = wide(to);
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from_w.as_ptr()),
+            PCWSTR(to_w.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn rename_over(from: &Path, to: &Path) -> io::Result<()> {
+    fs::rename(from, to)
 }
 
 pub struct PakReader {
@@ -547,5 +652,152 @@ mod entry_guard_tests {
     fn size_cap_constant() {
         assert_eq!(MAX_ENTRY_BYTES, 256 * 1024 * 1024);
         assert!(MAX_ENTRY_BYTES < u64::from(u32::MAX));
+    }
+}
+
+#[cfg(test)]
+mod atomic_pak_tests {
+    use super::*;
+
+    const OLD_PAK: &[u8] = b"OLD-PAK-COMPLETE";
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "galeng-e09-{}-{}-{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_project(dir: &Path, extra: &str) {
+        let body = format!(
+            r#"{{
+              "id": "e09",
+              "title": "E09",
+              "schemaVersion": 1,
+              "resolution": {{"width": 1920, "height": 1080}},
+              "startScene": "a",
+              "locale": "en"{extra}
+            }}"#
+        );
+        fs::write(dir.join("galeng.json"), body).unwrap();
+    }
+
+    fn assert_no_temp(out: &Path) {
+        let tmp = pak_temp_path(out).unwrap();
+        assert!(!tmp.exists(), "temp pak left at {}", tmp.display());
+    }
+
+    #[test]
+    fn success_produces_pak_and_removes_temp() {
+        let dir = scratch("ok");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, "");
+        let out = dir.join("out").join("game.pak");
+        let report = pack(&project, &out).expect("pack");
+        assert!(report.scenes.is_empty());
+        assert!(out.is_file(), "success must produce the pak");
+        let reader = PakReader::open(&out).expect("pak opens");
+        assert!(reader.has_entry("galeng.json"));
+        assert!(reader.has_entry("index.json"));
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn success_replaces_previous_pak() {
+        let dir = scratch("replace");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, "");
+        let out = dir.join("game.pak");
+        fs::write(&out, OLD_PAK).unwrap();
+        pack(&project, &out).expect("pack");
+        let bytes = fs::read(&out).unwrap();
+        assert_ne!(bytes, OLD_PAK);
+        assert!(bytes.starts_with(b"PK"), "replaced file is not a zip");
+        assert!(PakReader::open(&out).is_ok());
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn injected_failure_leaves_no_artifact() {
+        let dir = scratch("fail-none");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, "");
+        let out = dir.join("game.pak");
+        let err = pack_with_inner(&project, &out, PackOpts::default(), true).unwrap_err();
+        assert!(err.to_string().contains("injected"), "{err}");
+        assert!(!out.exists(), "failed pack must not leave a pak");
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn injected_failure_does_not_clobber_existing_pak() {
+        let dir = scratch("fail-old");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, "");
+        let out = dir.join("game.pak");
+        fs::write(&out, OLD_PAK).unwrap();
+        let err = pack_with_inner(&project, &out, PackOpts::default(), true).unwrap_err();
+        assert!(err.to_string().contains("injected"), "{err}");
+        assert_eq!(fs::read(&out).unwrap(), OLD_PAK);
+        assert!(
+            PakReader::open(&out).is_err(),
+            "old bytes must not become a readable pak"
+        );
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strict_failure_keeps_old_pak_and_writes_nothing_new() {
+        let dir = scratch("strict");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, r#", "titleBg": "bg/missing""#);
+        let out = dir.join("nested").join("game.pak");
+        fs::create_dir_all(out.parent().unwrap()).unwrap();
+        fs::write(&out, OLD_PAK).unwrap();
+        let err = pack_with(&project, &out, PackOpts { strict: true }).unwrap_err();
+        assert!(err.to_string().contains("strict"), "{err}");
+        assert!(err.to_string().contains("bg/missing"), "{err}");
+        assert_eq!(fs::read(&out).unwrap(), OLD_PAK);
+        assert_no_temp(&out);
+
+        fs::remove_file(&out).unwrap();
+        let err = pack_with(&project, &out, PackOpts { strict: true }).unwrap_err();
+        assert!(err.to_string().contains("strict"), "{err}");
+        assert!(!out.exists(), "strict failure must not create a pak");
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_failure_keeps_directory_marker_and_removes_temp() {
+        let dir = scratch("dir-dest");
+        let project = dir.join("proj");
+        fs::create_dir_all(&project).unwrap();
+        write_project(&project, "");
+        let out = dir.join("game.pak");
+        fs::create_dir(&out).unwrap();
+        fs::write(out.join("keep.txt"), OLD_PAK).unwrap();
+        assert!(pack(&project, &out).is_err());
+        assert_eq!(fs::read(out.join("keep.txt")).unwrap(), OLD_PAK);
+        assert!(out.is_dir());
+        assert_no_temp(&out);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

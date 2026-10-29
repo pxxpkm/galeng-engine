@@ -400,6 +400,27 @@ fn export_game_strict_fails_on_missing_asset() {
     let msg = err.to_string();
     assert!(msg.contains("strict"), "{msg}");
     assert!(!tmp.join("export/game/game.pak").exists());
+    assert!(!tmp.join("export/game/game.pak.tmp").exists());
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn export_strict_failure_keeps_previous_pak() {
+    let tmp = std::env::temp_dir().join(format!(
+        "galeng-e09-export-old-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    copy_dir(&repo_root().join("examples/prologue"), &tmp);
+    fs::remove_file(tmp.join("assets/voice/sora/001.wav")).unwrap();
+    let pak = tmp.join("export/game/game.pak");
+    fs::create_dir_all(pak.parent().unwrap()).unwrap();
+    fs::write(&pak, b"OLD-PAK-COMPLETE").unwrap();
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let err = dir.export_game_opts(None, true, None).unwrap_err();
+    assert!(err.to_string().contains("strict"), "{err}");
+    assert_eq!(fs::read(&pak).unwrap(), b"OLD-PAK-COMPLETE");
+    assert!(!tmp.join("export/game/game.pak.tmp").exists());
     let _ = fs::remove_dir_all(&tmp);
 }
 

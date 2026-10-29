@@ -18,3 +18,11 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+# Same replace-existing rename as host `atomic_file`. `std::fs::rename` errors
+# when the destination pak already exists.
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }

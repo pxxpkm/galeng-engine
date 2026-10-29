@@ -58,6 +58,10 @@ fn pack_prologue_has_referenced_and_skips_unref() {
     assert!(reader.has_entry("assets/bg/park_afternoon.png"));
     assert!(!reader.has_entry("assets/bg/unused.png"));
     assert!(!reader.names().iter().any(|n| n.contains("unused")));
+    assert!(
+        !pak_tmp(&pak_path).exists(),
+        "success must not leave the temp pak"
+    );
 
     let _ = fs::remove_file(&pak_path);
     let _ = fs::remove_dir_all(&project);
@@ -148,8 +152,26 @@ fn missing_asset_warns_and_strict_does_not_write() {
     assert!(msg.contains("strict"), "{msg}");
     assert!(msg.contains("voice/sora/001"), "{msg}");
     assert!(!pak_path.exists(), "strict must not write the pak");
+    assert!(!pak_tmp(&pak_path).exists(), "strict must not leave a temp pak");
 
+    fs::write(&pak_path, b"OLD-PAK-COMPLETE").unwrap();
+    let err = pack_with(&project, &pak_path, PackOpts { strict: true }).unwrap_err();
+    assert!(err.to_string().contains("strict"), "{err}");
+    assert_eq!(
+        fs::read(&pak_path).unwrap(),
+        b"OLD-PAK-COMPLETE",
+        "a failed pack must not clobber the previous pak"
+    );
+    assert!(!pak_tmp(&pak_path).exists());
+
+    let _ = fs::remove_file(&pak_path);
     let _ = fs::remove_dir_all(&project);
+}
+
+fn pak_tmp(pak: &Path) -> std::path::PathBuf {
+    let mut name = std::ffi::OsString::from(pak.file_name().unwrap());
+    name.push(".tmp");
+    pak.with_file_name(name)
 }
 
 fn write_project_font(project: &Path, font: &str) {

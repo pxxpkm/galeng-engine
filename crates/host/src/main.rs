@@ -313,14 +313,17 @@ async fn pack_game(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(PathBuf::from);
-    let report = app
-        .project
-        .export_game_opts(
-            find_player_exe(app.repo.as_deref()).as_deref(),
-            body.strict,
-            out.as_deref(),
-        )
-        .map_err(map_err)?;
+    let project = app.project.clone();
+    let player = find_player_exe(app.repo.as_deref());
+    let strict = body.strict;
+    // Pack reads the project and writes a zip on this thread. `spawn_blocking`
+    // keeps that off the async worker so `/api/health` still answers.
+    let report = tokio::task::spawn_blocking(move || {
+        project.export_game_opts(player.as_deref(), strict, out.as_deref())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(map_err)?;
     serde_json::to_value(&report)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
