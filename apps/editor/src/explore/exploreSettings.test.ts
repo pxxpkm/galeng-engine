@@ -4,6 +4,8 @@ import {
   editorT,
   loadExploreProjectBundle,
   saveExploreProject,
+  SETTINGS_DISCARD_CONFIRM,
+  settingsCloseAllowed,
   settleSettingsSave,
 } from "./ExploreSettings";
 
@@ -42,6 +44,27 @@ describe("loadExploreProjectBundle / saveExploreProject", () => {
     const saved = await saveExploreProject(base as never, project as never, { updateJson: updateJson as never });
     expect(saved).toEqual({ ...latest, titleBgm: "bgm/new" });
     expect(updateJson).toHaveBeenCalledWith("/api/project", expect.any(Function));
+  });
+});
+
+describe("settingsCloseAllowed", () => {
+  it("closes a clean dialog without asking", () => {
+    const confirmFn = vi.fn(() => false);
+    expect(settingsCloseAllowed(false, confirmFn)).toBe(true);
+    expect(confirmFn).not.toHaveBeenCalled();
+  });
+
+  it("uses the same discard prompt as OK when settings are dirty", () => {
+    const confirmFn = vi.fn(() => true);
+    expect(settingsCloseAllowed(true, confirmFn)).toBe(true);
+    expect(confirmFn).toHaveBeenCalledTimes(1);
+    expect(confirmFn).toHaveBeenCalledWith(SETTINGS_DISCARD_CONFIRM);
+    expect(SETTINGS_DISCARD_CONFIRM).toBe("設定尚未儲存，仍要關閉？");
+  });
+
+  it("stays open when discarding dirty settings is refused", () => {
+    const confirmFn = vi.fn(() => false);
+    expect(settingsCloseAllowed(true, confirmFn)).toBe(false);
   });
 });
 

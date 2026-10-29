@@ -82,6 +82,18 @@ export function settleSettingsSave<T>(input: {
   return { project: merged.value, clearDirty: merged.clearDirty };
 }
 
+export const SETTINGS_DISCARD_CONFIRM = "設定尚未儲存，仍要關閉？";
+
+/** Escape, the backdrop, the close button, and OK share this. A clean dialog closes without asking. */
+export function settingsCloseAllowed(
+  dirty: boolean,
+  confirmFn: (message: string) => boolean = (message) =>
+    typeof window !== "undefined" ? window.confirm(message) : false,
+): boolean {
+  if (!dirty) return true;
+  return confirmFn(SETTINGS_DISCARD_CONFIRM);
+}
+
 type Page = "main" | "fonts" | "audio";
 
 /**
@@ -112,7 +124,9 @@ export function ExploreSettingsDialog({
   const sessionRev = useRef(0);
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  const dirtyRef = useRef(dirty);
   onCloseRef.current = onClose;
+  dirtyRef.current = dirty;
 
   useEffect(() => {
     sessionRev.current += 1;
@@ -147,12 +161,18 @@ export function ExploreSettingsDialog({
     };
   }, [open]);
 
+  const requestClose = useCallback(() => {
+    if (!settingsCloseAllowed(dirtyRef.current)) return;
+    setPage("main");
+    onCloseRef.current();
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
     if (!panel) return;
-    return bindModalElement(panel, () => onCloseRef.current());
-  }, [open]);
+    return bindModalElement(panel, () => requestClose());
+  }, [open, requestClose]);
 
   const patchProject = useCallback((next: Project) => {
     settingsRev.current += 1;
@@ -232,7 +252,7 @@ export function ExploreSettingsDialog({
       <div
         className="v2-overlay"
         onMouseDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
+          if (event.target === event.currentTarget) requestClose();
         }}
       >
         <div
@@ -247,7 +267,7 @@ export function ExploreSettingsDialog({
             <button
               type="button"
               className="v2-btn v2-btn-icon"
-              onClick={onClose}
+              onClick={requestClose}
               title="Esc"
               data-testid="explore-settings-close"
             >
@@ -316,14 +336,8 @@ export function ExploreSettingsDialog({
             <button
               type="button"
               className="v2-btn v2-btn-primary"
-              onClick={() => {
-                if (dirty) {
-                  const ok = window.confirm("設定尚未儲存，仍要關閉？");
-                  if (!ok) return;
-                }
-                setPage("main");
-                onClose();
-              }}
+              data-testid="explore-settings-ok"
+              onClick={requestClose}
             >
               {t("common.ok")}
             </button>
