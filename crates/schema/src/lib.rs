@@ -12,7 +12,7 @@ pub use local::{
 };
 pub use types::*;
 pub use validate::{
-    parse_json_utf8, repo_root, try_repo_root, validate_project_file, validate_project_str,
-    validate_project_value,
-    validate_scene_file, validate_scene_str, validate_scene_value, Error,
+    parse_json_utf8, project_body_to_store, project_json_to_store, repo_root, try_repo_root,
+    validate_project_file, validate_project_str, validate_project_value, validate_scene_file,
+    validate_scene_str, validate_scene_value, Error, KNOWN_PROJECT_KEYS,
 };

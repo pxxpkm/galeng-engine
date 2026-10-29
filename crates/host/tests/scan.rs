@@ -175,6 +175,36 @@ fn writes_script_export_utf8_without_bom() {
 }
 
 #[test]
+fn save_project_keeps_unknown_keys_and_does_not_restore_omitted_fields() {
+    let tmp = std::env::temp_dir().join(format!("galeng-host-unknown-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("scenario")).unwrap();
+    fs::copy(
+        repo_root().join("examples/prologue/galeng.json"),
+        tmp.join("galeng.json"),
+    )
+    .unwrap();
+    let dir = ProjectDir::open(&tmp).unwrap();
+    let mut value = serde_json::to_value(dir.project().unwrap()).unwrap();
+    assert!(value.get("titleBgm").is_some());
+    value.as_object_mut().unwrap().remove("titleBgm");
+    value["title"] = serde_json::json!("Kept unknown");
+    value["pluginNote"] = serde_json::json!({ "keep": true });
+    let saved = dir.save_project(&value).unwrap();
+    assert_eq!(saved.title, "Kept unknown");
+    assert!(saved.title_bgm.is_none());
+    let disk: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(tmp.join("galeng.json")).unwrap()).unwrap();
+    assert_eq!(disk["pluginNote"]["keep"], true);
+    assert!(disk.get("titleBgm").is_none());
+    assert_eq!(disk["title"], "Kept unknown");
+    let again = ProjectDir::open(&tmp).unwrap();
+    assert!(again.project().unwrap().title_bgm.is_none());
+    assert_eq!(again.project_document().unwrap()["pluginNote"]["keep"], true);
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn save_project_keeps_title_bgm_and_updates_cg() {
     let tmp = std::env::temp_dir().join(format!("galeng-part45-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);

@@ -6,8 +6,8 @@ pub mod icon;
 pub mod sign;
 
 use galeng_schema::{
-    validate_project_file, validate_project_str, validate_scene_str, Exit, Project, Scene,
-    SceneKind,
+    parse_json_utf8, project_body_to_store, project_json_to_store, validate_project_file,
+    validate_scene_str, Exit, Project, Scene, SceneKind,
 };
 use serde::Serialize;
 
@@ -88,13 +88,20 @@ impl ProjectDir {
         Ok(validate_project_file(self.root.join("galeng.json"))?)
     }
 
+    /// Canonical `galeng.json`: known fields in struct order, plus unknown keys
+    /// already stored on disk.
+    pub fn project_document(&self) -> Result<serde_json::Value, HostError> {
+        let text = fs::read_to_string(self.root.join("galeng.json"))?;
+        let raw = parse_json_utf8(&text)?;
+        let (_project, stored) = project_json_to_store(&raw)?;
+        Ok(stored)
+    }
+
     pub fn save_project(&self, raw: &serde_json::Value) -> Result<Project, HostError> {
-        let project = validate_project_str(
-            &serde_json::to_string(raw).map_err(|e| HostError::Msg(e.to_string()))?,
-        )?;
+        // Known fields come from this body only. Unknown keys in the body are
+        // written back; keys the body omits are not filled from the old file.
+        let (project, body) = project_body_to_store(raw)?;
         let path = self.root.join("galeng.json");
-        let body =
-            serde_json::to_string_pretty(&project).map_err(|e| HostError::Msg(e.to_string()))?;
         // One file. Saving the project and a scene is not one transaction.
         atomic_file::replace_file(&path, body.as_bytes())?;
         Ok(project)

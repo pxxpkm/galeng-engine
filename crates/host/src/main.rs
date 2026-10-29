@@ -108,20 +108,15 @@ async fn health() -> &'static str {
 }
 
 async fn get_project(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let p = app.project.project().map_err(map_err)?;
-    serde_json::to_value(&p)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    app.project.project_document().map(Json).map_err(map_err)
 }
 
 async fn put_project(
     State(app): State<Arc<App>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let p = app.project.save_project(&body).map_err(map_err)?;
-    serde_json::to_value(&p)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    app.project.save_project(&body).map_err(map_err)?;
+    app.project.project_document().map(Json).map_err(map_err)
 }
 
 async fn list_scenes(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {

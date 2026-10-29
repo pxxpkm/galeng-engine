@@ -89,8 +89,123 @@ fn apply_schema<T: DeserializeOwned>(validator: &Validator, value: &Value) -> Re
     Ok(serde_json::from_value(value.clone())?)
 }
 
+/// Top-level keys in `galeng.project.schema.json` `properties`.
+/// Unknown keys are kept on disk by the host; validation sees only these.
+pub const KNOWN_PROJECT_KEYS: &[&str] = &[
+    "id",
+    "title",
+    "schemaVersion",
+    "resolution",
+    "startScene",
+    "locale",
+    "skipTitle",
+    "titleBgm",
+    "titleBg",
+    "titleMovie",
+    "font",
+    "fonts",
+    "msgBox",
+    "icon",
+    "hideGameTitle",
+    "titleButtons",
+    "pauseButtons",
+    "uiLanguages",
+    "characters",
+    "cg",
+    "musicGallery",
+    "verbs",
+    "items",
+    "switches",
+    "fallback",
+    "effectLibrary",
+    "transitionDefaults",
+];
+
+fn is_known_project_key(key: &str) -> bool {
+    KNOWN_PROJECT_KEYS.contains(&key)
+}
+
+/// Schema check ignores top-level keys it does not define.
+/// Callers that rewrite the file must copy those keys back themselves.
+fn known_project_value(value: &Value) -> Value {
+    let Some(obj) = value.as_object() else {
+        return value.clone();
+    };
+    let mut known = serde_json::Map::new();
+    for (key, item) in obj {
+        if is_known_project_key(key) {
+            known.insert(key.clone(), item.clone());
+        }
+    }
+    Value::Object(known)
+}
+
 pub fn validate_project_value(value: &Value) -> Result<Project, Error> {
-    apply_schema(project_validator(), value)
+    apply_schema(project_validator(), &known_project_value(value))
+}
+
+/// Pretty JSON to write. Known fields keep `Project`'s field order.
+/// Unknown keys from this body are appended. Omitted known keys stay omitted.
+pub fn project_body_to_store(raw: &Value) -> Result<(Project, String), Error> {
+    let project = validate_project_value(raw)?;
+    let body = serde_json::to_string_pretty(&project)?;
+    let Some(raw_obj) = raw.as_object() else {
+        return Ok((project, body));
+    };
+    let mut unknown = serde_json::Map::new();
+    for (key, item) in raw_obj {
+        if !is_known_project_key(key) {
+            unknown.insert(key.clone(), item.clone());
+        }
+    }
+    Ok((project, append_unknown_object_keys(body, &unknown)?))
+}
+
+/// Same document as [`project_body_to_store`], parsed for callers that want a value.
+pub fn project_json_to_store(raw: &Value) -> Result<(Project, Value), Error> {
+    let (project, body) = project_body_to_store(raw)?;
+    Ok((project, serde_json::from_str(&body)?))
+}
+
+fn append_unknown_object_keys(
+    body: String,
+    unknown: &serde_json::Map<String, Value>,
+) -> Result<String, Error> {
+    if unknown.is_empty() {
+        return Ok(body);
+    }
+    let trimmed = body.trim_end();
+    if !trimmed.ends_with('}') {
+        return Err(Error::Schema(
+            "project document is not a JSON object".into(),
+        ));
+    }
+    let head = &trimmed[..trimmed.len() - 1];
+    let mut out = head.trim_end().to_string();
+    if !out.ends_with('{') {
+        out.push(',');
+    }
+    out.push('\n');
+    for (index, (key, value)) in unknown.iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let rendered = serde_json::to_string_pretty(value)?;
+        let mut lines = rendered.lines();
+        let first = lines.next().unwrap_or("");
+        out.push_str("  ");
+        out.push_str(&serde_json::to_string(key)?);
+        out.push_str(": ");
+        out.push_str(first);
+        for line in lines {
+            out.push('\n');
+            out.push_str("  ");
+            out.push_str(line);
+        }
+    }
+    out.push('\n');
+    out.push('}');
+    Ok(out)
 }
 
 pub fn validate_scene_value(value: &Value) -> Result<Scene, Error> {

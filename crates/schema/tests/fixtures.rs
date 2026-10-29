@@ -1,9 +1,10 @@
 use std::fs;
 
 use galeng_schema::{
-    repo_root, validate_project_file, validate_project_str, validate_project_value,
-    validate_scene_file, validate_scene_str, validate_scene_value, Exit, ExploreAction,
-    HotspotShape, InteractionOn, ItemOn, ItemUseMode, Pred, SceneKind, SetValue,
+    project_body_to_store, repo_root, validate_project_file, validate_project_str,
+    validate_project_value, validate_scene_file, validate_scene_str, validate_scene_value, Exit,
+    ExploreAction, HotspotShape, InteractionOn, ItemOn, ItemUseMode, Pred, SceneKind, SetValue,
+    KNOWN_PROJECT_KEYS,
 };
 
 #[test]
@@ -125,7 +126,12 @@ fn title_buttons_optional() {
     assert_eq!(btn.image.as_deref(), Some("ui/title/start"));
     assert_eq!(btn.label.as_deref(), Some(""));
     assert_eq!(btn.x, Some(80));
-    assert!(project.title_buttons.as_ref().unwrap().continue_game.is_none());
+    assert!(project
+        .title_buttons
+        .as_ref()
+        .unwrap()
+        .continue_game
+        .is_none());
 }
 
 #[test]
@@ -492,9 +498,7 @@ fn explore_actions_and_exit_roundtrip() {
         }"##,
     );
     value_roundtrip_scene(r#"{"id":"x","beats":[],"exit":{"type":"return"}}"#);
-    value_roundtrip_scene(
-        r#"{"id":"x","beats":[],"exit":{"type":"return","trans":"fade_black"}}"#,
-    );
+    value_roundtrip_scene(r#"{"id":"x","beats":[],"exit":{"type":"return","trans":"fade_black"}}"#);
     let returned = validate_scene_str(r#"{"id":"x","exit":{"type":"return"}}"#).unwrap();
     assert!(matches!(returned.exit, Some(Exit::Return { trans: None })));
     assert_eq!(returned.scene_kind, SceneKind::Dialogue);
@@ -675,3 +679,57 @@ fn illegal_beat_id_rejected() {
     assert!(validate_scene_str(text).is_err());
 }
 
+#[test]
+fn known_project_keys_match_schema_properties() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../packages/schema/schema/galeng.project.schema.json"
+    ))
+    .unwrap();
+    let mut from_schema: Vec<&str> = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|key| key.as_str())
+        .collect();
+    let mut known = KNOWN_PROJECT_KEYS.to_vec();
+    from_schema.sort_unstable();
+    known.sort_unstable();
+    assert_eq!(from_schema, known);
+}
+
+#[test]
+fn project_store_keeps_unknown_keys_and_omitted_known_fields() {
+    let raw = serde_json::json!({
+        "id": "x",
+        "title": "x",
+        "schemaVersion": 1,
+        "resolution": { "width": 1920, "height": 1080 },
+        "startScene": "a",
+        "locale": "en",
+        "titleBgm": "bgm/park",
+        "pluginNote": { "keep": true }
+    });
+    let (project, body) = project_body_to_store(&raw).unwrap();
+    assert_eq!(project.title_bgm.as_deref(), Some("bgm/park"));
+    let stored: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(stored["pluginNote"]["keep"], true);
+    assert_eq!(stored["titleBgm"], "bgm/park");
+    assert!(body.contains("\"title\": \"x\""));
+    assert!(body.contains("\"pluginNote\""));
+    assert!(validate_project_value(&stored).is_ok());
+    let typed = serde_json::to_value(&project).unwrap();
+    let (again, typed_body) = project_body_to_store(&typed).unwrap();
+    assert_eq!(typed_body, serde_json::to_string_pretty(&again).unwrap());
+
+    let mut dropped = raw.clone();
+    dropped.as_object_mut().unwrap().remove("titleBgm");
+    let (project, body) = project_body_to_store(&dropped).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(project.title_bgm.is_none());
+    assert!(stored.get("titleBgm").is_none());
+    assert_eq!(stored["pluginNote"]["keep"], true);
+
+    let mut bad = dropped.clone();
+    bad["schemaVersion"] = serde_json::json!(9);
+    assert!(project_body_to_store(&bad).is_err());
+}
