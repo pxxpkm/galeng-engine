@@ -16,6 +16,8 @@ const scenes: Record<string, Scene> = {
   park_02: park02 as Scene,
 };
 
+// E03 case 1. Same rows as fixtures/e03/inherit.json, which the player walks.
+// Compared fields: bg, chars, bgm, cg, and say text. Not fades or audio timing.
 describe("previewState", () => {
   it("matches the shared prologue fixture", () => {
     const fixture = JSON.parse(
@@ -43,6 +45,21 @@ describe("previewState", () => {
     expect(last.bg).toBe("bg/park_afternoon");
     expect(last.cg).toBe("cg/op_still");
     expect(last.chars[0]?.face).toBe("blush");
+  });
+
+  it("matches the player on inherit and explicit clear", () => {
+    const fixture = JSON.parse(readFileSync(join(repoRoot, "fixtures/e03/inherit.json"), "utf8")) as {
+      scene: Scene;
+      rows: { bg: string | null; chars: PreviewSnap["chars"]; bgm: string | null; cg: string | null; say: string }[];
+    };
+    fixture.rows.forEach((row, index) => {
+      const snap = previewState(fixture.scene.id, fixture.scene.beats, index);
+      expect(snap.bg).toBe(row.bg);
+      expect(snap.chars).toEqual(row.chars);
+      expect(snap.bgm).toBe(row.bgm);
+      expect(snap.cg).toBe(row.cg);
+      expect(snap.sayText).toBe(row.say);
+    });
   });
 
   it("inherits camera in the scene and resets on null", () => {

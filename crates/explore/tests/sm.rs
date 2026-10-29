@@ -20,6 +20,50 @@ fn load_click_room() -> Engine {
     .expect("load click-room")
 }
 
+/// E03 case 3: an explore dialogue resume follows the beat id, not a stale index.
+#[test]
+fn e03_explore_beat_id_not_index() {
+    let project = r#"{
+      "id": "e03",
+      "title": "E03",
+      "schemaVersion": 2,
+      "resolution": { "width": 1920, "height": 1080 },
+      "startScene": "talk",
+      "locale": "zh-Hant",
+      "skipTitle": true
+    }"#;
+    let original = r#"{
+      "id": "talk",
+      "sceneKind": "dialogue",
+      "beats": [
+        { "id": "b0000000000000001", "say": { "speaker": "甲", "text": "一" } },
+        { "id": "b0000000000000002", "say": { "speaker": "甲", "text": "二" } }
+      ]
+    }"#;
+    let mut eng = Engine::from_json(project, &[("talk", original)]).unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("一"));
+    eng.dismiss_say().unwrap();
+    assert_eq!(eng.view().say_text.as_deref(), Some("二"));
+    let save = eng.try_to_save().unwrap();
+    assert_eq!(save.beat_id.as_deref(), Some("b0000000000000002"));
+    assert_eq!(save.beat_index, 1);
+
+    let inserted = r#"{
+      "id": "talk",
+      "sceneKind": "dialogue",
+      "beats": [
+        { "id": "b0000000000000009", "say": { "speaker": "甲", "text": "新" } },
+        { "id": "b0000000000000001", "say": { "speaker": "甲", "text": "一" } },
+        { "id": "b0000000000000002", "say": { "speaker": "甲", "text": "二" } }
+      ]
+    }"#;
+    let mut resumed = Engine::from_json(project, &[("talk", inserted)]).unwrap();
+    assert_eq!(resumed.view().say_text.as_deref(), Some("新"));
+    resumed.load_save(&save).unwrap();
+    assert_eq!(resumed.view().say_text.as_deref(), Some("二"));
+    assert_eq!(resumed.view().beat_index, 2);
+}
+
 #[test]
 fn hit_test_rect_and_topmost_polygon() {
     let eng = load_click_room();

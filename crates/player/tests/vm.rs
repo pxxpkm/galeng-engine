@@ -1001,6 +1001,116 @@ fn k3_hotspot_say_keeps_room_plate_and_empty_portraits() {
     let _ = fs::remove_dir_all(&tmp);
 }
 
+/// E03 case table. No shared executor. The JS preview reads the same inherit rows
+/// and compares only bg, chars, bgm, cg, and the say text. Fades and audio timing are out.
+/// 1. inherit + explicit clear — `e03_inherit_matches_preview_rows`
+/// 2. dialogue `resolve_beat` — `e03_resolve_beat_keeps_the_line_after_an_insert`
+/// 3. explore beat id (R4) — `crates/explore/tests/sm.rs` `e03_explore_beat_id_not_index`
+/// 4. dialogue `goto_scene` into explore (K2) — `e03_goto_scene_enters_the_named_room`
+/// 5. K3 views — `k3_called_dialogue_uses_dialogue_view` and `k3_hotspot_say_keeps_room_plate_and_empty_portraits`
+#[test]
+fn e03_inherit_matches_preview_rows() {
+    let fixture: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(repo_root().join("fixtures/e03/inherit.json")).unwrap(),
+    )
+    .unwrap();
+    let tmp = std::env::temp_dir().join(format!("galeng-e03-inherit-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let scene = serde_json::to_string(&fixture["scene"]).unwrap();
+    write_k2_project(&tmp, "inherit", &[("inherit", &scene)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    let rows = fixture["rows"].as_array().unwrap();
+    for (i, row) in rows.iter().enumerate() {
+        let view = rt.view();
+        assert_eq!(view.bg.as_deref(), row["bg"].as_str(), "beat {i} bg");
+        assert_eq!(view.bgm.as_deref(), row["bgm"].as_str(), "beat {i} bgm");
+        assert_eq!(view.cg.as_deref(), row["cg"].as_str(), "beat {i} cg");
+        assert_eq!(
+            view.say_text.as_deref(),
+            row["say"].as_str(),
+            "beat {i} say"
+        );
+        let expect_chars = row["chars"].as_array().unwrap();
+        assert_eq!(view.chars.len(), expect_chars.len(), "beat {i} char count");
+        for (ch, expect) in view.chars.iter().zip(expect_chars) {
+            assert_eq!(ch.id, expect["id"].as_str().unwrap());
+            assert_eq!(ch.face, expect["face"].as_str().unwrap());
+            let slot = match ch.slot {
+                galeng_schema::Slot::Left => "left",
+                galeng_schema::Slot::Center => "center",
+                galeng_schema::Slot::Right => "right",
+            };
+            assert_eq!(slot, expect["slot"].as_str().unwrap());
+        }
+        if i + 1 < rows.len() {
+            rt.click_advance();
+        }
+    }
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn e03_resolve_beat_keeps_the_line_after_an_insert() {
+    let tmp = std::env::temp_dir().join(format!("galeng-e03-beat-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let original = r#"{
+      "id": "talk",
+      "beats": [
+        { "id": "b0000000000000001", "say": { "speaker": "甲", "text": "一" } },
+        { "id": "b0000000000000002", "say": { "speaker": "甲", "text": "二" } }
+      ]
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", original)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.view().say_text.as_deref(), Some("一"));
+    rt.click_advance();
+    assert_eq!(rt.view().say_text.as_deref(), Some("二"));
+    let save = rt.to_save();
+    assert_eq!(save.beat_id.as_deref(), Some("b0000000000000002"));
+    assert_eq!(save.beat_index, 1);
+
+    let inserted = r#"{
+      "id": "talk",
+      "beats": [
+        { "id": "b0000000000000009", "say": { "speaker": "甲", "text": "新" } },
+        { "id": "b0000000000000001", "say": { "speaker": "甲", "text": "一" } },
+        { "id": "b0000000000000002", "say": { "speaker": "甲", "text": "二" } }
+      ]
+    }"#;
+    fs::write(tmp.join("scenario/talk.json"), inserted).unwrap();
+    let mut resumed = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(resumed.view().say_text.as_deref(), Some("新"));
+    resumed.apply_save(&save).unwrap();
+    assert_eq!(resumed.view().say_text.as_deref(), Some("二"));
+    assert_eq!(resumed.view().beat_index, 2);
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn e03_goto_scene_enters_the_named_room() {
+    let tmp = std::env::temp_dir().join(format!("galeng-e03-goto-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let talk = r#"{
+      "id": "talk",
+      "beats": [{ "say": { "speaker": "n", "text": "去" } }],
+      "exit": { "type": "next", "goto": "room" }
+    }"#;
+    let room = r#"{
+      "id": "room",
+      "sceneKind": "explore",
+      "bg": { "asset": "bg/room" }
+    }"#;
+    write_k2_project(&tmp, "talk", &[("talk", talk), ("room", room)]);
+    let mut rt = Runtime::load_dir(&tmp).unwrap();
+    assert_eq!(rt.view().scene_id, "talk");
+    assert_eq!(rt.view().say_text.as_deref(), Some("去"));
+    rt.click_advance();
+    assert_eq!(rt.view().scene_id, "room");
+    assert_eq!(rt.view().phase, Phase::Explore);
+    assert_eq!(rt.view().bg.as_deref(), Some("bg/room"));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
 #[test]
 fn k2_call_missing_scene_is_not_ended() {
     let tmp = std::env::temp_dir().join(format!("galeng-k2-miss-{}", std::process::id()));

@@ -1,0 +1,44 @@
+{
+  "scene": {
+    "id": "inherit",
+    "beats": [
+      {
+        "bg": { "asset": "bg/room" },
+        "chars": [{ "id": "a", "face": "smile", "slot": "left" }],
+        "bgm": { "asset": "bgm/theme" },
+        "cg": "cg/still",
+        "say": { "speaker": "甲", "text": "留" }
+      },
+      { "say": { "speaker": "甲", "text": "繼承" } },
+      {
+        "chars": [],
+        "bgm": { "asset": null },
+        "cg": null,
+        "say": { "speaker": "甲", "text": "清" }
+      }
+    ]
+  },
+  "rows": [
+    {
+      "bg": "bg/room",
+      "chars": [{ "id": "a", "face": "smile", "slot": "left" }],
+      "bgm": "bgm/theme",
+      "cg": "cg/still",
+      "say": "留"
+    },
+    {
+      "bg": "bg/room",
+      "chars": [{ "id": "a", "face": "smile", "slot": "left" }],
+      "bgm": "bgm/theme",
+      "cg": "cg/still",
+      "say": "繼承"
+    },
+    {
+      "bg": "bg/room",
+      "chars": [],
+      "bgm": null,
+      "cg": null,
+      "say": "清"
+    }
+  ]
+}
