@@ -36,6 +36,10 @@ pub struct ExploreSave {
     pub say_speaker: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub say_text: Option<String>,
+    /// Engine BGM at save time. Absent on older saves, which load as silence
+    /// here; the outer save can still fall back to its carried track.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bgm: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

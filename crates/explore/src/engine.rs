@@ -572,6 +572,7 @@ impl Engine {
             inventory_open: self.inventory_open,
             say_speaker: self.say_speaker.clone(),
             say_text: self.say_text.clone(),
+            bgm: self.bgm.clone(),
         }
     }
 
@@ -768,6 +769,7 @@ impl Engine {
         self.action_queue.clear();
         self.say_speaker = save.say_speaker.clone();
         self.say_text = save.say_text.clone();
+        self.bgm = save.bgm.clone();
         self.pending_se.clear();
         self.last_trace = TraceLayer::None;
         Ok(())

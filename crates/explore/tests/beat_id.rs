@@ -178,6 +178,7 @@ fn dialogue_frame_beat_id_survives_an_insert() {
         inventory_open: false,
         say_speaker: Some("甲".into()),
         say_text: Some("CHILD".into()),
+        bgm: None,
     };
     let mut eng = Engine::from_json(
         &project("room"),
