@@ -33,7 +33,17 @@ import {
   planSceneLoad,
   sceneDocumentHasLeft,
 } from "./sceneLoadGuard";
-import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "./saveIssues";
+import { projectSaveIssues, sceneSaveIssues } from "./saveIssues";
+import { SaveLayerStatus } from "./SaveLayerStatus";
+import { targetForSaveIssue, type IssueTarget } from "./liveIssues";
+import {
+  anyDirtyBlocksLeave,
+  describeBlockedSave,
+  presentLayer,
+  saveBodyFromLatest,
+  type LayerFailure,
+  type SaveOutcome,
+} from "./savePhase";
 import { GotoSelect } from "./GotoSelect";
 import {
   flushThenAllowLeave,
@@ -134,7 +144,45 @@ export function App() {
   projectDirtyRef.current = projectDirty;
 
   function stillDirty() {
-    return sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current);
+    return anyDirtyBlocksLeave(dirtyRef.current, projectDirtyRef.current);
+  }
+
+  const [projectInflight, setProjectInflight] = useState(false);
+  const [sceneInflight, setSceneInflight] = useState(false);
+  const [projectOutcome, setProjectOutcome] = useState<SaveOutcome>("none");
+  const [sceneOutcome, setSceneOutcome] = useState<SaveOutcome>("none");
+  const [projectFail, setProjectFail] = useState<LayerFailure | null>(null);
+  const [sceneFail, setSceneFail] = useState<LayerFailure | null>(null);
+  const projectAttemptRev = useRef(0);
+  const sceneAttemptRev = useRef(0);
+  const projectPhase = presentLayer({
+    dirty: projectDirty,
+    inflight: projectInflight,
+    editedSinceStart: projectInflight && projectRev.current !== projectAttemptRev.current,
+    outcome: projectOutcome,
+  });
+  const scenePhase = presentLayer({
+    dirty,
+    inflight: sceneInflight,
+    editedSinceStart: sceneInflight && sceneRev.current !== sceneAttemptRev.current,
+    outcome: sceneOutcome,
+  });
+
+  function focusBlocked(target: IssueTarget) {
+    if (target.kind === "beat") {
+      setBeatIndex(target.beatIndex);
+      setSelected([target.beatIndex]);
+      setAnchor(target.beatIndex);
+      return;
+    }
+    if (target.kind === "exit") setFocusChoice(target.choiceIndex ?? null);
+    const sel =
+      target.kind === "project"
+        ? '[data-testid="classic-project"]'
+        : target.kind === "exit"
+          ? '[data-testid="classic-exit"]'
+          : null;
+    if (sel) document.querySelector(sel)?.scrollIntoView({ block: "nearest" });
   }
 
   const beat = scene?.beats[beatIndex];
@@ -403,6 +451,24 @@ export function App() {
     }
   }
 
+  function noteSaveFailure(layer: "project" | "scene", err: unknown, focus: IssueTarget | null) {
+    const conflict = isSaveConflict(err);
+    const info: LayerFailure = {
+      reason: conflict ? t("editor.saveConflict") : err instanceof Error ? err.message : String(err),
+      conflict,
+      focus: conflict ? null : focus,
+    };
+    if (layer === "project") {
+      setProjectInflight(false);
+      setProjectOutcome("failed");
+      setProjectFail(info);
+    } else {
+      setSceneInflight(false);
+      setSceneOutcome("failed");
+      setSceneFail(info);
+    }
+  }
+
   async function save() {
     const projectNow = projectRef.current;
     const sceneNow = sceneRef.current;
@@ -411,26 +477,45 @@ export function App() {
       ...(sceneNow && dirtyRef.current ? sceneSaveIssues(sceneNow) : []),
     ];
     if (issues.length > 0) {
-      throw new Error(formatSaveIssues(issues, t));
+      const described = describeBlockedSave(issues, t, (issue) =>
+        targetForSaveIssue(sceneNow?.id ?? null, issue),
+      );
+      const blocked = new Error(described.message);
+      if (projectDirtyRef.current) noteSaveFailure("project", blocked, described.focus);
+      if (dirtyRef.current) noteSaveFailure("scene", blocked, described.focus);
+      throw blocked;
     }
     if (projectNow && projectDirtyRef.current) {
       const requestRev = projectRev.current;
-      const body = projectRef.current;
+      const body = saveBodyFromLatest(projectRef.current);
       if (body) {
-        const savedProject = await putJson<Project>("/api/project", body);
-        const current = projectRef.current ?? savedProject;
-        const merged = mergeSaveResponse({
-          requestRev,
-          currentRev: projectRev.current,
-          saved: savedProject,
-          current,
-        });
-        if (merged.clearDirty) {
-          projectRef.current = merged.value;
-          projectDirtyRef.current = false;
-          classicDirtyRef.current = dirtyRef.current;
-          setProject(merged.value);
-          setProjectDirty(false);
+        projectAttemptRev.current = requestRev;
+        setProjectInflight(true);
+        setProjectOutcome("none");
+        setProjectFail(null);
+        try {
+          const savedProject = await putJson<Project>("/api/project", body);
+          const current = projectRef.current ?? savedProject;
+          const merged = mergeSaveResponse({
+            requestRev,
+            currentRev: projectRev.current,
+            saved: savedProject,
+            current,
+          });
+          setProjectInflight(false);
+          if (merged.clearDirty) {
+            projectRef.current = merged.value;
+            projectDirtyRef.current = false;
+            classicDirtyRef.current = dirtyRef.current;
+            setProject(merged.value);
+            setProjectDirty(false);
+            setProjectOutcome("saved");
+          } else {
+            setProjectOutcome("none");
+          }
+        } catch (err) {
+          noteSaveFailure("project", err, null);
+          throw err;
         }
       }
     }
@@ -470,27 +555,40 @@ export function App() {
         throw new Error(t("editor.saveCancelled"));
       }
     }
-    const body = sceneRef.current;
+    const body = saveBodyFromLatest(sceneRef.current);
     if (!body || !dirtyRef.current) {
       return;
     }
     const requestRev = sceneRev.current;
-    const saved = await putJson<Scene>(`/api/scenes/${body.id}`, body);
-    const current = sceneRef.current;
-    if (!current) return;
-    const merged = mergeSaveResponse({
-      requestRev,
-      currentRev: sceneRev.current,
-      saved,
-      current,
-    });
-    if (merged.clearDirty) {
-      sceneRef.current = merged.value;
-      dirtyRef.current = false;
-      classicDirtyRef.current = projectDirtyRef.current;
-      setScene(merged.value);
-      setScenes((list) => upsertSceneMeta(list, merged.value));
-      setDirty(false);
+    sceneAttemptRev.current = requestRev;
+    setSceneInflight(true);
+    setSceneOutcome("none");
+    setSceneFail(null);
+    try {
+      const saved = await putJson<Scene>(`/api/scenes/${body.id}`, saveBodyFromLatest(body));
+      const current = sceneRef.current;
+      setSceneInflight(false);
+      if (!current) return;
+      const merged = mergeSaveResponse({
+        requestRev,
+        currentRev: sceneRev.current,
+        saved,
+        current,
+      });
+      if (merged.clearDirty) {
+        sceneRef.current = merged.value;
+        dirtyRef.current = false;
+        classicDirtyRef.current = projectDirtyRef.current;
+        setScene(merged.value);
+        setScenes((list) => upsertSceneMeta(list, merged.value));
+        setDirty(false);
+        setSceneOutcome("saved");
+      } else {
+        setSceneOutcome("none");
+      }
+    } catch (err) {
+      noteSaveFailure("scene", err, null);
+      throw err;
     }
   }
 
@@ -1162,7 +1260,28 @@ export function App() {
         <button type="button" onClick={() => switchUiVersion("v2")}>
           {t("editor.uiBeta")}
         </button>
-        {dirty || projectDirty ? <span className="status">{t("editor.dirty")}</span> : null}
+        <SaveLayerStatus
+          id="project-save-state"
+          phase={projectPhase}
+          label={t("editor.saveProject")}
+          reason={projectFail?.reason}
+          conflict={projectFail?.conflict}
+          onRetry={() => void save().catch(reportSaveError)}
+          onReload={() => void reloadFromDisk()}
+          onFocus={projectFail?.focus ? () => focusBlocked(projectFail.focus!) : undefined}
+          t={t}
+        />
+        <SaveLayerStatus
+          id="scene-save-state"
+          phase={scenePhase}
+          label={t("editor.saveScene")}
+          reason={sceneFail?.reason}
+          conflict={sceneFail?.conflict}
+          onRetry={() => void save().catch(reportSaveError)}
+          onReload={() => void reloadFromDisk()}
+          onFocus={sceneFail?.focus ? () => focusBlocked(sceneFail.focus!) : undefined}
+          t={t}
+        />
         {packNote && packWarnings.length === 0 ? <span className="status">{packNote}</span> : null}
       </header>
       <SearchPalette
@@ -1666,7 +1785,7 @@ export function App() {
           <button type="button" onClick={addGallery} disabled={!project}>
             {t("editor.addCg")}
           </button>
-          <h2>{t("editor.project")}</h2>
+          <h2 data-testid="classic-project">{t("editor.project")}</h2>
           <label>{t("editor.sceneTitle")}</label>
           <input
             type="text"
@@ -1787,7 +1906,7 @@ export function App() {
             {t("editor.addMusic")}
           </button>
           </details>
-          <h2>{t("editor.exit")}</h2>
+          <h2 data-testid="classic-exit">{t("editor.exit")}</h2>
           <select
             value={exitKind(scene?.exit)}
             onChange={(e) => {

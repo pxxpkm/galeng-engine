@@ -49,6 +49,14 @@ import {
   type CtxMenuTarget,
 } from "./ctxMenuModel";
 import { mergeSaveResponse } from "../saveGeneration";
+import {
+  exploreBlockedStatus,
+  exploreLayerLabel,
+  nextLayerDirty,
+  presentLayer,
+  saveBodyFromLatest,
+  type SaveOutcome,
+} from "../savePhase";
 import { DatabaseStub } from "./DatabaseStub";
 import { ExploreCanvas } from "./ExploreCanvas";
 import { HierarchyPanel } from "./HierarchyPanel";
@@ -60,6 +68,7 @@ import {
 } from "./InspectorPanels";
 import {
   adoptSavedProjectRaw,
+  EXPLORE_CONFLICT_STATUS,
   exploreSaveStatus,
   loadExploreDoc,
   loadSiblingExploreScenes,
@@ -85,6 +94,7 @@ import {
   countErrorProblemsInGroups,
   flattenSceneProblemGroups,
   formatPackProblemReport,
+  formatProblemContext,
   formatProblemsBadge,
   problemNavTarget,
   type ExploreProblem,
@@ -202,6 +212,31 @@ interface WorkspaceState {
   doc: ExploreDoc;
   bus: CommandBusState;
   dirty: boolean;
+  projectDirty: boolean;
+  sceneDirty: boolean;
+}
+
+function cleared(doc: ExploreDoc, bus: CommandBusState): WorkspaceState {
+  return { doc, bus, dirty: false, projectDirty: false, sceneDirty: false };
+}
+
+function marked(
+  doc: ExploreDoc,
+  bus: CommandBusState,
+  baseline: { project: unknown; scene: unknown },
+): WorkspaceState {
+  const next = nextLayerDirty(
+    { project: false, scene: false },
+    baseline,
+    { project: doc.project, scene: doc.scene },
+  );
+  return {
+    doc,
+    bus,
+    projectDirty: next.project,
+    sceneDirty: next.scene,
+    dirty: next.any,
+  };
 }
 
 type BottomTab = "problems" | "database" | "trace";
@@ -221,8 +256,22 @@ export function ExploreWorkspace({
     doc: initial,
     bus: emptyBus(),
     dirty: false,
+    projectDirty: false,
+    sceneDirty: false,
   }));
   const [saveStatus, setSaveStatus] = useState<string>("");
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [sceneSaving, setSceneSaving] = useState(false);
+  const [projectOutcome, setProjectOutcome] = useState<SaveOutcome>("none");
+  const [sceneOutcome, setSceneOutcome] = useState<SaveOutcome>("none");
+  const [blockedFocus, setBlockedFocus] = useState<ExploreProblem | null>(null);
+  const saveGen = useRef<number | null>(null);
+  const savedBaseline = useRef({ project: initial.project, scene: initial.scene });
+  const rememberClean = useCallback((doc: ExploreDoc, bus: CommandBusState) => {
+    savedBaseline.current = { project: doc.project, scene: doc.scene };
+    return cleared(doc, bus);
+  }, []);
+  const [, setSaveTick] = useState(0);
   const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
   /** Multi-scene pack gate problems (L4); cleared when doc changes. */
   const [packScanProblems, setPackScanProblems] = useState<ExploreProblem[] | null>(null);
@@ -236,7 +285,7 @@ export function ExploreWorkspace({
   const [createSceneError, setCreateSceneError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const { doc, bus, dirty } = state;
+  const { doc, bus, dirty, projectDirty, sceneDirty } = state;
   const stateRef = useRef(state);
   stateRef.current = state;
   const docGen = useRef(0);
@@ -330,21 +379,21 @@ export function ExploreWorkspace({
       commitWs({ ...s, doc: r.doc }, false);
       return;
     }
-    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+    commitWs(marked(r.doc, r.bus, savedBaseline.current), true);
   }, [commitWs]);
 
   const doUndo = useCallback(() => {
     const s = stateRef.current;
     const r = undo(s.bus, s.doc);
     if (!r) return;
-    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+    commitWs(marked(r.doc, r.bus, savedBaseline.current), true);
   }, [commitWs]);
 
   const doRedo = useCallback(() => {
     const s = stateRef.current;
     const r = redo(s.bus, s.doc);
     if (!r) return;
-    commitWs({ doc: r.doc, bus: r.bus, dirty: true }, true);
+    commitWs(marked(r.doc, r.bus, savedBaseline.current), true);
   }, [commitWs]);
 
   const setUi = useCallback((patch: Partial<ExploreDoc["ui"]>) => {
@@ -427,19 +476,48 @@ export function ExploreWorkspace({
       setSaveStatus("未接 persist");
       return;
     }
-    const errs = collectExploreProblems(state.doc, {
+    const snap = stateRef.current;
+    const errs = collectExploreProblems(snap.doc, {
       sceneCatalog: effectiveCatalog,
       knownSceneIds,
     }).filter((p) => p.severity === "error");
     if (errs.length > 0) {
-      setSaveStatus(`無法儲存：${errs.length} 個錯誤（見 Problems）`);
+      const first = errs[0]!;
+      const nav = problemNavTarget(first);
+      const blocked = exploreBlockedStatus({
+        message: first.message,
+        context: formatProblemContext(first),
+        navKind: nav.kind,
+      });
+      setSaveStatus(blocked.status);
+      setBlockedFocus(blocked.canFocus ? first : null);
       setBottomTab("problems");
+      if (snap.projectDirty) setProjectOutcome("failed");
+      if (snap.sceneDirty) setSceneOutcome("failed");
       return;
     }
+    setBlockedFocus(null);
+    const saveProject = snap.projectDirty;
+    const saveScene = snap.sceneDirty;
+    if (saveProject) {
+      setProjectSaving(true);
+      setProjectOutcome("none");
+    }
+    if (saveScene) {
+      setSceneSaving(true);
+      setSceneOutcome("none");
+    }
+    saveGen.current = docGen.current;
+    setSaveTick((n) => n + 1);
     setSaveStatus("儲存中…");
     const requestRev = docGen.current;
+    const stopSaving = () => {
+      setProjectSaving(false);
+      setSceneSaving(false);
+      saveGen.current = null;
+    };
     try {
-      const saved = await saveExploreDoc(persist, stateRef.current.doc);
+      const saved = await saveExploreDoc(persist, saveBodyFromLatest(stateRef.current.doc));
       const current = stateRef.current;
       const nextDoc = {
         ...current.doc,
@@ -454,17 +532,23 @@ export function ExploreWorkspace({
         saved: nextDoc,
         current: current.doc,
       });
+      stopSaving();
       if (!merged.clearDirty) {
         setSaveStatus("仍有未儲存修改");
         return;
       }
-      commitWs({ ...current, dirty: false, doc: merged.value }, false);
+      if (saveProject) setProjectOutcome("saved");
+      if (saveScene) setSceneOutcome("saved");
+      commitWs(rememberClean(merged.value, current.bus), false);
       setSaveStatus("已儲存");
       void refreshCatalog();
     } catch (e) {
+      stopSaving();
+      if (saveProject) setProjectOutcome("failed");
+      if (saveScene) setSceneOutcome("failed");
       setSaveStatus(exploreSaveStatus(e));
     }
-  }, [persist, state.doc, effectiveCatalog, knownSceneIds, refreshCatalog, commitWs]);
+  }, [persist, effectiveCatalog, knownSceneIds, refreshCatalog, commitWs]);
 
   const exploreSaveRef = useRef(doSave);
   exploreSaveRef.current = doSave;
@@ -501,7 +585,7 @@ export function ExploreWorkspace({
         setSaveStatus("已取消重載：載入期間有新編輯");
         return;
       }
-      commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
+      commitWs(rememberClean(next, emptyBus()), true);
       setSaveStatus("已重載");
     } catch (e) {
       setSaveStatus(`錯誤：${e instanceof Error ? e.message : String(e)}`);
@@ -534,7 +618,7 @@ export function ExploreWorkspace({
           setSaveStatus("已取消切換：載入期間有新編輯");
           return;
         }
-        commitWs({ doc: next, bus: emptyBus(), dirty: false }, true);
+        commitWs(rememberClean(next, emptyBus()), true);
         setSaveStatus(`已切換：${sceneId}`);
         void refreshCatalog();
       } catch (e) {
@@ -717,7 +801,7 @@ export function ExploreWorkspace({
         if (prev.some((c) => c.id === id)) return prev;
         return [...prev, { id, kind: "explore", title: loaded.scene.title }];
       });
-      commitWs({ doc: loaded, bus: emptyBus(), dirty: false }, true);
+      commitWs(rememberClean(loaded, emptyBus()), true);
       setCreatingScene(false);
       setSaveStatus(`已建立並切換：${id}`);
       void refreshCatalog();
@@ -809,7 +893,7 @@ export function ExploreWorkspace({
           setSaveStatus("仍有未儲存修改，未出包");
           return;
         }
-        commitWs({ ...current, dirty: false, doc: merged.value }, false);
+        commitWs(rememberClean(merged.value, current.bus), false);
       } catch (e) {
         setSaveStatus(`存檔失敗，未出包：${e instanceof Error ? e.message : String(e)}`);
         return;
@@ -898,7 +982,28 @@ export function ExploreWorkspace({
               data-testid="explore-dirty"
               data-dirty={dirty ? "1" : "0"}
             >
-              {dirty ? "未儲存 *" : "已同步"}
+              {[
+                exploreLayerLabel(
+                  presentLayer({
+                    dirty: projectDirty,
+                    inflight: projectSaving,
+                    editedSinceStart: saveGen.current !== null && docGen.current !== saveGen.current,
+                    outcome: projectOutcome,
+                  }),
+                  "專案",
+                ),
+                exploreLayerLabel(
+                  presentLayer({
+                    dirty: sceneDirty,
+                    inflight: sceneSaving,
+                    editedSinceStart: saveGen.current !== null && docGen.current !== saveGen.current,
+                    outcome: sceneOutcome,
+                  }),
+                  "場景",
+                ),
+              ]
+                .filter(Boolean)
+                .join(" ")}
             </span>
             <span title={doc.scene.id}>探險 · {doc.scene.id}</span>
           </div>
@@ -1052,6 +1157,29 @@ export function ExploreWorkspace({
                 <span className="explore-save-status" data-testid="explore-save-status">
                   {saveStatus}
                 </span>
+                {(projectOutcome === "failed" || sceneOutcome === "failed") &&
+                saveStatus !== EXPLORE_CONFLICT_STATUS &&
+                !projectSaving &&
+                !sceneSaving ? (
+                  <button
+                    type="button"
+                    className="explore-btn"
+                    data-testid="explore-save-retry"
+                    onClick={() => void doSave()}
+                  >
+                    重試
+                  </button>
+                ) : null}
+                {blockedFocus ? (
+                  <button
+                    type="button"
+                    className="explore-btn"
+                    data-testid="explore-save-focus"
+                    onClick={() => navigateProblem(blockedFocus)}
+                  >
+                    前往
+                  </button>
+                ) : null}
               </>
             ) : (
               <button

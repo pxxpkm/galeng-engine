@@ -33,8 +33,6 @@ import {
 } from "../dirty";
 import { registerShellSession } from "../shellGate";
 import { parseSceneId } from "../goto";
-import { liveIssueContext, sceneLiveIssues } from "../liveIssues";
-import type { LiveIssue } from "../liveIssues";
 import { duplicateScene, sceneIsOpen } from "../scene";
 import {
   departedSceneForLoad,
@@ -43,7 +41,17 @@ import {
   sceneDocumentHasLeft,
 } from "../sceneLoadGuard";
 import { runArchiveScene, runDeleteScene } from "../sceneRemoval";
-import { formatSaveIssues, projectSaveIssues, sceneSaveIssues } from "../saveIssues";
+import { liveIssueContext, sceneLiveIssues, targetForSaveIssue } from "../liveIssues";
+import type { LiveIssue, IssueTarget } from "../liveIssues";
+import { projectSaveIssues, sceneSaveIssues } from "../saveIssues";
+import {
+  anyDirtyBlocksLeave,
+  describeBlockedSave,
+  presentLayer,
+  saveBodyFromLatest,
+  type LayerFailure,
+  type SaveOutcome,
+} from "../savePhase";
 import { emptyHistory, push, redo, undo } from "../history";
 import { launchPlay, playFromHereDecision, playFromStartBody, runPlayFromHere } from "../play";
 import { formatPackNote, packWarningsOf, type PackResult } from "../pack";
@@ -164,13 +172,33 @@ export function useEditorState() {
   projectDirtyRef.current = projectDirty;
 
   const stillDirty = useCallback(
-    () => sceneLeaveBlocked(dirtyRef.current, projectDirtyRef.current),
+    () => anyDirtyBlocksLeave(dirtyRef.current, projectDirtyRef.current),
     [],
   );
 
   const toastId = useRef(0);
   const beat = scene?.beats[beatIndex];
-  const anyDirty = dirty || projectDirty;
+  const anyDirty = anyDirtyBlocksLeave(dirty, projectDirty);
+  const [projectInflight, setProjectInflight] = useState(false);
+  const [sceneInflight, setSceneInflight] = useState(false);
+  const [projectOutcome, setProjectOutcome] = useState<SaveOutcome>("none");
+  const [sceneOutcome, setSceneOutcome] = useState<SaveOutcome>("none");
+  const [projectFail, setProjectFail] = useState<LayerFailure | null>(null);
+  const [sceneFail, setSceneFail] = useState<LayerFailure | null>(null);
+  const projectAttemptRev = useRef(0);
+  const sceneAttemptRev = useRef(0);
+  const projectPhase = presentLayer({
+    dirty: projectDirty,
+    inflight: projectInflight,
+    editedSinceStart: projectInflight && projectRev.current !== projectAttemptRev.current,
+    outcome: projectOutcome,
+  });
+  const scenePhase = presentLayer({
+    dirty,
+    inflight: sceneInflight,
+    editedSinceStart: sceneInflight && sceneRev.current !== sceneAttemptRev.current,
+    outcome: sceneOutcome,
+  });
 
   const dismissToast = useCallback((id: number) => {
     setToasts((list) => list.filter((x) => x.id !== id));
@@ -457,29 +485,69 @@ export function useEditorState() {
       ...(projectNow && projectDirtyRef.current ? projectSaveIssues(projectNow) : []),
       ...(sceneNow && dirtyRef.current ? sceneSaveIssues(sceneNow) : []),
     ];
+    const noteFailure = (layer: "project" | "scene", err: unknown, focus: IssueTarget | null) => {
+      const conflict = isSaveConflict(err);
+      const info: LayerFailure = {
+        reason: conflict
+          ? tRef.current("editor.saveConflict")
+          : err instanceof Error
+            ? err.message
+            : String(err),
+        conflict,
+        focus: conflict ? null : focus,
+      };
+      if (layer === "project") {
+        setProjectInflight(false);
+        setProjectOutcome("failed");
+        setProjectFail(info);
+      } else {
+        setSceneInflight(false);
+        setSceneOutcome("failed");
+        setSceneFail(info);
+      }
+    };
     if (issues.length > 0) {
-      throw new Error(formatSaveIssues(issues, tRef.current));
+      const described = describeBlockedSave(issues, tRef.current, (issue) =>
+        targetForSaveIssue(sceneNow?.id ?? null, issue),
+      );
+      const blocked = new Error(described.message);
+      if (projectDirtyRef.current) noteFailure("project", blocked, described.focus);
+      if (dirtyRef.current) noteFailure("scene", blocked, described.focus);
+      throw blocked;
     }
     let accepted = false;
     if (projectNow && projectDirtyRef.current) {
       const requestRev = projectRev.current;
-      const body = projectRef.current;
+      const body = saveBodyFromLatest(projectRef.current);
       if (body) {
-        const savedProject = await putJson<Project>("/api/project", body);
-        const current = projectRef.current ?? savedProject;
-        const merged = mergeSaveResponse({
-          requestRev,
-          currentRev: projectRev.current,
-          saved: savedProject,
-          current,
-        });
-        if (merged.clearDirty) {
-          projectRef.current = merged.value;
-          projectDirtyRef.current = false;
-          anyDirtyRef.current = dirtyRef.current;
-          setProject(merged.value);
-          setProjectDirty(false);
-          accepted = true;
+        projectAttemptRev.current = requestRev;
+        setProjectInflight(true);
+        setProjectOutcome("none");
+        setProjectFail(null);
+        try {
+          const savedProject = await putJson<Project>("/api/project", body);
+          const current = projectRef.current ?? savedProject;
+          const merged = mergeSaveResponse({
+            requestRev,
+            currentRev: projectRev.current,
+            saved: savedProject,
+            current,
+          });
+          setProjectInflight(false);
+          if (merged.clearDirty) {
+            projectRef.current = merged.value;
+            projectDirtyRef.current = false;
+            anyDirtyRef.current = dirtyRef.current;
+            setProject(merged.value);
+            setProjectDirty(false);
+            setProjectOutcome("saved");
+            accepted = true;
+          } else {
+            setProjectOutcome("none");
+          }
+        } catch (err) {
+          noteFailure("project", err, null);
+          throw err;
         }
       }
     }
@@ -521,32 +589,45 @@ export function useEditorState() {
           throw new Error(tRef.current("editor.saveCancelled"));
         }
       }
-      const body = sceneRef.current;
+      const body = saveBodyFromLatest(sceneRef.current);
       if (body && dirtyRef.current) {
         const requestRev = sceneRev.current;
-        const withIds = {
+        const withIds = saveBodyFromLatest({
           ...body,
           beats: ensureBeatIds(body.beats) as Scene["beats"],
-        };
-        const saved = await putJson<Scene>(`/api/scenes/${body.id}`, withIds);
-        const current = sceneRef.current;
-        if (current) {
-          const merged = mergeSaveResponse({
-            requestRev,
-            currentRev: sceneRev.current,
-            saved,
-            current,
-          });
-          if (merged.clearDirty) {
-            sceneRef.current = merged.value;
-            dirtyRef.current = false;
-            anyDirtyRef.current = projectDirtyRef.current;
-            setScene(merged.value);
-            setScenes((list) => upsertSceneMeta(list, merged.value));
-            setDirty(false);
-            clearBackup(globalThis.localStorage, merged.value.id);
-            accepted = true;
+        });
+        sceneAttemptRev.current = requestRev;
+        setSceneInflight(true);
+        setSceneOutcome("none");
+        setSceneFail(null);
+        try {
+          const saved = await putJson<Scene>(`/api/scenes/${body.id}`, withIds);
+          const current = sceneRef.current;
+          setSceneInflight(false);
+          if (current) {
+            const merged = mergeSaveResponse({
+              requestRev,
+              currentRev: sceneRev.current,
+              saved,
+              current,
+            });
+            if (merged.clearDirty) {
+              sceneRef.current = merged.value;
+              dirtyRef.current = false;
+              anyDirtyRef.current = projectDirtyRef.current;
+              setScene(merged.value);
+              setScenes((list) => upsertSceneMeta(list, merged.value));
+              setDirty(false);
+              clearBackup(globalThis.localStorage, merged.value.id);
+              setSceneOutcome("saved");
+              accepted = true;
+            } else {
+              setSceneOutcome("none");
+            }
           }
+        } catch (err) {
+          noteFailure("scene", err, null);
+          throw err;
         }
       }
     }
@@ -1482,6 +1563,15 @@ export function useEditorState() {
     pickBeat,
     beat,
     dirty: anyDirty,
+    projectDirty,
+    sceneDirty: dirty,
+    projectPhase,
+    scenePhase,
+    projectFail,
+    sceneFail,
+    focusSaveIssue: (target: IssueTarget) => {
+      void goToIssue({ key: "editor.saveBlocked", target });
+    },
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     toasts,
@@ -1494,6 +1584,7 @@ export function useEditorState() {
     applyUndo,
     applyRedo,
     save,
+    reloadFromDisk,
     play,
     playFromStart,
     playDecision,

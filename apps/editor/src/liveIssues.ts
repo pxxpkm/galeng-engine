@@ -40,6 +40,19 @@ const BEAT_ISSUE_KEYS = new Set([
   "editor.emptyCharFace",
 ]);
 
+const PROJECT_ISSUE_KEYS = new Set([
+  "editor.emptyRosterId",
+  "editor.emptyGalleryId",
+  "editor.emptyGalleryAsset",
+]);
+
+/** Existing issue row target. Null when this issue has no locator. */
+export function targetForSaveIssue(sceneId: string | null, issue: SaveIssue): IssueTarget | null {
+  if (PROJECT_ISSUE_KEYS.has(issue.key)) return { kind: "project" };
+  if (!sceneId) return null;
+  return sceneIssueTarget(sceneId, issue);
+}
+
 function sceneIssueTarget(sceneId: string, issue: SaveIssue): IssueTarget {
   const n = typeof issue.params?.n === "number" ? issue.params.n : 0;
   if (BEAT_ISSUE_KEYS.has(issue.key)) {

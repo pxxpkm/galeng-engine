@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateToExploreEditor } from "../editorRoute";
+import { SaveLayerStatus } from "../SaveLayerStatus";
 import { playNoticeKey } from "../play";
 import type { Editor } from "./useEditorState";
 import {
@@ -100,7 +101,34 @@ export function TopBar({ ed }: { ed: Editor }) {
         {ed.project ? (
           <span className="v2-project" title={ed.project.title}>
             {ed.project.title}
-            {ed.dirty ? <span className="v2-dot" title={t("editor.dirty")} /> : null}
+            <SaveLayerStatus
+              id="project-save-state"
+              phase={ed.projectPhase}
+              label={t("editor.saveProject")}
+              reason={ed.projectFail?.reason}
+              conflict={ed.projectFail?.conflict}
+              onRetry={() => void ed.save().catch(ed.fail)}
+              onReload={() => void ed.reloadFromDisk()}
+              onFocus={
+                ed.projectFail?.focus
+                  ? () => ed.focusSaveIssue(ed.projectFail!.focus!)
+                  : undefined
+              }
+              t={t}
+            />
+            <SaveLayerStatus
+              id="scene-save-state"
+              phase={ed.scenePhase}
+              label={t("editor.saveScene")}
+              reason={ed.sceneFail?.reason}
+              conflict={ed.sceneFail?.conflict}
+              onRetry={() => void ed.save().catch(ed.fail)}
+              onReload={() => void ed.reloadFromDisk()}
+              onFocus={
+                ed.sceneFail?.focus ? () => ed.focusSaveIssue(ed.sceneFail!.focus!) : undefined
+              }
+              t={t}
+            />
           </span>
         ) : null}
       </div>
