@@ -234,6 +234,24 @@ def materialize(kind: str, source: Path, work: Path) -> Path:
     return locate_pack(unpack)
 
 
+EDITOR_BUILD = "pnpm --filter @galeng/editor build"
+
+
+def require_editor_dist(repo: Path) -> Path:
+    """Editor production build copied into an author pack.
+
+    A missing directory and a directory without index.html are the same
+    failure: the smoke cannot serve the editor until that build exists.
+    """
+    editor = repo / "apps" / "editor" / "dist"
+    if not editor.is_dir() or not (editor / "index.html").is_file():
+        raise SmokeFail(
+            "apps/editor/dist is missing. "
+            f"Run: {EDITOR_BUILD}"
+        )
+    return editor
+
+
 def assemble_layout(repo: Path, dest: Path) -> None:
     host = newest_built(repo, "galeng-host")
     if host is None:
@@ -241,9 +259,7 @@ def assemble_layout(repo: Path, dest: Path) -> None:
             "no galeng-host in target/release or target/debug. "
             "Build it with `cargo build -p galeng-host --release`, or pass --zip."
         )
-    editor = repo / "apps" / "editor" / "dist"
-    if not (editor / "index.html").is_file():
-        raise SmokeFail("apps/editor/dist/index.html missing. Run: pnpm --filter @galeng/editor build")
+    editor = require_editor_dist(repo)
     project = repo / "examples" / "prologue"
     if not (project / "galeng.json").is_file():
         raise SmokeFail(f"missing {project / 'galeng.json'}")
@@ -755,6 +771,11 @@ STUB_JS = "console.log('galeng smoke');\n"
 
 
 def self_test() -> int:
+    dist_problem = missing_editor_dist_problem()
+    if dist_problem:
+        print(f"[galeng-smoke] self-test missing-dist FAIL: {dist_problem}", file=sys.stderr)
+        return 1
+    print("[galeng-smoke] self-test missing-dist ok")
     cases = [
         ("success", {}, False, 0),
         ("skip-display", {"GALENG_SMOKE_STUB_PLAYER": "display"}, False, 0),
@@ -804,6 +825,23 @@ def self_test() -> int:
         return 1
     print("[galeng-smoke] self-test ok")
     return 0
+
+
+def missing_editor_dist_problem() -> str | None:
+    root = Path(tempfile.mkdtemp(prefix="galeng-smoke-nodist-"))
+    try:
+        try:
+            require_editor_dist(root)
+        except SmokeFail as exc:
+            text = str(exc)
+            if "apps/editor/dist is missing" not in text:
+                return text
+            if "pnpm --filter @galeng/editor build" not in text:
+                return text
+            return None
+        return "missing apps/editor/dist did not fail"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def run_stub_case(name: str, env: dict[str, str], require: bool) -> tuple[int, str, str, Path]:
