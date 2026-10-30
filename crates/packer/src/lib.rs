@@ -402,7 +402,9 @@ fn pak_temp_path(out: &Path) -> Result<PathBuf, Error> {
 /// does not leave a partial pak at the final path and is not `Ok`.
 ///
 /// On Windows, `std::fs::rename` does not replace an existing file.
-/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` does.
+/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` does. A locked destination
+/// (player still has the pak open) stays as it was; the temp file is removed
+/// and the error says the pak is in use.
 fn write_pak_atomic(
     out: &Path,
     fail_before_rename: bool,
@@ -432,7 +434,9 @@ fn write_pak_atomic(
         if fail_before_rename {
             return Err(Error::Msg("injected pack failure".into()));
         }
-        rename_over(&tmp, out)?;
+        // Map a sharing failure here, after the temp zip is complete, so the
+        // caller still sees Err and the cleanup below deletes only the temp.
+        rename_over(&tmp, out).map_err(|err| pak_rename_error(out, err))?;
         #[cfg(unix)]
         if let Some(parent) = out.parent() {
             if !parent.as_os_str().is_empty() {
@@ -471,9 +475,22 @@ fn rename_over(from: &Path, to: &Path) -> io::Result<()> {
             PCWSTR(to_w.as_ptr()),
             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
         )
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+        .map_err(io_from_windows)?;
     }
     Ok(())
+}
+
+/// Keep the Win32 code. `windows::core::Error` stores HRESULT_FROM_WIN32,
+/// and dropping that down to `ErrorKind::Other` hides os errors 5 and 32.
+#[cfg(windows)]
+fn io_from_windows(err: windows::core::Error) -> io::Error {
+    let hr = err.code().0 as u32;
+    let code = if hr & 0xFFFF_0000 == 0x8007_0000 {
+        (hr & 0xFFFF) as i32
+    } else {
+        err.code().0
+    };
+    io::Error::from_raw_os_error(code)
 }
 
 #[cfg(not(windows))]
@@ -481,15 +498,65 @@ fn rename_over(from: &Path, to: &Path) -> io::Result<()> {
     fs::rename(from, to)
 }
 
+/// A rename that could not replace the destination because it is locked.
+/// Windows reports that as `PermissionDenied`, `ERROR_ACCESS_DENIED` (5),
+/// or `ERROR_SHARING_VIOLATION` (32). Rust maps 5 to `PermissionDenied` and
+/// leaves 32 uncategorized, so both the kind and the raw codes count.
+/// The raw codes are checked on every OS: `from_raw_os_error` keeps the
+/// number, which lets this mapping be tested on Linux.
+fn pak_target_in_use(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+fn pak_in_use_message(to: &Path) -> String {
+    let name = to
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("game.pak");
+    format!("{name} is in use (is the player running?)")
+}
+
+fn pak_rename_error(to: &Path, err: io::Error) -> Error {
+    if pak_target_in_use(&err) {
+        Error::Msg(pak_in_use_message(to))
+    } else {
+        Error::Io(err)
+    }
+}
+
 pub struct PakReader {
     archive: ZipArchive<File>,
     pub index: PakIndex,
 }
 
+/// Read-only open. On Windows the share mode includes `FILE_SHARE_DELETE`
+/// (and the std read/write shares) so an export can rename a new pak over
+/// this path while the player still reads the previous bytes. Same flags as
+/// `File::open`; set explicitly so a reader never tightens the lock.
+fn open_pak_file(path: &Path) -> io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+        const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+        OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(path)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path)
+    }
+}
+
 impl PakReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         // Do not put disk paths in the error — PR7/PR8 short codes.
-        let file = File::open(path.as_ref()).map_err(|_| Error::Msg("pak unreadable".into()))?;
+        let file = open_pak_file(path.as_ref()).map_err(|_| Error::Msg("pak unreadable".into()))?;
         let mut archive = ZipArchive::new(file).map_err(|_| Error::Msg("pak unreadable".into()))?;
         let index = match read_named(&mut archive, "index.json") {
             Ok(bytes) => {
@@ -783,6 +850,40 @@ mod atomic_pak_tests {
         assert!(!out.exists(), "strict failure must not create a pak");
         assert_no_temp(&out);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn locked_rename_says_pak_is_in_use() {
+        let denied = io::Error::new(io::ErrorKind::PermissionDenied, "access is denied");
+        let mapped = pak_rename_error(Path::new("export/game/game.pak"), denied);
+        assert_eq!(
+            mapped.to_string(),
+            "game.pak is in use (is the player running?)"
+        );
+
+        // Windows ERROR_ACCESS_DENIED (5) and ERROR_SHARING_VIOLATION (32).
+        // On Linux those numbers are other errnos; the mapping still keys off
+        // the raw code so this test does not need a Windows host.
+        for code in [5, 32] {
+            let err = io::Error::from_raw_os_error(code);
+            let mapped = pak_rename_error(Path::new("game.pak"), err);
+            assert_eq!(
+                mapped.to_string(),
+                "game.pak is in use (is the player running?)",
+                "raw os error {code}"
+            );
+        }
+
+        let missing = io::Error::new(io::ErrorKind::NotFound, "no such file");
+        let mapped = pak_rename_error(Path::new("game.pak"), missing);
+        assert!(
+            !mapped.to_string().contains("in use"),
+            "unrelated rename errors stay io errors: {mapped}"
+        );
+        assert!(
+            !pak_target_in_use(&io::Error::from_raw_os_error(2)),
+            "file-not-found / ENOENT is not a lock"
+        );
     }
 
     #[test]

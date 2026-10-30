@@ -293,10 +293,14 @@ fn export_game_writes_pak_and_optional_exe() {
     assert!(without.exe.is_none());
     let pak = tmp.join(&without.pak);
     assert!(pak.is_file());
-    let reader = galeng_packer::PakReader::open(&pak).unwrap();
-    assert!(reader.has_entry("galeng.json"));
-    assert!(reader.has_entry("scenario/park_01.json"));
-    assert!(!reader.has_entry("assets/bg/unused.png"));
+    // Drop the reader before the next export replaces game.pak. Windows
+    // returns access denied (os error 5) when this handle is still open.
+    {
+        let reader = galeng_packer::PakReader::open(&pak).unwrap();
+        assert!(reader.has_entry("galeng.json"));
+        assert!(reader.has_entry("scenario/park_01.json"));
+        assert!(!reader.has_entry("assets/bg/unused.png"));
+    }
 
     let fake = tmp.join("fake-player.exe");
     fs::write(&fake, b"not-a-real-exe").unwrap();
