@@ -1,4 +1,4 @@
- Microsoft Windows® 10/8.1
+ Microsoft Windows® 10
 CPU	intel® Core 2 Duo 以上	intel® Core i5 以上
 メモリ	2GB 以上	4GB 以上
 HDD容量	8GB以上

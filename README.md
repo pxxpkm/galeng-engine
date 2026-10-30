@@ -17,7 +17,7 @@ A native player that fits classic PC specs, and an OpenCut-like Web editor whose
 
 ### What it is
 
-- **Player** — native `player.exe` + `game.pak`. Rust and official SDL2. Target: Windows 8.1 / 10, Core 2 Duo, 2 GB RAM, DirectX 9, 1920×1080. Hardware budget: [`SPEC .txt`](SPEC%20.txt).
+- **Player** — native `player.exe` + `game.pak`. Rust and official SDL2. Target: Windows 10+, Core 2 Duo, 2 GB RAM, DirectX 9, 1920×1080. Hardware budget: [`SPEC .txt`](SPEC%20.txt).
 - **Editor** — local Web UI (Vite + React + TypeScript). Four panes: assets, preview, inspector, tracks. The X axis is beats.
 - **Story** — JSON scenario IR is the only source of truth. A Kirikiri-like script can be *exported* for proofreading. v1 does not import scripts.
 
@@ -40,11 +40,11 @@ A native player that fits classic PC specs, and an OpenCut-like Web editor whose
 - Not a CapCut clone that edits video in seconds
 - Not Kirikiri-compatible
 - Not a Japanese-only tool
-- Not macOS / Linux (Windows 8.1+ only)
+- Not macOS / Linux (Windows 10+ only)
 
 ### Requirements
 
-- Windows 8.1 or later
+- Windows 10 or later
 - Rust stable (workspace edition 2021)
 - pnpm 11.12.0 (pinned in `package.json`)
 - Vendored SDL2 under `third_party/SDL2/`
@@ -157,7 +157,7 @@ Settings and saves: sibling `game.pak` (exported folder) uses `<exe_dir>\UserDat
 
 ### 它是什麼
 
-- **播放器** — 原生 `player.exe` + `game.pak`。Rust 與官方 SDL2。目標機：Windows 8.1 / 10、Core 2 Duo、2 GB RAM、DirectX 9、1920×1080。硬體預算見 [`SPEC .txt`](SPEC%20.txt)。
+- **播放器** — 原生 `player.exe` + `game.pak`。Rust 與官方 SDL2。目標機：Windows 10 或更新、Core 2 Duo、2 GB RAM、DirectX 9、1920×1080。硬體預算見 [`SPEC .txt`](SPEC%20.txt)。
 - **編輯器** — 本機 Web UI（Vite + React + TypeScript）。四欄：素材、預覽、屬性、軌。橫軸是 beat。
 - **劇本** — JSON 場景 IR 是唯一真相。類 KAG 腳本只供匯出校對。v1 不做匯入。
 
@@ -168,11 +168,11 @@ Settings and saves: sibling `game.pak` (exported folder) uses `<exe_dir>\UserDat
 - 不是用秒剪片的 CapCut 仿品
 - 不相容 Kirikiri
 - 不是日文專用工具
-- 不做 macOS / Linux（只保證 Windows 8.1+）
+- 不做 macOS / Linux（只保證 Windows 10+）
 
 ### 環境
 
-- Windows 8.1 或更新
+- Windows 10 或更新
 - Rust stable（workspace edition 2021）
 - pnpm 11.12.0（寫在 `package.json`）
 - SDL2 已放在 `third_party/SDL2/`
